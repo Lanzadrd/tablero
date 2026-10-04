@@ -1,3 +1,7 @@
+import { isRepeat, type Repeat } from '../server/recurrencia.mjs'
+
+export type { Repeat }
+
 export type ColorKey =
   | 'blue'
   | 'indigo'
@@ -43,6 +47,24 @@ export interface Task {
    * (ver src/alerts.ts). Sin definir = los de por defecto; [] = sin aviso.
    */
   alerts?: number[]
+  /** Marcada como «Lo primero» para ese día ('AAAA-MM-DD'), en la vista Hoy. */
+  firstOn?: string
+  /** «Algún día»: sin fecha, aparcada al pie de su columna. */
+  someday?: boolean
+  /** Se repite: al completarla se crea la siguiente (src/../server/recurrencia.mjs). */
+  repeat?: Repeat
+}
+
+/** Ficha de un proyecto: lo que se abre a menudo, a un clic desde la columna. */
+export interface Project {
+  /** Carpeta del proyecto en este Mac (para el Finder y para Claude Code). */
+  folder?: string
+  repo?: string
+  production?: string
+  staging?: string
+  /** Fecha de entrega, 'AAAA-MM-DD'. */
+  deadline?: string
+  links?: { label: string; url: string }[]
 }
 
 export interface Column {
@@ -51,6 +73,11 @@ export interface Column {
   color: ColorKey
   tasks: Task[]
   showCompleted: boolean
+  /** La Bandeja: donde entra lo que llega de Siri o de la captura rápida. Solo hay una. */
+  inbox?: boolean
+  /** Archivada: fuera del tablero, pero no borrada. */
+  archived?: boolean
+  project?: Project
 }
 
 export interface Board {
@@ -194,6 +221,21 @@ type Raw = Record<string, unknown>
 const isRaw = (v: unknown): v is Raw => typeof v === 'object' && v !== null
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const isColor = (v: unknown): v is ColorKey => COLORS.some((c) => c.key === v)
+const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+const isUrl = (v: unknown): v is string => typeof v === 'string' && /^https?:\/\/\S+$/i.test(v)
+
+function normalizeProject(raw: unknown): Project | undefined {
+  if (!isRaw(raw)) return undefined
+  const project: Project = {}
+  if (str(raw.folder)) project.folder = str(raw.folder).slice(0, 1000)
+  for (const key of ['repo', 'production', 'staging'] as const) if (isUrl(raw[key])) project[key] = raw[key] as string
+  if (isDay(raw.deadline)) project.deadline = raw.deadline
+  if (Array.isArray(raw.links)) {
+    const links = raw.links.filter(isRaw).filter((l) => isUrl(l.url)).map((l) => ({ label: str(l.label).slice(0, 60), url: str(l.url) }))
+    if (links.length) project.links = links.slice(0, 20)
+  }
+  return Object.keys(project).length ? project : undefined
+}
 
 export function normalizeBoard(raw: unknown): Board {
   const columns = isRaw(raw) && Array.isArray(raw.columns) ? raw.columns.filter(isRaw) : []
@@ -204,6 +246,9 @@ export function normalizeBoard(raw: unknown): Board {
       name: str(c.name) || 'Sin título',
       color: isColor(c.color) ? c.color : 'blue',
       showCompleted: c.showCompleted === true,
+      inbox: c.inbox === true || undefined,
+      archived: c.archived === true || undefined,
+      project: normalizeProject(c.project),
       tasks: (Array.isArray(c.tasks) ? c.tasks.filter(isRaw) : []).map((t) => ({
         ...t,
         id: str(t.id) || uid(),
@@ -215,6 +260,9 @@ export function normalizeBoard(raw: unknown): Board {
         due: /^\d{4}-\d{2}-\d{2}$/.test(str(t.due)) ? str(t.due) : null,
         time: /^\d{2}:\d{2}$/.test(str(t.time)) ? str(t.time) : null,
         alerts: Array.isArray(t.alerts) ? t.alerts.filter((n): n is number => Number.isInteger(n)) : undefined,
+        firstOn: isDay(t.firstOn) ? t.firstOn : undefined,
+        someday: t.someday === true || undefined,
+        repeat: isRepeat(t.repeat) ? t.repeat : undefined,
       })),
     })),
   }

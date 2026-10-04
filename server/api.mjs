@@ -158,6 +158,29 @@ function send(res, status, body) {
 /** Evita que otra web abierta en el navegador hable con la API (DNS rebinding). */
 const isLocalHost = (req) => LOCAL_HOSTS.has((req.headers.host ?? '').replace(/:\d+$/, ''))
 
+/**
+ * Solo la propia app (o programas locales: el ayudante, el MCP) pueden usar la API.
+ * Un navegador marca de dónde viene cada petición (Sec-Fetch-Site, Origin): se rechaza
+ * cualquier otra web. Y los cambios deben ir en JSON, que otra web no puede mandar sin
+ * permiso explícito (preflight) que aquí nunca se concede.
+ */
+function checkCaller(req) {
+  if (!isLocalHost(req)) throw new HttpError(403, 'Solo accesible desde este ordenador')
+  const site = req.headers['sec-fetch-site']
+  if (site && site !== 'same-origin' && site !== 'none') throw new HttpError(403, 'Solo desde Tablero')
+  const origin = req.headers.origin
+  if (origin !== undefined) {
+    let host = null
+    try {
+      host = new URL(origin).host
+    } catch {}
+    if (host !== req.headers.host) throw new HttpError(403, 'Solo desde Tablero')
+  }
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !/^application\/json\b/i.test(req.headers['content-type'] ?? '')) {
+    throw new HttpError(415, 'Se espera JSON')
+  }
+}
+
 /** `version` identifica la compilación de la web: si cambia, las ventanas abiertas proponen recargar. */
 export function createApi({ version = 'dev', appVersion = 'dev' } = {}) {
   return async function tableroApi(req, res, next) {
@@ -165,7 +188,7 @@ export function createApi({ version = 'dev', appVersion = 'dev' } = {}) {
     const { pathname } = url
     if (!pathname.startsWith('/api/')) return next()
     try {
-      if (!isLocalHost(req)) throw new HttpError(403, 'Solo accesible desde este ordenador')
+      checkCaller(req)
       if (pathname === '/api/health') return send(res, 200, { app: 'tablero', ok: true, version, appVersion })
       if (pathname === '/api/eventos') return await openEvents(req, res, url.searchParams.get('cliente'), version)
 

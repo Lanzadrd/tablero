@@ -30,6 +30,9 @@ export function mergeBoards(base: Board, ours: Board, theirs: Board): Board {
       merged.name = pick(b.name, o.name, t.name)
       merged.color = pick(b.color, o.color, t.color)
       merged.showCompleted = pick(b.showCompleted, o.showCompleted, t.showCompleted)
+      merged.inbox = pick(b.inbox, o.inbox, t.inbox)
+      merged.archived = pick(b.archived, o.archived, t.archived)
+      merged.project = pickJson(b.project, o.project, t.project)
     }
     columns.set(id, { ...merged, tasks: [] })
   }
@@ -70,7 +73,10 @@ function mergeTask(b: Task | undefined, o: Task | undefined, t: Task | undefined
   merged.notes = pick(b.notes, o.notes, t.notes)
   merged.due = pick(b.due, o.due, t.due)
   merged.time = pick(b.time, o.time, t.time)
-  merged.alerts = JSON.stringify(o.alerts) !== JSON.stringify(b.alerts) ? o.alerts : t.alerts
+  merged.alerts = pickJson(b.alerts, o.alerts, t.alerts)
+  merged.firstOn = pick(b.firstOn, o.firstOn, t.firstOn)
+  merged.someday = pick(b.someday, o.someday, t.someday)
+  merged.repeat = pickJson(b.repeat, o.repeat, t.repeat)
   // «Hecha» y su fecha van juntas.
   const doneFrom = o.done !== b.done ? o : t
   merged.done = doneFrom.done
@@ -80,6 +86,9 @@ function mergeTask(b: Task | undefined, o: Task | undefined, t: Task | undefined
 
 /** El valor de quien lo cambió; si cambiaron ambos, el local. */
 const pick = <V>(base: V, ours: V, theirs: V): V => (ours !== base ? ours : theirs)
+
+/** Igual que `pick`, para objetos y listas (se comparan por contenido). */
+const pickJson = <V>(base: V, ours: V, theirs: V): V => (JSON.stringify(ours) !== JSON.stringify(base) ? ours : theirs)
 
 /** Orden de quien reordenó (el local si ambos), con lo nuevo del otro al final. */
 function pickOrder(base: string[], ours: string[], theirs: string[]) {

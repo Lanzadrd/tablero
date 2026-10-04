@@ -11,7 +11,8 @@
     "empaquetar": "node scripts/empaquetar.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "start": "node server/index.mjs"
+    "start": "node server/index.mjs",
+    "test": "node --test server/pruebas/*.test.mjs"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
