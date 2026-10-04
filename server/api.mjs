@@ -3,6 +3,7 @@
 import { copyFile, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { applyOperations } from './operaciones.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export const DATA_DIR = process.env.TABLERO_DATA_DIR
@@ -174,6 +175,23 @@ export function createApi({ version = 'dev', appVersion = 'dev' } = {}) {
         avisos = { ...(await readJson(req)), vistoEn: new Date().toISOString() }
         broadcast('avisos', avisosState())
         return send(res, 200, { ok: true })
+      }
+
+      if (pathname === '/api/operaciones') {
+        if (req.method !== 'POST') throw new HttpError(405, 'Método no permitido')
+        const { ops } = await readJson(req)
+        if (!Array.isArray(ops) || ops.length > 5000) throw new HttpError(400, 'Operaciones no válidas')
+        const result = await exclusive(async () => {
+          const current = await readStore()
+          if (!current.board) throw new HttpError(409, 'Aún no hay tablero')
+          const applied = applyOperations(current.board, ops)
+          if (applied === 0) return { rev: current.rev, aplicadas: 0 }
+          const rev = current.rev + 1
+          await writeStore(rev, current.board)
+          broadcast('rev', { rev })
+          return { rev, aplicadas: applied }
+        })
+        return send(res, 200, result)
       }
 
       const taskMatch = pathname.match(/^\/api\/tareas\/([\w-]+)$/)

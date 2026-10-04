@@ -25,8 +25,8 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Tablero crea un recordatorio para cada tarea con hora, para que te avise en el iPhone, y marca como hechas las que completes allí.</string>
+	<string>Tablero copia tus tareas a Recordatorios para que las tengas en el iPhone, con sus avisos, y trae a Tablero lo que añadas o completes allí.</string>
 	<key>NSRemindersUsageDescription</key>
-	<string>Tablero crea un recordatorio para cada tarea con hora, para que te avise en el iPhone, y marca como hechas las que completes allí.</string>
+	<string>Tablero copia tus tareas a Recordatorios para que las tengas en el iPhone, con sus avisos, y trae a Tablero lo que añadas o completes allí.</string>
 </dict>
 </plist>

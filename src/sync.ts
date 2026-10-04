@@ -8,9 +8,11 @@ export interface AvisosStatus {
   conectado: boolean
   estado?: 'iniciando' | 'activo' | 'sin-permiso' | 'error'
   mensaje?: string
-  lista?: string
   cuenta?: string
   icloud?: boolean
+  /** Listas de Recordatorios (una por columna). */
+  listas?: number
+  /** Tareas pendientes con aviso. */
   programados?: number
   ultimaSync?: string
 }

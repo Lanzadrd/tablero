@@ -31,7 +31,8 @@ const quiet = (cmd, args) => execFileSync(cmd, args, { cwd: ROOT, stdio: 'ignore
  * compilación nueva hace que macOS vuelva a pedir permiso para Recordatorios.
  */
 function buildAvisos() {
-  const sources = ['avisos/Avisos.swift', 'avisos/Info.plist', 'assets/icono-1024.png'].map((f) => path.join(ROOT, f))
+  const swift = ['avisos/Modelo.swift', 'avisos/Avisos.swift'].map((f) => path.join(ROOT, f))
+  const sources = [...swift, path.join(ROOT, 'avisos', 'Info.plist'), path.join(ROOT, 'assets', 'icono-1024.png')]
   const hash = createHash('sha256')
   for (const file of sources) hash.update(readFileSync(file))
   const app = path.join(ROOT, 'build', 'cache', `avisos-${hash.digest('hex').slice(0, 12)}`, 'Tablero Avisos.app')
@@ -42,21 +43,21 @@ function buildAvisos() {
   try {
     const binaries = ['arm64', 'x86_64'].map((arch) => {
       const out = path.join(tmp, arch)
-      run('swiftc', ['-O', '-parse-as-library', '-swift-version', '5', '-target', `${arch}-apple-macos14.0`, '-o', out, sources[0]])
+      run('swiftc', ['-O', '-parse-as-library', '-swift-version', '5', '-target', `${arch}-apple-macos14.0`, '-o', out, ...swift])
       return out
     })
     const contents = path.join(app, 'Contents')
     mkdirSync(path.join(contents, 'MacOS'), { recursive: true })
     mkdirSync(path.join(contents, 'Resources'), { recursive: true })
     run('lipo', ['-create', '-output', path.join(contents, 'MacOS', 'Tablero Avisos'), ...binaries])
-    copyFileSync(sources[1], path.join(contents, 'Info.plist'))
+    copyFileSync(path.join(ROOT, 'avisos', 'Info.plist'), path.join(contents, 'Info.plist'))
 
     const iconset = path.join(tmp, 'AppIcon.iconset')
     mkdirSync(iconset)
     for (const size of [16, 32, 128, 256, 512]) {
       for (const [scale, suffix] of [[1, ''], [2, '@2x']]) {
         const px = String(size * scale)
-        quiet('sips', ['-z', px, px, sources[2], '--out', path.join(iconset, `icon_${size}x${size}${suffix}.png`)])
+        quiet('sips', ['-z', px, px, path.join(ROOT, 'assets', 'icono-1024.png'), '--out', path.join(iconset, `icon_${size}x${size}${suffix}.png`)])
       }
     }
     run('iconutil', ['-c', 'icns', iconset, '-o', path.join(contents, 'Resources', 'AppIcon.icns')])

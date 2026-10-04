@@ -21,24 +21,30 @@ Y registra dos servicios que arrancan solos al iniciar sesión (y se reinician s
 | Servicio | Qué hace |
 | --- | --- |
 | `com.tablero.servidor` | Servidor en `http://127.0.0.1:4747` (solo accesible desde este Mac). |
-| `com.tablero.avisos` | «Tablero Avisos»: copia las tareas con fecha a la lista «Tablero» de Recordatorios. |
+| `com.tablero.avisos` | «Tablero Avisos»: sincroniza Tablero con Recordatorios (y así con el iPhone). |
 
 Para tenerlo en el Dock, abre `http://127.0.0.1:4747` en Chrome y pulsa **Instalar**.
 `npm run abrir` abre la ventana (o la arranca si hiciera falta).
 
-## Avisos en el iPhone
+## En el iPhone (Recordatorios)
 
-Las tareas con fecha se copian a Recordatorios (lista «Tablero», en iCloud) y avisan en
-el iPhone y en el Mac:
+Tablero se sincroniza en los dos sentidos con Recordatorios de Apple, que lo lleva al
+iPhone por iCloud:
 
-- **Con hora:** a la hora de inicio, por defecto. En el detalle de la tarea se pueden
-  añadir más avisos (5 min antes, 1 hora antes, 1 día antes…).
-- **De todo el día:** ese día a las 9:00 (hora local del Mac), por defecto; o el día
-  antes, una semana antes…
+- Cada columna es una lista: «Tablero · Personal», «Tablero · Trabajo»… con su color.
+- Lo que añadas, cambies, completes, muevas de lista o borres en el iPhone aparece en
+  Tablero (en cuanto el Mac está encendido), y al revés. Si se cambia lo mismo en los dos
+  sitios a la vez, gana Tablero.
+- Las columnas se crean y se borran desde Tablero. Si se borra una lista en el iPhone, se
+  vuelve a crear; renombrarla sí renombra la columna.
+- Avisos: las tareas con hora avisan a la hora de inicio (o antes, configurable en cada
+  tarea); las de todo el día, ese día a las 9:00 (hora local de cada Mac).
+- Por seguridad, si desaparecen muchos recordatorios de golpe (iCloud resincronizando),
+  no se borra nada en Tablero; y un borrado solo se aplica si se mantiene unos segundos.
 
-Si se completa en Recordatorios (en el iPhone, por ejemplo), también se marca en Tablero.
-Que aparezcan como globo y con sonido depende de los ajustes de notificaciones de
-Recordatorios en cada dispositivo: el icono de la campana en Tablero lleva a ellos.
+Que los avisos salgan como globo y con sonido depende de los ajustes de notificaciones de
+Recordatorios en cada dispositivo (la campana de Tablero lleva a ellos). El estado de la
+sincronización se guarda en `datos/sincronizacion.json` y su registro en `datos/avisos.log`.
 
 ## Atajos
 
@@ -91,6 +97,8 @@ npm run build  # comprueba tipos y compila a dist/
 - `src/` — la app (React + TypeScript). Modelo en `src/model.ts`, fusión de cambios en `src/merge.ts`.
 - `server/` — servidor sin dependencias: web, API `/api/board`, eventos en vivo `/api/eventos`
   y actualizaciones automáticas (`actualizador.mjs`).
-- `avisos/` — el ayudante de Recordatorios (Swift + EventKit). Solo se recompila si cambia,
+- `avisos/` — el ayudante de Recordatorios (Swift + EventKit): `Modelo.swift` (fusión, sin
+  EventKit) y `Avisos.swift`. Pruebas: `swiftc -parse-as-library avisos/Modelo.swift
+  avisos/Pruebas.swift -o /tmp/pruebas && /tmp/pruebas`. Solo se recompila si cambia,
   porque cada compilación nueva hace que macOS vuelva a pedir permiso.
 - Probar sin tocar tus datos: `TABLERO_DATA_DIR=/tmp/prueba PORT=4848 npm start`.

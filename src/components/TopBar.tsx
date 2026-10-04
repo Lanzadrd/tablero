@@ -82,18 +82,18 @@ function AvisosPanel({ avisos }: { avisos: AvisosStatus }) {
   const count = avisos.programados ?? 0
   return (
     <div className="avisos">
-      <h3>Avisos en el iPhone</h3>
+      <h3>En el iPhone</h3>
       {state === 'activo' && (
         <>
           <p className="avisos-state is-ok">
             <Icon.Check />
-            Activos · {count === 1 ? '1 aviso programado' : `${count} avisos programados`}
+            Sincronizado · {count === 1 ? '1 aviso programado' : `${count} avisos programados`}
           </p>
           <p>
-            Las tareas con fecha se copian a la lista «{avisos.lista ?? 'Tablero'}» de Recordatorios y te avisan en el
-            iPhone y en el Mac: las que tienen hora, a esa hora; las de todo el día, ese día a las 9:00. Puedes cambiarlo
-            en cada tarea. Si completas una allí, también se marca aquí.
+            Cada columna es una lista de Recordatorios («Tablero · {'…'}»). Lo que añadas, completes, cambies o borres en
+            el iPhone aparece aquí, y al revés. Las tareas con hora avisan a esa hora; las de todo el día, a las 9:00.
           </p>
+          <p className="avisos-hint">Las columnas se crean y se borran desde aquí; en el iPhone, solo las tareas.</p>
           {avisos.icloud === false && (
             <p className="avisos-warning">
               La lista está en «{avisos.cuenta}», no en iCloud, así que no llegará al iPhone. Activa Recordatorios en
