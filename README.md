@@ -52,104 +52,46 @@ Que los avisos salgan como globo y con sonido depende de los ajustes de notifica
 Recordatorios en cada dispositivo (la campana de Tablero lleva a ellos). El estado de la
 sincronización se guarda en `datos/sincronizacion.json` y su registro en `datos/avisos.log`.
 
-## Atajos
+## Día a día
 
-Todos están en la ayuda (`?`). Sin un campo de texto activo ni un panel abierto:
+- **Hoy** (D): lo que vence hoy o está atrasado, de todas las columnas. «Lo primero» arriba
+  (F), «Pasar todas a hoy», y la siguiente tarea de cada proyecto sin nada para hoy. El
+  icono del Dock muestra cuántas quedan; la primera vez que se abre cada día, arranca aquí.
+- **Escribir en lenguaje natural**: «Llamar a Marta mañana 10:30 #Trabajo», «Copias cada
+  lunes», «Leer Sapiens algún día», «Pagar seguro 15/10». Solo se entienden fechas y horas
+  al principio o al final; ⌥↩ guarda el texto tal cual.
+- **Enlaces**: las URLs salen como píldoras; pegar una URL sola crea la tarea con el título
+  de la página (los de GitHub, con `gh`). **Checklist**: líneas «- [ ] paso» en las notas.
+  **Repetición**: en el detalle; al completarla se crea la siguiente.
+- **Proyectos**: cada columna tiene ficha (carpeta, repo, producción, staging, entrega,
+  enlaces), un pulso («Entrega vie», «Parada · 12 d»), «Lo hecho» para copiar al cliente,
+  y se puede contraer o archivar. «Archivar completadas» las saca a `datos/archivo.json`.
+- **Bandeja + Siri**: lo que llega de Siri o de la captura entra en la Bandeja; «#columna»
+  al final lo manda a su sitio. Para Siri: en el iPhone, Ajustes › Recordatorios › Lista
+  por omisión › «Tablero · Bandeja».
+- **Captura global**: ⌥Espacio desde cualquier app (icono en la barra de menús);
+  ⌥⇧Espacio añade la pestaña activa de Chrome. Atajos en `datos/ajustes.json`
+  (`{"atajoCaptura": "option+space", "atajoCapturaPagina": "option+shift+space"}`).
+- **Claude Code**: «Abrir en Claude Code» en una tarea abre una sesión en la carpeta del
+  proyecto con la tarea escrita. Y el MCP (`npm run mcp` muestra cómo registrarlo) deja
+  pedir a Claude «apunta esto en Tablero» o «¿qué tengo hoy?».
+
+## Atajos
 
 | Tecla | Acción |
 | --- | --- |
 | `D` / `T` / `C` | Hoy / Tablero / Calendario |
-| `N` · `⇧N` | Nueva tarea (en la vista abierta) · nueva columna |
-| `1`–`9` | Nueva tarea en esa columna |
-| `⌘K` o `/` | Buscar |
+| `N` · `1`–`9` · `⇧N` | Nueva tarea · en esa columna · nueva columna |
+| `⌘K` o `/` | Buscar (también completadas y archivadas) |
+| `↑↓` `←→` (o `J`/`K`) | Moverse entre tareas y columnas |
+| `X` · `H` · `M` · `L` · `0` | Completar · hoy · mañana · próxima semana · sin fecha |
+| `A` · `F` · `⌥1`–`9` · `⌘D` · `⌫` | Algún día · lo primero · mover · duplicar · eliminar |
+| `⌘clic` / `⇧clic` | Seleccionar varias (las teclas se aplican a todas) |
 | `⌘Z` / `⇧⌘Z` | Deshacer / rehacer |
 | `?` | Todos los atajos |
 
-Sobre una tarea (las seleccionadas; si no, la que tiene el foco; si no, la que está bajo el
-ratón en Hoy y Tablero):
-
-| Tecla | Acción |
-| --- | --- |
-| `↑` `↓` (`J` `K`) · `←` `→` | Moverse · cambiar de columna |
-| `↩` | Abrir |
-| `X` | Completar |
-| `H` / `M` / `L` / `0` | Para hoy / mañana / el próximo lunes / sin fecha |
-| `A` · `F` | Algún día · «Lo primero» de hoy |
-| `⌥1`–`⌥9` | Mover a esa columna |
-| `⌘D` · `⌫` | Duplicar · eliminar |
-| `Esc` | Soltar la selección |
-| `Espacio` | Arrastrar con el teclado |
-
-En el calendario, `←` `→` · `H` · `S` / `M` son anterior/siguiente · hoy · semana/mes, salvo
-que haya una tarea con el foco o seleccionada (entonces actúan sobre ella).
-
-## Buscar, seleccionar y enlazar
-
-- **Buscar** (`⌘K` o `/`, o la lupa): tareas pendientes y completadas, las archivadas, las
-  columnas («Ir a…») y los comandos, sin distinguir mayúsculas ni acentos. `↩` lleva a la
-  tarea en el tablero con su detalle abierto.
-- **Seleccionar varias**: `⌘clic` añade o quita, `⇧clic` coge un tramo de la misma columna y
-  `⇧↑` `⇧↓` amplían. Con dos o más sale una barra abajo (Hoy, Mañana, Mover a…, Completar,
-  Eliminar). Cada cambio en grupo se deshace de una vez.
-- **Enlace a una tarea**: «Copiar enlace» en su detalle (`http://127.0.0.1:4747/t/<id>`). Al
-  abrirlo, Tablero enseña esa tarea con su detalle abierto.
-
-## Escribir tareas
-
-«Nueva tarea» entiende lo que escribes y lo enseña debajo antes de añadirlo:
-«Llamar a Marta mañana 10:30 #trabajo», «Dentista el viernes a las 9», «Revisar copias
-cada lunes», «Leer Sapiens algún día». `#columna` la manda a esa columna. `⌥↩` añade el
-texto tal cual, sin interpretar. Pegar varias líneas crea una tarea por línea. En el
-calendario el día es el de la celda (se usan la hora, la `#columna` y la repetición).
-
-- **Enlaces**: las URL del título salen como una píldora con el dominio (clic = se abre en
-  otra pestaña). Si añades solo una URL, la tarea toma el título de la página y la URL va
-  a las notas.
-- **Pasos**: las líneas `- [ ] paso` de las notas se ven como casillas en el detalle; la
-  fila muestra «2/5».
-- **Repetir**: en el detalle (cada día, laborables, cada N semanas…, contando desde la
-  fecha o desde que se completa). Al completarla aparece la siguiente; esto vive solo en
-  Tablero (al iPhone llega cada tarea suelta).
-
-## Hoy, algún día y el Dock
-
-- **Hoy**: arriba «Lo primero» (marca una tarea con la estrella; solo una por día), luego
-  las atrasadas («Pasar todas a hoy») y las de hoy por columna, ordenadas por hora. Al pasar
-  por encima de una fila: estrella y «Mañana». Debajo, lo hecho hoy y la siguiente tarea sin
-  fecha de cada proyecto que no tiene nada para hoy («Para hoy»). La primera vez que se abre
-  la app cada día, arranca aquí.
-- **Algún día**: en el detalle de una tarea; la deja sin fecha y la aparca en un grupo
-  plegable al pie de su columna. Ponerle fecha la saca de ahí. No sale en Hoy ni en el
-  calendario (y no viaja a Recordatorios: allí es una tarea sin fecha).
-- **Sin fecha**: en la semana del calendario, el botón «Sin fecha» abre un panel con las
-  tareas sin día para arrastrarlas a uno (y soltar una ahí le quita la fecha).
-- **Dock**: el icono muestra cuántas tareas quedan para hoy o atrasadas. Su menú (clic
-  derecho) tiene «Nueva tarea», «Hoy» y «Calendario».
-
-## Proyectos, Bandeja y lo hecho
-
-Cada columna puede ser un proyecto. En su menú (`…`):
-
-- **Ficha del proyecto…**: carpeta del Mac (`~/Desktop/Claude Code/lto`), repositorio, producción,
-  staging, fecha de entrega y otros enlaces. Lo que esté relleno sale como iconos bajo el nombre:
-  la carpeta se abre en el Finder, los enlaces en otra pestaña y la terminal abre **Claude Code**
-  en esa carpeta. Con ficha, bajo el nombre va también el pulso: «Entrega vie 9 oct» (en rojo si
-  quedan dos días o menos), «Sin próxima acción» o «Parada · 12 d» (más de una semana sin crear ni
-  completar nada, y nada con fecha para los próximos días).
-- **Nueva sesión de Claude Code**: una sesión nueva en la carpeta del proyecto. Desde el detalle de
-  una tarea, «Abrir en Claude Code» la empieza con la tarea ya escrita (título, notas y proyecto).
-- **Lo hecho…**: lo completado esta semana, la pasada, este mes, el pasado o todo (también lo
-  archivado), con «Copiar» en texto plano para el cliente o la factura.
-- **Archivar completadas…**: tras confirmarlo, las pasa a `datos/archivo.json` (siguen en «Lo hecho» y
-  en la búsqueda; no se puede deshacer).
-- **Contraer**: la deja en una franja estrecha (se recuerda en cada Mac). Un clic la expande.
-- **Archivar columna**: desaparece del tablero, Hoy, el calendario, `#columna` y `⌥1`–`⌥9`. Se
-  restaura con «N archivadas», al final del tablero. En Recordatorios su lista sigue: si desde el
-  iPhone se añade o se mueve una tarea a esa lista, la columna vuelve al tablero.
-
-La **Bandeja** es la primera columna y siempre existe (no se archiva ni se borra): ahí llega lo que
-se captura sin `#columna`. Para que lo que le dictes a Siri llegue también, en el iPhone: Ajustes ›
-Recordatorios › Lista por omisión › Tablero · Bandeja.
+Las teclas de tareas actúan sobre la selección, la tarea enfocada o la que está bajo el
+ratón. Cada tarea tiene enlace propio (`/t/<id>`, «Copiar enlace» en su detalle).
 
 ## Publicar actualizaciones
 
