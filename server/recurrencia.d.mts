@@ -11,7 +11,12 @@ export interface Repeat {
 export const EVERY: RepeatEvery[]
 export function isRepeat(value: unknown): value is Repeat
 export function nextDue(repeat: Repeat, dates: { due: string | null; doneOn: string }): string
-export function nextOccurrence<T extends { repeat?: Repeat | null; due: string | null; notes: string }>(
+export function nextTaskId(id: string): string
+export function nextOccurrence<T extends { id: string; repeat?: Repeat | null; due: string | null; notes: string }>(
   task: T,
-  options: { id: string; doneOn: string; now?: string },
+  options: { id?: string; doneOn: string; now?: string },
 ): T
+export function isUntouchedNext(
+  task: { id: string; title: string; notes: string; time?: string | null },
+  next: { id: string; title: string; notes: string; done: boolean; repeat?: unknown; time?: string | null } | undefined | null,
+): boolean

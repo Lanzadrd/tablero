@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { describe as resumen, parseTask } from '../lenguaje.mjs'
+import { describe as resumen, parseTask, repeatWeekday, weekdayFrom } from '../lenguaje.mjs'
 
 // Domingo, 4 de octubre de 2026
 const today = '2026-10-04'
@@ -33,6 +33,13 @@ const casos = [
   ['Leer Sapiens algún día', { title: 'Leer Sapiens', someday: true }],
   ['Revisar camiones #flota', { title: 'Revisar camiones', columnId: 'f' }],
   ['18h Pádel', { title: 'Pádel', due: today, time: '18:00' }],
+  ['Cena a las 9 de la noche', { title: 'Cena', due: today, time: '21:00' }],
+  ['Correr a las 7 de la tarde', { title: 'Correr', due: today, time: '19:00' }],
+  ['Tomar pastilla a las 8:30 de la mañana', { title: 'Tomar pastilla', due: today, time: '08:30' }],
+  ['Despertar a las 12 de la noche', { title: 'Despertar', due: today, time: '00:00' }],
+  ['Ver el partido esta noche', { title: 'Ver el partido', due: today }],
+  ['Relleno 1 ayer', { title: 'Relleno 1', due: '2026-10-03' }],
+  ['Ayer llamé al banco', { title: 'Llamé al banco', due: '2026-10-03' }],
   // Lo que NO debe tocarse
   ['Llamar por la mañana', { title: 'Llamar por la mañana' }],
   ['Correr esta mañana', { title: 'Correr esta mañana' }],
@@ -52,4 +59,23 @@ for (const [texto, esperado] of casos) {
 test('el resumen se entiende', () => {
   assert.equal(resumen(p('Llamar a Marta mañana 10:30 #Trabajo'), { today, columns }), 'Mañana, 10:30 · Trabajo')
   assert.equal(resumen(p('Copias cada 2 semanas'), { today, columns }), 'Hoy · cada 2 semanas')
+})
+
+test('una hora sola que ya ha pasado es para mañana (si se sabe la hora)', () => {
+  const at = (text, time) => parseTask(text, { today, time, columns })
+  assert.equal(at('Reunión 10:30', '22:45').due, '2026-10-05')
+  assert.equal(at('Reunión 10:30', '09:00').due, today)
+  assert.equal(at('Reunión 10:30', '10:30').due, today) // justo ahora: hoy
+  assert.equal(at('Reunión hoy 10:30', '22:45').due, today) // con día escrito, ese día
+  assert.equal(at('Standup 9:30 cada día', '22:45').due, today) // las repeticiones empiezan hoy
+  assert.equal(p('Reunión 10:30').due, today) // sin hora conocida, hoy
+})
+
+test('cada lunes: su día de la semana (para el calendario)', () => {
+  assert.equal(repeatWeekday(p('Correr cada lunes')), 1)
+  assert.equal(repeatWeekday(p('Correr todos los viernes')), 5)
+  assert.equal(repeatWeekday(p('Correr cada semana')), null)
+  assert.equal(repeatWeekday(p('Standup de lunes a viernes')), null)
+  assert.equal(weekdayFrom('2026-10-07', 1), '2026-10-12') // del miércoles 7, al lunes 12
+  assert.equal(weekdayFrom('2026-10-05', 1), '2026-10-05') // si ya es lunes, ese
 })

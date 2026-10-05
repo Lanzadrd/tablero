@@ -1,45 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
-import { useNow, useUI } from '../context'
+import { Fragment, useEffect, useRef, useState } from 'react'
+import { useBoard, useNow, useUI } from '../context'
 import { formatToday } from '../dates'
+import { SHORTCUTS } from '../keys'
 import type { AvisosStatus } from '../sync'
-import { cx, isTyping } from '../util'
+import { cx } from '../util'
 import * as Icon from './Icons'
 import { Popover } from './Popover'
 import { Segmented } from './Segmented'
-
-const SHORTCUTS: Array<[string, Array<[string[], string]>]> = [
-  [
-    'General',
-    [
-      [['T'], 'Tablero'],
-      [['C'], 'Calendario'],
-      [['⇧', 'N'], 'Nueva columna'],
-      [['⌘', 'Z'], 'Deshacer'],
-      [['⇧', '⌘', 'Z'], 'Rehacer'],
-      [['Esc'], 'Cerrar'],
-    ],
-  ],
-  [
-    'Tablero',
-    [
-      [['N'], 'Nueva tarea'],
-      [['1', '…', '9'], 'Nueva tarea en esa columna'],
-      [['↩'], 'Abrir la tarea seleccionada'],
-      [['⌫'], 'Eliminar la tarea seleccionada'],
-      [['Espacio'], 'Coger y soltar al mover con teclado'],
-    ],
-  ],
-  [
-    'Calendario',
-    [
-      [['N'], 'Nueva tarea para hoy'],
-      [['←', '→'], 'Anterior / siguiente'],
-      [['H'], 'Hoy'],
-      [['S'], 'Semana'],
-      [['M'], 'Mes'],
-    ],
-  ],
-]
+import '../styles/teclado.css'
 
 /** Evento de Chrome cuando la web se puede instalar como app. */
 interface InstallPromptEvent extends Event {
@@ -77,7 +45,7 @@ const avisosState = (avisos: AvisosStatus): AvisosState =>
 const PRIVACIDAD = 'x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders'
 const NOTIFICACIONES = 'x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.apple.reminders'
 
-function AvisosPanel({ avisos }: { avisos: AvisosStatus }) {
+function AvisosPanel({ avisos, inbox }: { avisos: AvisosStatus; inbox: string }) {
   const state = avisosState(avisos)
   const count = avisos.programados ?? 0
   return (
@@ -128,6 +96,13 @@ function AvisosPanel({ avisos }: { avisos: AvisosStatus }) {
         </p>
       )}
       <div className="avisos-style">
+        <h4>Siri</h4>
+        <p>
+          Para que lo que le dictes a Siri llegue a la Bandeja. En el iPhone: Ajustes › Recordatorios › Lista por omisión ›
+          Tablero · {inbox}.
+        </p>
+      </div>
+      <div className="avisos-style">
         <h4>Globos y sonido</h4>
         <p>
           Cómo se muestran los avisos lo decide cada dispositivo. En el iPhone: Ajustes › Notificaciones › Recordatorios ›
@@ -144,9 +119,12 @@ function AvisosPanel({ avisos }: { avisos: AvisosStatus }) {
 export function TopBar() {
   const now = useNow()
   const ui = useUI()
+  const inbox = useBoard().columns.find((c) => c.inbox)?.name ?? 'Bandeja'
   const install = useInstallPrompt()
   const helpButton = useRef<HTMLButtonElement>(null)
-  const [helpOpen, setHelpOpen] = useState(false)
+  // La ayuda se abre también con «?» y desde la búsqueda (src/keys.ts).
+  const helpOpen = ui.shortcutsOpen
+  const setHelpOpen = ui.setShortcutsOpen
   const avisosButton = useRef<HTMLButtonElement>(null)
   const [avisosOpen, setAvisosOpen] = useState(false)
   const avisos = ui.avisos ? avisosState(ui.avisos) : null
@@ -160,17 +138,6 @@ export function TopBar() {
       .catch(() => {})
   }, [helpOpen])
 
-  // «?» abre la ayuda de atajos.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== '?' || e.metaKey || e.ctrlKey || isTyping(e.target) || document.querySelector('.popover')) return
-      e.preventDefault()
-      setHelpOpen(true)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
   return (
     <header className="topbar">
       <div className="topbar-title">
@@ -182,6 +149,7 @@ export function TopBar() {
         value={ui.view}
         onChange={ui.setView}
         options={[
+          { value: 'today', label: 'Hoy', hint: 'D' },
           { value: 'board', label: 'Tablero', hint: 'T' },
           { value: 'calendar', label: 'Calendario', hint: 'C' },
         ]}
@@ -213,9 +181,12 @@ export function TopBar() {
           aria-label="Atajos de teclado"
           title="Atajos de teclado (?)"
           aria-expanded={helpOpen}
-          onClick={() => setHelpOpen((open) => !open)}
+          onClick={() => setHelpOpen(!helpOpen)}
         >
           <Icon.Keyboard />
+        </button>
+        <button type="button" className="icon-btn" aria-label="Buscar" title="Buscar (⌘K)" onClick={ui.openSearch}>
+          <Icon.Search />
         </button>
         <button type="button" className="btn" onClick={ui.newColumn} title="Nueva columna (⇧N)">
           <Icon.Plus />
@@ -225,26 +196,51 @@ export function TopBar() {
 
       {avisosOpen && ui.avisos && avisosButton.current && (
         <Popover anchor={avisosButton.current} placement="below-end" width={320} label="Avisos en el iPhone" onClose={() => setAvisosOpen(false)}>
-          <AvisosPanel avisos={ui.avisos} />
+          <AvisosPanel avisos={ui.avisos} inbox={inbox} />
         </Popover>
       )}
       {helpOpen && helpButton.current && (
-        <Popover anchor={helpButton.current} placement="below-end" width={300} label="Atajos de teclado" className="shortcuts" onClose={() => setHelpOpen(false)}>
-          {SHORTCUTS.map(([section, items]) => (
-            <section key={section}>
-              <h3>{section}</h3>
-              <dl>
-                {items.map(([keys, description]) => (
-                  <div key={description}>
-                    <dt>
-                      {keys.map((key) => (key === '…' ? <span key={key}>–</span> : <kbd key={key}>{key}</kbd>))}
-                    </dt>
-                    <dd>{description}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ))}
+        <Popover
+          anchor={helpButton.current}
+          placement="below-end"
+          width={600}
+          label="Atajos de teclado"
+          className="shortcuts"
+          onClose={() => setHelpOpen(false)}
+        >
+          <div className="shortcuts-grid">
+            {SHORTCUTS.map((section) => (
+              <section key={section.title}>
+                <h3>{section.title}</h3>
+                {section.note && <p className="shortcuts-note">{section.note}</p>}
+                <dl>
+                  {section.items.map((item) => (
+                    <div key={item.label}>
+                      <dt>
+                        {item.keys.map((combo, i) => (
+                          <Fragment key={combo.join('')}>
+                            {i > 0 && <span className="shortcuts-or">o</span>}
+                            {combo.map((key, j) =>
+                              key === '…' ? (
+                                <span key={j}>–</span>
+                              ) : key === 'clic' ? (
+                                <span key={j} className="shortcuts-click">
+                                  clic
+                                </span>
+                              ) : (
+                                <kbd key={j}>{key}</kbd>
+                              ),
+                            )}
+                          </Fragment>
+                        ))}
+                      </dt>
+                      <dd>{item.label}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ))}
+          </div>
           {appVersion && <p className="shortcuts-version">Tablero {appVersion === 'dev' ? '(desarrollo)' : appVersion}</p>}
         </Popover>
       )}

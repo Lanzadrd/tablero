@@ -20,6 +20,8 @@
   --pop-bg: rgba(255, 255, 255, 0.86);
   --toast-bg: rgba(29, 29, 31, 0.9);
   --seg-thumb: #ffffff;
+  /* Opciones no elegidas del control segmentado: 4,5:1 sobre su relleno */
+  --seg-text: #5e5e63;
   --shadow-col: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-lift: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 16px 36px rgba(0, 0, 0, 0.16), 0 3px 8px rgba(0, 0, 0, 0.06);
   --shadow-pop: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 22px 60px rgba(0, 0, 0, 0.18), 0 4px 14px rgba(0, 0, 0, 0.06);
@@ -63,6 +65,7 @@
     --pop-bg: rgba(44, 44, 46, 0.86);
     --toast-bg: rgba(58, 58, 60, 0.92);
     --seg-thumb: #636366;
+    --seg-text: #98989d;
     --shadow-col: 0 0 0 0.5px rgba(255, 255, 255, 0.07);
     --shadow-lift: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 16px 36px rgba(0, 0, 0, 0.55);
     --shadow-pop: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 22px 60px rgba(0, 0, 0, 0.6);
@@ -260,7 +263,8 @@ code {
   width: env(titlebar-area-width, 100%);
   height: env(titlebar-area-height, var(--bar-h));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  /* Los botones nunca menos anchos que ellos mismos: con poco sitio se encoge el título, no se montan. */
+  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
   align-items: center;
   gap: 12px;
   padding: 0 16px 0 26px;
@@ -271,6 +275,7 @@ code {
 
 .topbar-title {
   min-width: 0;
+  overflow: hidden;
   display: flex;
   align-items: baseline;
   gap: 10px;
@@ -451,6 +456,7 @@ code {
 }
 
 .column-body {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -489,6 +495,8 @@ code {
 
 .task-clip {
   min-height: 0;
+  /* Sin esto, una línea de notas larga (que no se parte) ensancha la fila más allá de la columna. */
+  min-width: 0;
 }
 
 .task-collapse.is-leaving {
@@ -500,7 +508,9 @@ code {
   overflow: hidden;
 }
 
+/* relative: los textos .sr-only de dentro quedan en la fila y no alargan la página. */
 .task {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -737,6 +747,10 @@ code {
 .popover {
   position: fixed;
   z-index: 100;
+  /* Nunca más alto que la ventana: si no cabe, se desplaza por dentro (p. ej. un detalle largo). */
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 14px;
   background: var(--pop-bg);
   -webkit-backdrop-filter: blur(28px) saturate(180%);
@@ -891,6 +905,11 @@ code {
   flex-direction: column;
   gap: 10px;
   padding: 14px 14px 10px;
+}
+
+/* Si no cabe en la ventana, se desplaza el panel entero (nada se encoge). */
+.sheet > * {
+  flex-shrink: 0;
 }
 
 .sheet-head {
@@ -1199,7 +1218,7 @@ select.input {
   background: none;
   font-size: 12.5px;
   font-weight: 500;
-  color: var(--text-2);
+  color: var(--seg-text);
   white-space: nowrap;
   transition: color 160ms;
 }
@@ -1556,27 +1575,6 @@ select.input {
 
 .quick-add-target:hover {
   background: color-mix(in srgb, var(--tint) 16%, transparent);
-}
-
-.time-preview {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  height: 20px;
-  padding: 0 7px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  font-size: 11.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--accent-text);
-  animation: fade-in 150ms ease;
-}
-
-.time-preview svg {
-  width: 11px;
-  height: 11px;
 }
 
 /* Popover de un día */

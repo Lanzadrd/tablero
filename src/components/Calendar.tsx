@@ -1,16 +1,9 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type DragEvent,
-} from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties } from 'react'
 import { useActions, useBoard, useNow, useUI } from '../context'
 import {
   addDays,
   addMonths,
+  dueState,
   formatLongDate,
   formatMonth,
   formatMonthShort,
@@ -19,61 +12,28 @@ import {
   fromISODate,
   isWeekend,
   monthGrid,
-  parseTime,
   startOfWeek,
   todayISO,
 } from '../dates'
-import { tasksByDay, type Column, type DayItem } from '../model'
-import { cx, isTyping, tint, useStoredState } from '../util'
+import { hasTaskTarget } from '../keys'
+import { findLinks, withoutLinks } from '../links'
+import { tasksByDay, type Column, type DayItem, type Task } from '../model'
+import { useSelected } from '../selection'
+import { activeColumns } from '../today'
+import { cx, isTyping, splitLines, tint, useStoredState } from '../util'
 import * as Icon from './Icons'
+import { startDrag, useDropTarget } from './drag'
+import { ChipLink, Linkified } from './Links'
+import { draftFrom, ParsePreview, useAddDrafts, useParser, type Draft } from './NaturalAdd'
 import { Menu, Popover } from './Popover'
 import { Segmented } from './Segmented'
-import { CheckButton } from './TaskRow'
+import { CheckButton, RepeatMark, taskRowA11y } from './TaskRow'
+import { UndatedPanel } from './Undated'
 
 type Mode = 'month' | 'week'
 
-/** Tipo propio para arrastrar tareas entre días (no se confunde con texto). */
-const TASK_MIME = 'application/x-tablero-tarea'
-
-const startDrag = (taskId: string) => (e: DragEvent) => {
-  e.dataTransfer.setData(TASK_MIME, taskId)
-  e.dataTransfer.effectAllowed = 'move'
-}
-
-/** Un día que acepta tareas soltadas encima. */
-function useDropTarget(onDropTask: (taskId: string) => void) {
-  const [over, setOver] = useState(false)
-  const depth = useRef(0)
-  const accepts = (e: DragEvent) => e.dataTransfer.types.includes(TASK_MIME)
-  return {
-    over,
-    handlers: {
-      onDragEnter: (e: DragEvent) => {
-        if (!accepts(e)) return
-        depth.current += 1
-        setOver(true)
-      },
-      onDragOver: (e: DragEvent) => {
-        if (!accepts(e)) return
-        e.preventDefault()
-        e.dataTransfer.dropEffect = 'move'
-      },
-      onDragLeave: (e: DragEvent) => {
-        if (!accepts(e)) return
-        depth.current = Math.max(0, depth.current - 1)
-        if (depth.current === 0) setOver(false)
-      },
-      onDrop: (e: DragEvent) => {
-        if (!accepts(e)) return
-        e.preventDefault()
-        depth.current = 0
-        setOver(false)
-        const id = e.dataTransfer.getData(TASK_MIME)
-        if (id) onDropTask(id)
-      },
-    },
-  }
-}
+/** Pendiente de un día pasado, o de hoy con la hora ya pasada (como en el tablero). */
+const isOverdue = (task: Task, now: Date) => !task.done && task.due !== null && dueState(task.due, task.time, now) === 'overdue'
 
 export function CalendarView() {
   const board = useBoard()
@@ -83,19 +43,28 @@ export function CalendarView() {
   const today = todayISO(now)
   const [mode, setMode] = useStoredState<Mode>('tablero.calendario.modo', 'month')
   const [storedColumn, setStoredColumn] = useStoredState<string | null>('tablero.calendario.columna', null)
+  const [undatedOpen, setUndatedOpen] = useStoredState('tablero.calendario.sin-fecha', false)
   const [cursor, setCursor] = useState(today)
   const [dayPopover, setDayPopover] = useState<{ day: string; anchor: HTMLElement } | null>(null)
   const [pendingAdd, setPendingAdd] = useState<string | null>(null)
-  const days = useMemo(() => tasksByDay(board), [board])
+  // Sube con cada «Hoy» (H, el botón, N): en la semana, hoy vuelve a la vista aunque ya fuera esta semana.
+  const [todayTick, setTodayTick] = useState(0)
+  // Las columnas archivadas no salen en el calendario.
+  const columns = useMemo(() => activeColumns(board), [board])
+  const days = useMemo(() => tasksByDay({ ...board, columns }), [board, columns])
 
   // Las tareas nuevas del calendario van a la última columna elegida.
-  const column = board.columns.find((c) => c.id === storedColumn) ?? board.columns[0] ?? null
-  const target = column && { column, columns: board.columns, onColumn: setStoredColumn }
+  const column = columns.find((c) => c.id === storedColumn) ?? columns[0] ?? null
+  const target = column && { column, columns, onColumn: setStoredColumn }
 
   const move = (direction: -1 | 1) =>
     setCursor((c) => (mode === 'month' ? addMonths(c, direction) : addDays(c, 7 * direction)))
   const reschedule = (taskId: string, day: string) => actions.updateTask(taskId, { due: day })
   const openDay = (day: string, anchor: HTMLElement) => setDayPopover({ day, anchor })
+  const goToday = () => {
+    setCursor(today)
+    setTodayTick((n) => n + 1)
+  }
 
   // «N»: nueva tarea para hoy, cuando hoy ya está en pantalla.
   useEffect(() => {
@@ -111,14 +80,16 @@ export function CalendarView() {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return
       if (document.querySelector('.popover')) return
+      // Con una tarea con el foco o seleccionada, H, S, M y ←→ son suyas (src/keys.ts).
+      if (e.key !== 'n' && hasTaskTarget()) return
       const handlers: Record<string, () => void> = {
         ArrowLeft: () => move(-1),
         ArrowRight: () => move(1),
-        h: () => setCursor(today),
+        h: goToday,
         s: () => setMode('week'),
         m: () => setMode('month'),
         n: () => {
-          setCursor(today)
+          goToday()
           setPendingAdd(today)
         },
       }
@@ -145,7 +116,7 @@ export function CalendarView() {
           >
             <Icon.ChevronLeft />
           </button>
-          <button type="button" className="btn" title="Ir a hoy (H)" onClick={() => setCursor(today)}>
+          <button type="button" className="btn" title="Ir a hoy (H)" onClick={goToday}>
             Hoy
           </button>
           <button
@@ -158,6 +129,19 @@ export function CalendarView() {
             <Icon.Chevron />
           </button>
         </div>
+        {mode === 'week' && (
+          <button
+            type="button"
+            className="btn undated-toggle"
+            aria-pressed={undatedOpen}
+            aria-controls={undatedOpen ? 'sin-fecha' : undefined}
+            title={undatedOpen ? 'Ocultar las tareas sin fecha' : 'Ver las tareas sin fecha para arrastrarlas a un día'}
+            onClick={() => setUndatedOpen(!undatedOpen)}
+          >
+            <Icon.Sidebar />
+            Sin fecha
+          </button>
+        )}
         <Segmented
           label="Vista del calendario"
           value={mode}
@@ -169,7 +153,7 @@ export function CalendarView() {
         />
       </header>
 
-      {board.columns.length === 0 ? (
+      {columns.length === 0 ? (
         <div className="splash">
           <div>
             <h2>Aún no hay columnas</h2>
@@ -189,7 +173,17 @@ export function CalendarView() {
       ) : mode === 'month' ? (
         <MonthView cursor={cursor} today={today} days={days} onOpenDay={openDay} onDrop={reschedule} />
       ) : (
-        <WeekView cursor={cursor} today={today} days={days} target={target} onDrop={reschedule} />
+        <div className="week-wrap">
+          <WeekView
+            cursor={cursor}
+            today={today}
+            days={days}
+            target={target}
+            onDrop={reschedule}
+            reveal={`${todayTick}:${undatedOpen}`}
+          />
+          {undatedOpen && <UndatedPanel id="sin-fecha" />}
+        </div>
       )}
 
       {dayPopover && (
@@ -294,6 +288,7 @@ function DayCell({
     <div
       ref={ref}
       data-day={day}
+      data-task-list
       className={cx('day', outside && 'is-outside', isToday && 'is-today', isWeekend(day) && 'is-weekend', over && 'is-over')}
       onClick={(e) => {
         if (!(e.target as HTMLElement).closest('.cal-chip, .day-more, .day-number')) open()
@@ -322,19 +317,35 @@ function DayCell({
 /** Tarea en el mes: con hora, punto de color; sin hora, barra de color (como Calendario de Apple). */
 function CalendarChip({ item: { task, column } }: { item: DayItem }) {
   const ui = useUI()
+  const selected = useSelected(task.id)
+  const overdue = isOverdue(task, useNow())
+  // Un enlace del título se ve como una marca (el texto, sin la URL).
+  const link = findLinks(task.title)[0]
+  const text = link ? withoutLinks(task.title) : task.title
   return (
     <button
       type="button"
       draggable
-      className={cx('cal-chip', !task.time && 'is-allday', task.done && 'is-done', ui.openTaskId === task.id && 'is-open')}
+      className={cx(
+        'cal-chip',
+        !task.time && 'is-allday',
+        task.done && 'is-done',
+        overdue && 'is-overdue',
+        ui.openTaskId === task.id && 'is-open',
+        selected && 'is-selected',
+      )}
       style={tint(column.color)}
-      title={`${task.time ? `${task.time} · ` : ''}${task.title} — ${column.name}`}
+      data-task-id={task.id}
+      title={`${overdue ? 'Vencida · ' : ''}${task.time ? `${task.time} · ` : ''}${task.title} — ${column.name}`}
       onDragStart={startDrag(task.id)}
       onClick={(e) => ui.openTask(task.id, e.currentTarget)}
     >
+      {overdue && <span className="sr-only">Vencida:</span>}
       {task.time && <span className="cal-dot" />}
       {task.time && <span className="cal-time">{task.time}</span>}
-      <span className="cal-chip-title">{task.title || 'Sin título'}</span>
+      {overdue && !task.time && <Icon.Alert />}
+      {(text || !link) && <span className="cal-chip-title">{text || 'Sin título'}</span>}
+      {link && <ChipLink link={link} />}
     </button>
   )
 }
@@ -345,17 +356,33 @@ function WeekView({
   days,
   target,
   onDrop,
+  reveal,
 }: {
   cursor: string
   today: string
   days: Map<string, DayItem[]>
   target: Target | null
   onDrop: (taskId: string, day: string) => void
+  /** Al cambiar (ir a hoy, abrir o cerrar «Sin fecha»), hoy vuelve a la vista. */
+  reveal: string
 }) {
   const start = startOfWeek(cursor)
   const week = Array.from({ length: 7 }, (_, i) => addDays(start, i))
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Con poco ancho (p. ej. con «Sin fecha» abierto) los días se desplazan en horizontal: hoy, a la vista.
+  useLayoutEffect(() => {
+    const el = ref.current
+    const day = el?.querySelector<HTMLElement>('.week-day.is-today')
+    if (!el || !day) return
+    const box = el.getBoundingClientRect()
+    const rect = day.getBoundingClientRect()
+    if (rect.right > box.right) el.scrollLeft += rect.right - box.right
+    else if (rect.left < box.left) el.scrollLeft -= box.left - rect.left
+  }, [start, reveal])
+
   return (
-    <div className="week">
+    <div ref={ref} className="week">
       {week.map((day) => (
         <WeekDay key={day} day={day} isToday={day === today} items={days.get(day) ?? []} target={target} onDrop={onDrop} />
       ))}
@@ -380,6 +407,7 @@ function WeekDay({
   return (
     <section
       data-day={day}
+      data-task-list
       aria-label={formatLongDate(day)}
       className={cx('week-day', isToday && 'is-today', isWeekend(day) && 'is-weekend', over && 'is-over')}
       {...handlers}
@@ -401,11 +429,15 @@ function WeekDay({
 function AgendaRow({ item: { task, column }, onOpen }: { item: DayItem; onOpen?: (anchor: HTMLElement) => void }) {
   const actions = useActions()
   const ui = useUI()
+  const selected = useSelected(task.id)
+  const overdue = isOverdue(task, useNow())
   const open = (anchor: HTMLElement) => (onOpen ? onOpen(anchor) : ui.openTask(task.id, anchor))
   return (
     <div
-      className={cx('task', 'agenda-row', task.done && 'is-checked', ui.openTaskId === task.id && 'is-open')}
+      className={cx('task', 'agenda-row', task.done && 'is-checked', ui.openTaskId === task.id && 'is-open', selected && 'is-selected')}
       style={tint(column.color)}
+      data-task-id={task.id}
+      {...taskRowA11y(task.title)}
       draggable
       tabIndex={0}
       onDragStart={startDrag(task.id)}
@@ -419,14 +451,17 @@ function AgendaRow({ item: { task, column }, onOpen }: { item: DayItem; onOpen?:
     >
       <CheckButton checked={task.done} title={task.title} onToggle={() => actions.setDone(task.id, !task.done)} />
       <div className="task-main">
-        <div className="task-title">{task.title || 'Sin título'}</div>
+        <div className="task-title">{task.title ? <Linkified text={task.title} /> : 'Sin título'}</div>
         <div className="agenda-meta">
-          {task.time && (
-            <span className="agenda-time">
-              <Icon.Bell />
+          {/* Atrasada, como en el tablero y en Hoy: en rojo y con el icono de alerta. */}
+          {(task.time || overdue) && (
+            <span className={cx('agenda-time', overdue && 'is-overdue')} title={overdue ? 'Atrasada' : undefined}>
+              {overdue ? <Icon.Alert /> : <Icon.Bell />}
+              {overdue && <span className="sr-only">{task.time ? 'Vencida:' : 'Vencida'}</span>}
               {task.time}
             </span>
           )}
+          <RepeatMark task={task} className="agenda-repeat" />
           <span className="agenda-column">
             <span className="cal-dot" />
             {column.name}
@@ -437,17 +472,35 @@ function AgendaRow({ item: { task, column }, onOpen }: { item: DayItem; onOpen?:
   )
 }
 
-/** «Nueva tarea» para un día. Entiende horas: «Dentista 10:30», «18h Pádel»… */
+/**
+ * «Nueva tarea» para un día. Entiende lenguaje natural («Dentista 10:30 #salud cada mes»):
+ * el día es siempre el de la celda; la hora, la #columna y la repetición sí se usan. ⌥↩: tal cual.
+ */
 function CalendarQuickAdd({ day, column, columns, onColumn, autoFocus = false }: Target & { day: string; autoFocus?: boolean }) {
-  const actions = useActions()
+  const parse = useParser()
+  const addDrafts = useAddDrafts()
+  const previewId = useId()
   const [value, setValue] = useState('')
   const [menu, setMenu] = useState<HTMLElement | null>(null)
-  const parsed = parseTime(value)
+  const parsed = useMemo(() => (value.trim() ? parse(value) : null), [parse, value])
 
-  const add = () => {
-    if (!parsed.title) return
-    actions.addTasks(column.id, [parsed.title], { due: day, time: parsed.time })
+  const add = (raw: boolean) => {
+    const draft = draftFrom(value, { parsed: raw ? null : parsed, columnId: column.id, day })
+    if (!draft) return
+    addDrafts([draft], column.id)
     setValue('')
+  }
+
+  const onPaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData('text')
+    if (!text.includes('\n')) return
+    // Varias líneas pegadas = varias tareas para este día.
+    e.preventDefault()
+    const drafts = splitLines(text).map((line) => draftFrom(line, { parsed: parse(line), columnId: column.id, day }))
+    addDrafts(
+      drafts.filter((d): d is Draft => d !== null),
+      column.id,
+    )
   }
 
   return (
@@ -467,23 +520,23 @@ function CalendarQuickAdd({ day, column, columns, onColumn, autoFocus = false }:
         data-autofocus={autoFocus || undefined}
         placeholder="Nueva tarea"
         aria-label={`Nueva tarea para el ${formatLongDate(day).toLowerCase()}`}
+        aria-describedby={parsed ? previewId : undefined}
         onChange={(e) => setValue(e.target.value)}
+        onPaste={onPaste}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
             e.preventDefault()
-            add()
+            add(e.altKey)
           } else if (e.key === 'Escape' && value) {
             e.stopPropagation()
             setValue('')
+          } else if (e.key === 'Escape') {
+            // Vacío: Esc sale del campo (como «Nueva tarea» del tablero) y vuelven los atajos.
+            e.currentTarget.blur()
           }
         }}
       />
-      {parsed.time && parsed.title && (
-        <span className="time-preview" title="Se guardará con esta hora">
-          <Icon.Bell />
-          {parsed.time}
-        </span>
-      )}
+      {parsed && <ParsePreview id={previewId} parsed={parsed} day={day} />}
       {menu && (
         <Menu
           anchor={menu}

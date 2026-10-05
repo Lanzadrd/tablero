@@ -9,6 +9,8 @@
     "instalar": "node scripts/instalar.mjs",
     "publicar": "node scripts/publicar.mjs",
     "empaquetar": "node scripts/empaquetar.mjs",
+    "firma": "node scripts/firma.mjs",
+    "mcp": "node scripts/mcp.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "start": "node server/index.mjs",

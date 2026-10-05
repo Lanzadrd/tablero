@@ -52,6 +52,17 @@ function addMonths(iso, n) {
   return toISO(d)
 }
 
+/** «a las 7 de la tarde» → 19:00; «a las 12 de la noche» → 00:00; «a la 1 de la madrugada» → 01:00. */
+function partOfDay(h, m, part) {
+  const hour = Number(h)
+  if (hour < 1 || hour > 12) return null
+  let h24 = hour
+  if (part === 'tarde') h24 = hour === 12 ? 12 : hour + 12
+  else if (part === 'noche') h24 = hour === 12 ? 0 : hour >= 6 ? hour + 12 : hour
+  else if (part === 'madrugada') h24 = hour === 12 ? 0 : hour
+  return makeTime(h24, m ?? 0)
+}
+
 function makeTime(h, m = 0, suffix = '') {
   let hour = Number(h)
   const minute = Number(m)
@@ -98,14 +109,21 @@ const END_RULES = [
     re: new RegExp(`(?:^|\\s)(?:cada|todos los) ${WD}s?$`),
     apply: (m, ctx) => ({ repeat: { every: 'week' }, weekdayDue: nextWeekday(ctx.today, WEEKDAYS.indexOf(m[1]), true) }),
   },
-  // Horas: «10:30», «a las 9», «a las 9:15», «9pm», «a mediodía». «18h» al final no:
-  // «Estudiar 2h» es una duración.
+  // Horas: «10:30», «a las 9», «a las 9:15», «9pm», «a mediodía», «a las 7 de la tarde». «18h» al
+  // final no: «Estudiar 2h» es una duración.
+  {
+    kind: 'hora',
+    re: /(?:^|\s)a las? (\d{1,2})(?::(\d{2}))? de la (manana|tarde|noche|madrugada)$/,
+    apply: (m) => time(partOfDay(m[1], m[2], m[3])),
+  },
   { kind: 'hora', re: /(?:^|\s)(?:a las? )?(\d{1,2}):(\d{2})\s*(?:h|(am|pm))?$/, apply: (m) => time(makeTime(m[1], m[2], m[3])) },
   { kind: 'hora', re: /(?:^|\s)a las? (\d{1,2})\s*(?:h|(am|pm))?$/, apply: (m) => time(makeTime(m[1], 0, m[2])) },
   { kind: 'hora', re: /(?:^|\s)(\d{1,2})\s*(am|pm)$/, apply: (m) => time(makeTime(m[1], 0, m[2])) },
   { kind: 'hora', re: /(?:^|\s)a mediodia$/, apply: () => time('12:00') },
   // Fechas
   { kind: 'fecha', re: /(?:^|\s)hoy$/, apply: (m, ctx) => ({ due: ctx.today }) },
+  { kind: 'fecha', re: /(?:^|\s)esta (?:tarde|noche)$/, apply: (m, ctx) => ({ due: ctx.today }) },
+  { kind: 'fecha', re: /(?:^|\s)ayer$/, apply: (m, ctx) => ({ due: addDays(ctx.today, -1) }) },
   { kind: 'fecha', re: /(?:^|\s)pasado manana$/, apply: (m, ctx) => ({ due: addDays(ctx.today, 2) }) },
   {
     kind: 'fecha',
@@ -152,6 +170,7 @@ const END_RULES = [
 // Reglas al PRINCIPIO: «Mañana llamar a Marta», «10:30 dentista», «18h pádel», «el lunes revisar…».
 const START_RULES = [
   { kind: 'fecha', re: /^hoy(?=\s)/, apply: (m, ctx) => ({ due: ctx.today }) },
+  { kind: 'fecha', re: /^ayer(?=\s)/, apply: (m, ctx) => ({ due: addDays(ctx.today, -1) }) },
   { kind: 'fecha', re: /^pasado manana(?=\s)/, apply: (m, ctx) => ({ due: addDays(ctx.today, 2) }) },
   { kind: 'fecha', re: /^manana(?=\s)/, apply: (m, ctx) => ({ due: addDays(ctx.today, 1) }) },
   { kind: 'fecha', re: new RegExp(`^(?:el |este |el proximo )?${WD}(?=\\s)`), apply: (m, ctx) => ({ due: nextWeekday(ctx.today, WEEKDAYS.indexOf(m[1])) }) },
@@ -185,23 +204,26 @@ function textualDate(d, mo, year, ctx) {
   return iso ? { due: iso } : null
 }
 
-/** La columna a la que se refiere «#trabajo», «#flota»… (sin mayúsculas ni acentos ni espacios). */
-export function findColumn(tag, columns = []) {
+/**
+ * La columna a la que se refiere «#trabajo», «#flota»… (sin mayúsculas ni acentos ni espacios): el
+ * nombre entero, su principio o un trozo. Con `strict` (donde no hay vista previa que avise, como
+ * en lo que llega del iPhone), solo el nombre entero o su principio de 3 letras o más.
+ */
+export function findColumn(tag, columns = [], { strict = false } = {}) {
   const key = fold(tag).replace(/[\s_-]+/g, '')
   if (!key) return null
   const named = columns.map((c) => ({ column: c, name: fold(c.name).replace(/[\s_-]+/g, '') }))
-  return (
-    named.find((c) => c.name === key) ??
-    named.find((c) => c.name.startsWith(key)) ??
-    named.find((c) => c.name.includes(key))
-  )?.column ?? null
+  const exact = named.find((c) => c.name === key)
+  if (strict) return (exact ?? (key.length >= 3 ? named.find((c) => c.name.startsWith(key)) : undefined))?.column ?? null
+  return (exact ?? named.find((c) => c.name.startsWith(key)) ?? named.find((c) => c.name.includes(key)))?.column ?? null
 }
 
 /**
  * @param {string} input lo escrito
- * @param {{ today: string, columns?: {id: string, name: string}[] }} ctx today = 'AAAA-MM-DD' local
+ * @param {{ today: string, time?: string, columns?: {id: string, name: string}[] }} ctx today = 'AAAA-MM-DD'
+ *   local; time = 'HH:MM' local de ahora (si se sabe: una hora sin día que ya ha pasado es para mañana)
  */
-export function parseTask(input, { today, columns = [] }) {
+export function parseTask(input, { today, time: now = null, columns = [] }) {
   const original = input.normalize('NFC').replace(/\s+/g, ' ').trim()
   const result = { title: original, due: null, time: null, columnId: null, repeat: null, someday: false, matches: [] }
   let text = original
@@ -266,13 +288,26 @@ export function parseTask(input, { today, columns = [] }) {
     result.repeat = null
   } else {
     if (!result.due && weekdayDue) result.due = weekdayDue
-    // Una hora o una repetición sin día empiezan hoy.
+    // Una hora o una repetición sin día empiezan hoy; una hora sola que ya ha pasado, mañana.
     if (!result.due && (result.time || result.repeat)) {
       result.due = result.repeat?.every === 'weekday' && [0, 6].includes(fromISO(today).getDay()) ? nextWeekday(today, 1) : today
+      if (!result.repeat && now && result.time < now) result.due = addDays(today, 1)
     }
   }
   return result
 }
+
+/** Día de la semana (0 = domingo) de una repetición como «cada lunes», o null si no es de esas. */
+export function repeatWeekday(parsed) {
+  if (parsed?.repeat?.every !== 'week') return null
+  const match = parsed.matches.find((m) => m.kind === 'repetir')
+  const words = match ? fold(match.text).split(/\s+/) : []
+  const day = WEEKDAYS.findIndex((w) => words.includes(w) || words.includes(`${w}s`))
+  return day === -1 ? null : day
+}
+
+/** El primer día de la semana `weekday` (0 = domingo) desde `from` incluido. */
+export const weekdayFrom = (from, weekday) => nextWeekday(from, weekday, true)
 
 const LONG = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })
 const REPEAT_LABEL = { day: 'cada día', weekday: 'laborables', week: 'cada semana', month: 'cada mes', year: 'cada año' }

@@ -1,0 +1,460 @@
+/* ─────────── Teclado: selección, barra de selección, búsqueda y ayuda de atajos ─────────── */
+
+:root {
+  --selected: color-mix(in srgb, var(--accent) 12%, transparent);
+  --selected-hover: color-mix(in srgb, var(--accent) 18%, transparent);
+  --backdrop: rgba(0, 0, 0, 0.08);
+  /* Lo encontrado en la búsqueda: como un rotulador amarillo */
+  --found: color-mix(in srgb, var(--c-yellow) 42%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --selected: color-mix(in srgb, var(--accent) 22%, transparent);
+    --selected-hover: color-mix(in srgb, var(--accent) 30%, transparent);
+    --backdrop: rgba(0, 0, 0, 0.32);
+    --found: color-mix(in srgb, var(--c-yellow) 30%, transparent);
+  }
+}
+
+/* ───────── Tareas seleccionadas (el foco lleva su anillo de siempre) ───────── */
+/* Este archivo va antes que styles.css: los selectores llevan una clase más para ganar. */
+
+.task.is-selected,
+.task.is-selected.is-open {
+  background: var(--selected);
+}
+
+.task.is-selected:hover {
+  background: var(--selected-hover);
+}
+
+.cal-chip.is-selected,
+.cal-chip.is-selected:hover,
+.cal-chip.is-allday.is-selected {
+  background: var(--selected-hover);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* ───────── Barra de selección ───────── */
+
+.selection-bar {
+  position: fixed;
+  z-index: 90;
+  left: 50%;
+  bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100vw - 24px);
+  min-height: 44px;
+  padding: 5px 5px 5px 16px;
+  overflow-x: auto;
+  border-radius: 999px;
+  background: var(--pop-bg);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: var(--shadow-pop);
+  font-size: 13px;
+  transform: translateX(-50%);
+  animation: selection-in 260ms var(--ease);
+}
+
+@keyframes selection-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px) scale(0.98);
+  }
+}
+
+.selection-count {
+  flex: none;
+  padding-right: 4px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.selection-sep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--separator);
+}
+
+.selection-bar button {
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 120ms, color 120ms;
+}
+
+.selection-bar button:hover,
+.selection-bar button[aria-expanded='true'] {
+  background: var(--fill);
+}
+
+.selection-bar button.is-danger {
+  color: var(--overdue);
+}
+
+.selection-bar button.is-danger:hover {
+  background: color-mix(in srgb, var(--c-red) 12%, transparent);
+}
+
+.selection-bar .selection-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  margin-left: 2px;
+  padding: 0;
+  color: var(--text-2);
+}
+
+.selection-bar .selection-close:hover {
+  color: var(--text);
+}
+
+/* Con la barra a la vista, la fila con el foco se queda por encima de ella al desplazarse */
+body:has(.selection-bar) [data-task-id] {
+  scroll-margin-bottom: 84px;
+}
+
+/* Los avisos suben para no taparla */
+body:has(.selection-bar) .toast {
+  bottom: 82px;
+}
+
+body:has(.selection-bar) .toast.is-update {
+  bottom: 130px;
+}
+
+/* ───────── Búsqueda (⌘K) ───────── */
+
+.search-backdrop {
+  position: fixed;
+  z-index: 300;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: max(64px, 14vh) 16px 16px;
+  background: var(--backdrop);
+  animation: fade-in 160ms ease;
+}
+
+.search-palette {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  max-height: min(580px, calc(100dvh - 96px));
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--pop-bg);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  box-shadow: var(--shadow-pop);
+  animation: search-in 220ms var(--ease);
+}
+
+@keyframes search-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+
+.search-field {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 14px 0 18px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.search-field svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--text-2);
+}
+
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 19px;
+  letter-spacing: -0.016em;
+}
+
+.search-field input::placeholder {
+  color: var(--text-3);
+}
+
+/* El campo es lo único con foco en la paleta: no hace falta anillo */
+.search-field input:focus-visible {
+  outline: none;
+}
+
+.search-esc {
+  flex: none;
+}
+
+.search-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 8px 8px;
+}
+
+.search-group {
+  padding: 10px 10px 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  font-size: 13.5px;
+}
+
+.search-item.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.search-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--text-2);
+}
+
+.search-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.search-item.is-active .search-icon {
+  color: #fff;
+}
+
+.search-check {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--tint);
+}
+
+.search-check.is-done {
+  background: var(--tint);
+}
+
+.search-item.is-active .search-check {
+  box-shadow: inset 0 0 0 1.5px #fff;
+}
+
+.search-item.is-active .search-check.is-done {
+  background: #fff;
+}
+
+.search-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-title,
+.search-notes {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.search-notes {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.search-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 42%;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.search-item.is-active .search-notes,
+.search-item.is-active .search-meta {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.search-due {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.search-column {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* En la fila elegida (fondo de acento) todo va en blanco, como en Spotlight */
+.search-item.is-active .cal-dot {
+  background: #fff;
+}
+
+.search-keys {
+  flex: none;
+  display: flex;
+  gap: 3px;
+}
+
+.search-item.is-active kbd {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.search-palette mark {
+  border-radius: 3px;
+  background: var(--found);
+  color: inherit;
+}
+
+.search-item.is-active mark {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.search-empty {
+  margin: 0;
+  padding: 22px 12px;
+  font-size: 13.5px;
+  text-align: center;
+  color: var(--text-2);
+}
+
+.search-foot {
+  flex: none;
+  display: flex;
+  gap: 16px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--separator);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.search-foot kbd {
+  min-width: 18px;
+  margin-right: 2px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+/* ───────── Ayuda de atajos (?) ───────── */
+
+.popover.shortcuts {
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 72px);
+  overflow-y: auto;
+  padding: 14px 18px 12px;
+}
+
+.shortcuts-grid {
+  columns: 2;
+  column-gap: 28px;
+}
+
+.shortcuts-grid section {
+  break-inside: avoid;
+  padding-bottom: 14px;
+}
+
+.shortcuts .shortcuts-grid section + section {
+  margin-top: 0;
+}
+
+.shortcuts .shortcuts-grid dl > div {
+  grid-template-columns: 112px 1fr;
+}
+
+.shortcuts-note {
+  margin: -3px 0 9px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text-2);
+}
+
+.shortcuts-or {
+  padding: 0 2px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.shortcuts-click {
+  padding-left: 2px;
+  font-size: 12px;
+}
+
+.shortcuts .shortcuts-version {
+  margin-top: 0;
+}
+
+@media (max-width: 680px) {
+  .shortcuts-grid {
+    columns: 1;
+  }
+}
+
+/* ───────── Detalle: «Copiar enlace» junto a «Eliminar» ───────── */
+
+.sheet-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ───────── Accesibilidad ───────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .selection-bar,
+  .search-palette {
+    animation-name: fade-in;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .selection-bar,
+  .search-palette {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

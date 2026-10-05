@@ -113,32 +113,6 @@ export const formatLongDate = (iso: string) => capitalize(longDate.format(fromIS
 
 export const isWeekend = (iso: string) => [0, 6].includes(fromISODate(iso).getDay())
 
-/**
- * Saca una hora del texto de una tarea: «10:30 Dentista», «Dentista a las 10:30»,
- * «Dentista 18h», «Cena a las 9». Si no hay hora clara, devuelve el texto tal cual.
- */
-export function parseTime(text: string): { title: string; time: string | null } {
-  // «Estudiar 2h» es una duración, no una hora: al final solo vale «HH:MM» o «a las…».
-  const patterns: Array<[RegExp, 'start' | 'end']> = [
-    [/^(?:a\s+las\s+)?(\d{1,2}):(\d{2})\s*h?\s+(.+)$/i, 'start'],
-    [/^(?:a\s+las\s+)?(\d{1,2})\s*h\s+(.+)$/i, 'start'],
-    [/^(.+?)\s+(?:a\s+las\s+)?(\d{1,2}):(\d{2})\s*h?$/i, 'end'],
-    [/^(.+?)\s+a\s+las\s+(\d{1,2})\s*h?$/i, 'end'],
-  ]
-  for (const [re, where] of patterns) {
-    const m = text.trim().match(re)
-    if (!m) continue
-    const groups = m.slice(1)
-    const title = (where === 'start' ? groups.at(-1) : groups[0])?.trim() ?? ''
-    const [h, min = '0'] = where === 'start' ? groups.slice(0, -1) : groups.slice(1)
-    const hour = Number(h)
-    const minute = Number(min ?? 0)
-    if (!title || hour > 23 || minute > 59) continue
-    return { title, time: `${pad(hour)}:${pad(minute)}` }
-  }
-  return { title: text.trim(), time: null }
-}
-
 export type DueState = 'overdue' | 'today' | 'upcoming'
 
 export function dueState(due: string, time: string | null, now = new Date()): DueState {

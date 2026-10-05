@@ -3,7 +3,7 @@ import type { Board } from './model'
 import type { Actions } from './state'
 import type { AvisosStatus } from './sync'
 
-export type View = 'board' | 'calendar'
+export type View = 'today' | 'board' | 'calendar'
 
 export interface UI {
   /** Estado de los avisos en el iPhone (null hasta saberlo). */
@@ -20,6 +20,17 @@ export interface UI {
   setLastColumn: (columnId: string) => void
   newColumn: () => void
   toast: (message: string, options?: { undo?: boolean }) => void
+  /** Ayuda de atajos de teclado (tecla ?). */
+  shortcutsOpen: boolean
+  setShortcutsOpen: (open: boolean) => void
+  /** Búsqueda (⌘K, /). */
+  openSearch: () => void
+  /** Va al tablero, enseña la tarea con el foco y, si `open`, abre su detalle. false si no existe. */
+  revealTask: (taskId: string, open?: boolean) => boolean
+  /** Guarda ya los cambios pendientes (antes de pedir algo al servidor sobre el tablero guardado). */
+  saveNow: () => Promise<boolean>
+  /** Trae lo guardado (tras un cambio hecho en el servidor, como archivar). */
+  refresh: () => void
 }
 
 export const BoardContext = createContext<Board | null>(null)

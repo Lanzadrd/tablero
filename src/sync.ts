@@ -102,6 +102,24 @@ export class Sync {
     }
   }
 
+  /**
+   * Guarda ya lo pendiente y espera a que esté guardado (antes de pedirle al servidor algo que parte
+   * de lo guardado: archivar, abrir la carpeta de un proyecto…). false si no se ha podido.
+   */
+  async saveNow(): Promise<boolean> {
+    for (let tries = 0; tries < 50; tries++) {
+      if (!this.started || this.stopped) return false
+      if (this.latest === this.saved) return true
+      if (this.saving) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        continue
+      }
+      clearTimeout(this.timer)
+      if (!(await this.flush())) return false
+    }
+    return this.latest === this.saved
+  }
+
   /** Último intento de guardar al cerrar la ventana. */
   flushOnExit() {
     if (!this.latest || this.latest === this.saved) return
@@ -150,9 +168,10 @@ export class Sync {
     this.timer = setTimeout(() => void this.flush(), ms)
   }
 
-  private async flush() {
+  /** false si el guardado ha fallado. */
+  private async flush(): Promise<boolean> {
     const board = this.latest
-    if (this.stopped || this.saving || !board || board === this.saved) return
+    if (this.stopped || this.saving || !board || board === this.saved) return true
     this.saving = true
     let failed = false
     try {
@@ -177,6 +196,7 @@ export class Sync {
       this.saving = false
     }
     if (this.latest !== this.saved) this.schedule(failed ? RETRY_DELAY : 0)
+    return !failed
   }
 
   /** Alguien guardó antes: se combinan sus cambios con los locales y se vuelve a guardar. */

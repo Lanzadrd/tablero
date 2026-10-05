@@ -1,76 +1,22 @@
-// API local de Tablero: lee y guarda el tablero en data/board.json.
+// API local de Tablero: el tablero (almacen.mjs), sus eventos en vivo y las acciones de
+// la app, del ayudante de Recordatorios y del MCP de Claude Code.
 // La usan tanto el servidor de producción (server/index.mjs) como Vite en desarrollo.
-import { copyFile, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { capture, interpret } from './captura.mjs'
+import { DATA_DIR, exclusive, HttpError, localDay, localTime, readArchive, readStore, writeArchive, writeStore } from './almacen.mjs'
 import { applyOperations } from './operaciones.mjs'
+import { claudeUrl, openOnMac, projectFolder, taskPrompt } from './proyectos.mjs'
+import { pageTitle, TitleError } from './titulo.mjs'
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-export const DATA_DIR = process.env.TABLERO_DATA_DIR
-  ? path.resolve(process.env.TABLERO_DATA_DIR)
-  : path.join(ROOT, 'data')
-const BOARD_FILE = path.join(DATA_DIR, 'board.json')
-const BACKUP_DIR = path.join(DATA_DIR, 'copias')
-const KEEP_BACKUPS = 30
+export { DATA_DIR }
+
 const MAX_BODY = 10 * 1024 * 1024
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
-
-class HttpError extends Error {
-  constructor(status, message) {
-    super(message)
-    this.status = status
-  }
-}
-
-async function readStore() {
-  let raw
-  try {
-    raw = await readFile(BOARD_FILE, 'utf8')
-  } catch (err) {
-    if (err.code === 'ENOENT') return { rev: 0, board: null }
-    throw err
-  }
-  try {
-    const data = JSON.parse(raw)
-    return { rev: Number.isInteger(data.rev) ? data.rev : 0, board: data.board ?? null }
-  } catch {
-    // Nunca se sobrescribe un archivo que no se ha podido leer.
-    throw new HttpError(500, `${BOARD_FILE} no es un JSON válido; no se ha modificado.`)
-  }
-}
-
-const localDay = (d = new Date()) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-
-/** Antes del primer guardado de cada día, copia el estado anterior a data/copias/. */
-async function dailyBackup() {
-  const target = path.join(BACKUP_DIR, `board-${localDay()}.json`)
-  try {
-    await mkdir(BACKUP_DIR, { recursive: true })
-    await copyFile(BOARD_FILE, target, 1 /* COPYFILE_EXCL: no pisa la copia del día */)
-  } catch (err) {
-    if (err.code === 'EEXIST' || err.code === 'ENOENT') return
-    throw err
-  }
-  const old = (await readdir(BACKUP_DIR)).filter((f) => /^board-\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort()
-  for (const file of old.slice(0, -KEEP_BACKUPS)) await unlink(path.join(BACKUP_DIR, file))
-}
-
-async function writeStore(rev, board) {
-  await mkdir(DATA_DIR, { recursive: true })
-  await dailyBackup()
-  const tmp = `${BOARD_FILE}.tmp`
-  const payload = { app: 'tablero', version: 1, rev, savedAt: new Date().toISOString(), board }
-  await writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
-  await rename(tmp, BOARD_FILE)
-}
-
-// Las escrituras van de una en una.
-let queue = Promise.resolve()
-function exclusive(fn) {
-  const run = queue.then(fn)
-  queue = run.catch(() => {})
-  return run
+const TITLE_STATUS = {
+  'url-no-valida': 400,
+  'direccion-no-permitida': 403,
+  'demasiadas-redirecciones': 502,
+  'no-se-pudo-leer': 502,
+  'tiempo-agotado': 504,
 }
 
 function readJson(req) {
@@ -130,29 +76,79 @@ async function openEvents(req, res, kind, version) {
   })
 }
 
-/** Cambia campos sueltos de una tarea sobre la versión guardada (lo usa el ayudante de avisos). */
-async function patchTask(taskId, body) {
-  const patch = {}
-  if (typeof body?.done === 'boolean') {
-    patch.done = body.done
-    patch.completedAt = body.done ? (typeof body.completedAt === 'string' ? body.completedAt : new Date().toISOString()) : null
-  }
-  if (Object.keys(patch).length === 0) throw new HttpError(400, 'Nada que cambiar')
+/** Cambia el tablero guardado con `change(board)`; si devuelve algo, se guarda con rev+1. */
+function updateBoard(change) {
   return exclusive(async () => {
     const current = await readStore()
-    const task = current.board?.columns?.flatMap((c) => c.tasks ?? []).find((t) => t.id === taskId)
-    if (!task) throw new HttpError(404, 'Esa tarea ya no existe')
-    Object.assign(task, patch)
+    if (!Array.isArray(current.board?.columns)) throw new HttpError(409, 'Aún no hay tablero')
+    const result = await change(current.board)
+    if (!result) return { rev: current.rev }
     const rev = current.rev + 1
     await writeStore(rev, current.board)
     broadcast('rev', { rev })
-    return { rev }
+    return { rev, ...result }
   })
+}
+
+/** Aplica operaciones (ver operaciones.mjs) sobre la versión guardada. */
+async function operate(ops) {
+  let applied = 0
+  const { rev } = await updateBoard((board) => {
+    applied = applyOperations(board, ops)
+    return applied > 0 && {}
+  })
+  return { rev, aplicadas: applied }
+}
+
+/** Cambia campos sueltos de una tarea (como el ayudante con /api/operaciones). */
+async function patchTask(taskId, body) {
+  if (typeof body?.done !== 'boolean') throw new HttpError(400, 'Nada que cambiar')
+  const { board } = await readStore()
+  if (!board?.columns?.some((c) => c.tasks?.some((t) => t.id === taskId))) throw new HttpError(404, 'Esa tarea ya no existe')
+  const { rev } = await operate([{ op: 'actualizarTarea', id: taskId, cambios: { done: body.done, completedAt: body.completedAt } }])
+  return { rev }
+}
+
+/** Mueve las completadas de una columna a archivo.json. */
+async function archiveCompleted(columnId) {
+  const result = await updateBoard(async (board) => {
+    const column = findColumn(board, columnId)
+    const done = (column.tasks ?? []).filter((t) => t.done)
+    if (!done.length) return null
+    const archivedAt = new Date().toISOString()
+    const ids = new Set(done.map((t) => t.id))
+    // Primero el archivo: si luego fallara el tablero, sobra una copia, pero no se pierde nada.
+    const archive = (await readArchive()).filter((entry) => !ids.has(entry.id))
+    archive.push(...done.map((t) => ({ ...t, columnId: column.id, columnName: column.name, archivedAt })))
+    await writeArchive(archive)
+    column.tasks = column.tasks.filter((t) => !t.done)
+    return { archivadas: done.length }
+  })
+  return { archivadas: 0, ...result }
+}
+
+function findColumn(board, columnId) {
+  if (typeof columnId !== 'string') throw new HttpError(400, 'Falta columnId')
+  const column = board?.columns?.find((c) => c.id === columnId)
+  if (!column) throw new HttpError(404, 'Esa columna no existe', 'columna-no-existe')
+  return column
+}
+
+function findTaskWithColumn(board, taskId) {
+  for (const column of board?.columns ?? []) {
+    const task = column.tasks?.find((t) => t.id === taskId)
+    if (task) return { column, task }
+  }
+  throw new HttpError(404, 'Esa tarea no existe', 'tarea-no-existe')
 }
 
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   res.end(JSON.stringify(body))
+}
+
+const only = (req, method) => {
+  if (req.method !== method) throw new HttpError(405, 'Método no permitido')
 }
 
 /** Evita que otra web abierta en el navegador hable con la API (DNS rebinding). */
@@ -181,8 +177,12 @@ function checkCaller(req) {
   }
 }
 
-/** `version` identifica la compilación de la web: si cambia, las ventanas abiertas proponen recargar. */
-export function createApi({ version = 'dev', appVersion = 'dev' } = {}) {
+/**
+ * `version` identifica la compilación de la web: si cambia, las ventanas abiertas proponen recargar.
+ * `abrir(destino)` abre una carpeta o un enlace (por defecto, «open» de macOS; en pruebas, otra cosa).
+ * `titulo` son opciones para pageTitle (solo en pruebas).
+ */
+export function createApi({ version = 'dev', appVersion = 'dev', abrir = openOnMac, titulo = {} } = {}) {
   return async function tableroApi(req, res, next) {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const { pathname } = url
@@ -194,39 +194,83 @@ export function createApi({ version = 'dev', appVersion = 'dev' } = {}) {
 
       if (pathname === '/api/avisos') {
         if (req.method === 'GET') return send(res, 200, avisosState())
-        if (req.method !== 'PUT') throw new HttpError(405, 'Método no permitido')
+        only(req, 'PUT')
         avisos = { ...(await readJson(req)), vistoEn: new Date().toISOString() }
         broadcast('avisos', avisosState())
         return send(res, 200, { ok: true })
       }
 
       if (pathname === '/api/operaciones') {
-        if (req.method !== 'POST') throw new HttpError(405, 'Método no permitido')
-        const { ops } = await readJson(req)
+        only(req, 'POST')
+        const ops = (await readJson(req))?.ops
         if (!Array.isArray(ops) || ops.length > 5000) throw new HttpError(400, 'Operaciones no válidas')
-        const result = await exclusive(async () => {
-          const current = await readStore()
-          if (!current.board) throw new HttpError(409, 'Aún no hay tablero')
-          const applied = applyOperations(current.board, ops)
-          if (applied === 0) return { rev: current.rev, aplicadas: 0 }
-          const rev = current.rev + 1
-          await writeStore(rev, current.board)
-          broadcast('rev', { rev })
-          return { rev, aplicadas: applied }
-        })
-        return send(res, 200, result)
+        return send(res, 200, await operate(ops))
       }
 
       const taskMatch = pathname.match(/^\/api\/tareas\/([\w-]+)$/)
       if (taskMatch) {
-        if (req.method !== 'PATCH') throw new HttpError(405, 'Método no permitido')
+        only(req, 'PATCH')
         return send(res, 200, await patchTask(taskMatch[1], await readJson(req)))
+      }
+
+      if (pathname === '/api/titulo') {
+        only(req, 'GET')
+        try {
+          return send(res, 200, { title: await pageTitle(url.searchParams.get('url'), titulo) })
+        } catch (err) {
+          if (err instanceof TitleError) throw new HttpError(TITLE_STATUS[err.code] ?? 502, err.message, err.code)
+          throw err
+        }
+      }
+
+      if (pathname === '/api/archivar') {
+        only(req, 'POST')
+        return send(res, 200, await archiveCompleted((await readJson(req))?.columnId))
+      }
+
+      if (pathname === '/api/archivo') {
+        only(req, 'GET')
+        const columnId = url.searchParams.get('columna')
+        const tareas = (await readArchive())
+          .filter((entry) => !columnId || entry.columnId === columnId)
+          .sort((a, b) => String(b.archivedAt ?? '').localeCompare(String(a.archivedAt ?? '')))
+        return send(res, 200, { tareas })
+      }
+
+      if (pathname === '/api/abrir') {
+        only(req, 'POST')
+        const columnId = (await readJson(req))?.columnId
+        const folder = await projectFolder(findColumn((await readStore()).board, columnId))
+        return send(res, 200, { ok: true, ...(await abrir(folder)) })
+      }
+
+      if (pathname === '/api/claude') {
+        only(req, 'POST')
+        const body = await readJson(req)
+        const { board } = await readStore()
+        let target
+        if (typeof body?.taskId === 'string') target = findTaskWithColumn(board, body.taskId)
+        else if (typeof body?.columnId === 'string') target = { column: findColumn(board, body.columnId), task: null }
+        else throw new HttpError(400, 'Falta taskId o columnId')
+        const folder = await projectFolder(target.column)
+        const link = claudeUrl(folder, target.task ? taskPrompt(target.task, target.column) : '')
+        return send(res, 200, { ok: true, ...(await abrir(link)) })
+      }
+
+      if (pathname === '/api/capturar') {
+        only(req, 'POST')
+        const body = await readJson(req)
+        if (body?.vistaPrevia === true) {
+          const { parsed, columnName, resumen } = interpret((await readStore()).board, body, { today: localDay(), time: localTime() })
+          return send(res, 200, { titulo: parsed.title, resumen, columna: columnName })
+        }
+        return send(res, 200, await updateBoard((board) => capture(board, body, { today: localDay(), time: localTime() })))
       }
 
       if (pathname !== '/api/board') throw new HttpError(404, 'No encontrado')
 
       if (req.method === 'GET') return send(res, 200, await readStore())
-      if (req.method !== 'PUT') throw new HttpError(405, 'Método no permitido')
+      only(req, 'PUT')
 
       const body = await readJson(req)
       if (!Number.isInteger(body?.baseRev) || !Array.isArray(body?.board?.columns)) {
@@ -244,7 +288,8 @@ export function createApi({ version = 'dev', appVersion = 'dev' } = {}) {
     } catch (err) {
       const status = err instanceof HttpError ? err.status : 500
       if (status >= 500) console.error('[tablero]', err)
-      send(res, status, { error: err?.message ?? String(err) })
+      const message = err?.message ?? String(err)
+      send(res, status, err?.code && err instanceof HttpError ? { error: err.code, mensaje: message } : { error: message })
     }
   }
 }

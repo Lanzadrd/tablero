@@ -1,0 +1,531 @@
+/* ─────────── Vistas: Hoy, Algún día, Sin fecha ─────────── */
+
+:root {
+  /* «Lo primero»: la estrella (icono) y su texto, con contraste suficiente sobre blanco */
+  --star: #d97a00;
+  --star-text: #a85d00;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --star: #ffb340;
+    --star-text: #ffb340;
+  }
+}
+
+/* ───────── Hoy ───────── */
+
+.today {
+  width: 100vw;
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(env(titlebar-area-height, var(--bar-h)) + 14px) 26px 64px;
+}
+
+.today .splash {
+  height: auto;
+  min-height: 60vh;
+}
+
+.today-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.today-head {
+  padding: 0 8px;
+}
+
+.today-head h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: var(--today);
+}
+
+.today-head p {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.today-card {
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-col);
+}
+
+.today-main {
+  padding: 8px 6px 6px;
+}
+
+.today-section,
+.today-done {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.today-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.today-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  margin: 0;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.today-label svg {
+  width: 14px;
+  height: 14px;
+}
+
+.today-count {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.today-section.is-overdue .today-label {
+  color: var(--overdue);
+}
+
+/* Aviso suave de «demasiado para un día» */
+
+.today-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 4px 4px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--c-orange) 11%, var(--surface));
+  box-shadow: var(--shadow-col);
+  font-size: 13px;
+  animation: fade-in 200ms ease;
+}
+
+/* Lo primero */
+
+.today-first {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 6px 6px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--star) 7%, var(--surface));
+  box-shadow: var(--shadow-col), inset 0 0 0 1px color-mix(in srgb, var(--star) 24%, transparent);
+}
+
+.today-first .today-label {
+  color: var(--star-text);
+}
+
+.today-first .today-label svg {
+  color: var(--star);
+  fill: currentColor;
+}
+
+.today-first-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 2px 8px 6px;
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+
+.today-first-empty svg {
+  width: 14px;
+  height: 14px;
+  color: var(--star);
+}
+
+/* Grupos por columna */
+
+.today-group + .today-group {
+  margin-top: 8px;
+}
+
+.today-group-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 4px 8px 4px 13px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.today-group-title .cal-dot {
+  width: 8px;
+  height: 8px;
+}
+
+.today-empty {
+  margin: 0;
+  padding: 8px 8px 10px 38px;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.today-main .today-add {
+  margin-top: 4px;
+  /* Al enseñarlo (N, al escribir, tras añadir) queda libre debajo la zona de los avisos. */
+  scroll-margin-bottom: 76px;
+}
+
+/* Filas */
+
+.today-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.today-when {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.today-when svg {
+  width: 12px;
+  height: 12px;
+}
+
+.today-when.is-today {
+  color: var(--today);
+}
+
+.today-when.is-overdue {
+  color: var(--overdue);
+}
+
+.today-actions {
+  flex: none;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: -2px -4px -2px 0;
+}
+
+.today-action {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-2);
+  opacity: 0;
+  transition: opacity 120ms, background-color 120ms, color 120ms;
+}
+
+.today-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.today-action.is-text {
+  padding: 0 9px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.today-action:hover {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.today-action.is-star:hover,
+.today-action.is-star[aria-pressed='true'] {
+  color: var(--star);
+}
+
+.today-action.is-star[aria-pressed='true'] svg {
+  fill: currentColor;
+}
+
+/* Las acciones aparecen al pasar por encima o con el foco; la estrella, siempre mientras invita. */
+.today-row:hover .today-action,
+.today-row:focus-within .today-action,
+.today-actions.is-shown .today-action,
+.today-row.is-inviting .today-action.is-star,
+.today-action.is-star[aria-pressed='true'] {
+  opacity: 1;
+}
+
+.today-row.is-inviting:not(:hover, :focus-within) .today-action.is-star {
+  color: var(--text-3);
+}
+
+.today-actions.is-shown .today-action {
+  background: var(--fill);
+  color: var(--accent-text);
+}
+
+.today-actions.is-shown .today-action:hover {
+  background: var(--fill-hover);
+}
+
+@media (hover: none) {
+  .today-action {
+    opacity: 1;
+  }
+}
+
+/* Nueva tarea para hoy: a qué columna va */
+
+.today-add-target {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 45%;
+  height: 26px;
+  padding: 0 7px 0 9px;
+  border: 0;
+  border-radius: 13px;
+  background: none;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  transition: background-color 120ms, color 120ms;
+}
+
+.today-add-target:hover,
+.today-add-target[aria-expanded='true'] {
+  background: var(--fill);
+  color: var(--text);
+}
+
+/* Manda la #columna escrita: el selector enseña esa, con su color. */
+.today-add-target.is-tagged {
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+  color: var(--text);
+}
+
+.today-add-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.today-add-target svg {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  transform: rotate(90deg);
+}
+
+/* ───────── Interruptor ───────── */
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: var(--check-ring);
+  transition: background-color 200ms var(--ease);
+}
+
+/* Área de clic de 24 px de alto como mínimo */
+.switch::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  transition: transform 220ms var(--ease);
+}
+
+.switch[aria-checked='true'] {
+  background: var(--accent);
+}
+
+.switch[aria-checked='true']::after {
+  transform: translateX(16px);
+}
+
+/* ───────── Calendario: panel «Sin fecha» ───────── */
+
+/* Atrasadas en el calendario, como en el tablero y en Hoy */
+.agenda-time.is-overdue,
+.cal-chip.is-overdue .cal-time {
+  color: var(--overdue);
+}
+
+.cal-chip {
+  position: relative; /* su «Vencida:» para el lector de pantalla se queda dentro */
+}
+
+.cal-chip.is-overdue > svg {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  color: var(--overdue);
+}
+
+/* En los días de la semana (estrechos) las palabras largas se parten con guion, no a mitad de sílaba. */
+.week-day .task-title,
+.undated .task-title {
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.undated-toggle[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent-text);
+}
+
+.week-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 8px;
+}
+
+.week-wrap > .week {
+  flex: 1;
+  min-width: 0;
+}
+
+.undated {
+  flex: none;
+  width: 240px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-col);
+  transition: box-shadow 150ms, background-color 150ms;
+  animation: undated-in 220ms var(--ease);
+}
+
+@keyframes undated-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+
+.undated.is-over {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.undated-head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 12px 14px 4px;
+}
+
+.undated-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+
+.undated-count {
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+
+.undated-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 4px 8px;
+}
+
+.undated-hint,
+.undated-empty {
+  margin: 0 10px 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.undated-group + .undated-group {
+  margin-top: 6px;
+}
+
+.undated-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 10px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.undated-group-title .cal-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.undated-row .task-title {
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .undated {
+    animation-name: fade-in;
+  }
+
+  .switch,
+  .switch::after {
+    transition-duration: 0ms;
+  }
+}

@@ -13,7 +13,12 @@ export const isTyping = (target: EventTarget | null) =>
 export const splitLines = (text: string) =>
   text
     .split(/\r?\n/)
-    .map((line) => line.replace(/^\s*(?:[-*•·]|\d+[.)]|\[[ xX]?\])\s+/, '').trim())
+    .map((line) =>
+      line
+        .replace(/^\s*(?:[-*•·]|\d+[.)])\s+/, '')
+        .replace(/^\s*\[[ xX]?\]\s+/, '')
+        .trim(),
+    )
     .filter(Boolean)
 
 export const tint = (color: ColorKey) => ({ '--tint': `var(--c-${color})` }) as CSSProperties

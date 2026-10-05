@@ -1,12 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { alertLabel, alertsOf, DAY_ALERT_OPTIONS, TIMED_ALERT_OPTIONS } from '../alerts'
+import { progress, withBody, withoutSteps } from '../checklist'
 import { useActions, useBoard, useNow, useUI } from '../context'
 import { addDays, formatWhen, nextMonday, todayISO } from '../dates'
+import { findLinks } from '../links'
 import { findTask, type Task } from '../model'
+import { openClaude } from '../projectApi'
+import { isSomeday } from '../today'
 import { cx, tint } from '../util'
+import { Checklist } from './Checklist'
 import * as Icon from './Icons'
+import { LinkRow } from './Links'
 import { Menu, Popover } from './Popover'
+import { RepeatField } from './RepeatField'
+import { Switch } from './Switch'
 import { CheckButton } from './TaskRow'
+import '../styles/proyectos.css'
 
 /** Panel de detalle de una tarea. Todo se guarda al momento. */
 export function TaskSheet({ taskId, anchor, onClose }: { taskId: string; anchor: DOMRect; onClose: () => void }) {
@@ -18,6 +27,7 @@ export function TaskSheet({ taskId, anchor, onClose }: { taskId: string; anchor:
   const originalTitle = useRef(found?.task.title ?? '')
   const titleRef = useRef<HTMLTextAreaElement>(null)
   const [alertMenu, setAlertMenu] = useState<HTMLElement | null>(null)
+  const [rawNotes, setRawNotes] = useState(false)
 
   // Si la tarea desaparece (deshacer, otra ventana…), se cierra.
   useEffect(() => {
@@ -33,6 +43,8 @@ export function TaskSheet({ taskId, anchor, onClose }: { taskId: string; anchor:
 
   if (!found) return null
   const { task, column } = found
+  const hasSteps = progress(task.notes) !== null
+  const asSteps = hasSteps && !rawNotes
 
   const today = todayISO(now)
   // En domingo, «Próx. semana» sería mañana: se queda solo «Mañana».
@@ -43,7 +55,14 @@ export function TaskSheet({ taskId, anchor, onClose }: { taskId: string; anchor:
   ].filter((d, i, all) => all.findIndex((other) => other.value === d.value) === i)
 
   const update = (patch: Partial<Task>) => actions.updateTask(task.id, patch)
-  const setDue = (due: string | null) => update(due ? { due } : { due: null, time: null, alerts: undefined })
+  // Sin día no hay repetición (como en Recordatorios). Con día deja de ser «algún día».
+  const setDue = (due: string | null) =>
+    update(
+      due
+        ? { due, ...(task.someday ? { someday: undefined } : {}) }
+        : { due: null, time: null, alerts: undefined, ...(task.repeat ? { repeat: undefined } : {}) },
+    )
+  const someday = isSomeday(task)
   // Los avisos de una tarea con hora y los de una de día se miden distinto: al cambiar de una a otra, vuelven a los de por defecto.
   const setTime = (time: string | null) =>
     update(Boolean(time) !== Boolean(task.time) ? { time, alerts: undefined } : { time })
@@ -56,6 +75,21 @@ export function TaskSheet({ taskId, anchor, onClose }: { taskId: string; anchor:
   const close = () => {
     if (!task.title.trim()) actions.updateTask(task.id, { title: originalTitle.current.trim() || 'Sin título' })
     onClose()
+  }
+  // Sesión nueva de Claude Code en la carpeta del proyecto, con la tarea escrita (título, notas, proyecto).
+  const folder = column.project?.folder
+  const claude = async () => {
+    ui.toast('Abriendo Claude Code…')
+    await ui.saveNow()
+    const result = await openClaude({ taskId: task.id })
+    if (!result.ok) ui.toast(result.message)
+  }
+  // Las archivadas no son destino; la suya sí sale, para que se vea dónde está.
+  const columns = board.columns.filter((c) => !c.archived || c.id === column.id)
+  // Enlace a la tarea: abre Tablero con ella a la vista y su detalle abierto (src/dock.ts).
+  const copyLink = async () => {
+    const ok = await copyText(`${location.origin}/t/${encodeURIComponent(task.id)}`)
+    ui.toast(ok ? 'Enlace copiado' : 'No se ha podido copiar el enlace')
   }
 
   return (
@@ -79,13 +113,23 @@ export function TaskSheet({ taskId, anchor, onClose }: { taskId: string; anchor:
         />
       </div>
 
+      {/* Con pasos, las notas no los repiten: se ven solo como casillas (o todo como texto, a elegir). */}
       <textarea
         className="sheet-notes"
-        value={task.notes}
+        value={asSteps ? withoutSteps(task.notes) : task.notes}
         aria-label="Notas"
         placeholder="Notas"
-        onChange={(e) => actions.updateTask(task.id, { notes: e.target.value }, `notes:${task.id}`)}
+        onChange={(e) =>
+          actions.updateTask(task.id, { notes: asSteps ? withBody(task.notes, e.target.value) : e.target.value }, `notes:${task.id}`)
+        }
       />
+      {!rawNotes && <Checklist task={task} />}
+      {hasSteps && (
+        <button type="button" className="link-btn notes-mode" aria-pressed={rawNotes} onClick={() => setRawNotes(!rawNotes)}>
+          {rawNotes ? 'Ver los pasos como casillas' : 'Editar los pasos como texto'}
+        </button>
+      )}
+      <LinkRow links={findLinks(task.title, task.notes)} />
 
       <div className="sheet-fields">
         <div className="field">
@@ -117,6 +161,17 @@ export function TaskSheet({ taskId, anchor, onClose }: { taskId: string; anchor:
                 Quitar
               </button>
             )}
+          </div>
+        </div>
+
+        <div className="field">
+          <span className="field-label">
+            <Icon.Later />
+            Algún día
+          </span>
+          <div className="field-controls">
+            <Switch checked={someday} label="Algún día" onChange={(on) => actions.setSomeday(task.id, on)} />
+            {someday && <span className="field-note">Sin fecha, al pie de su columna</span>}
           </div>
         </div>
 
@@ -190,6 +245,8 @@ export function TaskSheet({ taskId, anchor, onClose }: { taskId: string; anchor:
           />
         )}
 
+        <RepeatField task={task} today={today} />
+
         <div className="field">
           <span className="field-label">
             <Icon.Columns />
@@ -202,9 +259,9 @@ export function TaskSheet({ taskId, anchor, onClose }: { taskId: string; anchor:
               aria-label="Columna"
               onChange={(e) => actions.moveTask(task.id, e.target.value)}
             >
-              {board.columns.map((c) => (
+              {columns.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {c.archived ? `${c.name} (archivada)` : c.name}
                 </option>
               ))}
             </select>
@@ -212,25 +269,57 @@ export function TaskSheet({ taskId, anchor, onClose }: { taskId: string; anchor:
         </div>
       </div>
 
+      {folder && (
+        <button type="button" className="btn sheet-claude" title={`Sesión nueva en ${folder}`} onClick={() => void claude()}>
+          <Icon.Terminal />
+          Abrir en Claude Code
+        </button>
+      )}
+
       <footer className="sheet-foot">
         <span className="sheet-meta">
           {task.done && task.completedAt
             ? `Completada ${formatWhen(task.completedAt, now)}`
             : `Creada ${formatWhen(task.createdAt, now)}`}
         </span>
-        <button
-          type="button"
-          className="danger-btn"
-          onClick={() => {
-            actions.deleteTask(task.id)
-            ui.toast('Tarea eliminada', { undo: true })
-            onClose()
-          }}
-        >
-          <Icon.Trash />
-          Eliminar
-        </button>
+        <div className="sheet-foot-actions">
+          <button type="button" className="icon-btn" aria-label="Copiar enlace" title="Copiar enlace" onClick={() => void copyLink()}>
+            <Icon.Link />
+          </button>
+          <button
+            type="button"
+            className="danger-btn"
+            onClick={() => {
+              actions.deleteTask(task.id)
+              ui.toast('Tarea eliminada', { undo: true })
+              onClose()
+            }}
+          >
+            <Icon.Trash />
+            Eliminar
+          </button>
+        </div>
       </footer>
     </Popover>
   )
+}
+
+/** Al portapapeles; si el navegador no deja (sin permiso), a la antigua. */
+export async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const area = document.createElement('textarea')
+    area.value = text
+    area.setAttribute('readonly', '')
+    area.style.cssText = 'position:fixed;top:0;left:0;opacity:0'
+    document.body.append(area)
+    area.select()
+    const ok = document.execCommand('copy')
+    area.remove()
+    active?.focus({ preventScroll: true })
+    return ok
+  }
 }
