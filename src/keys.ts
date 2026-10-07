@@ -60,7 +60,9 @@ export const SHORTCUTS: ShortcutSection[] = [
     title: 'Suscripciones',
     items: [
       { keys: [['N']], label: 'Nueva suscripción' },
-      { keys: [['↑', '↓']], label: 'Moverse por la lista' },
+      { keys: [['↑', '↓'], ['←', '→']], label: 'Moverse por la columna y entre columnas' },
+      { keys: [['↩']], label: 'Abrir su ficha' },
+      { keys: [['Espacio']], label: 'Llevarla a otra columna (con ← →)' },
     ],
   },
   {
@@ -248,8 +250,8 @@ function resolveTarget(view: View): Target | null {
 }
 
 const popoverOpen = () => document.querySelector('.popover') !== null
-/** Arrastre con hello-pangea en marcha (con teclado, las flechas son suyas). */
-const dragging = () => document.querySelector('.board[class*="is-dragging"]') !== null
+/** Arrastre con hello-pangea en marcha, en el tablero o en Suscripciones (con teclado, las flechas son suyas). */
+const dragging = () => document.querySelector('.board[class*="is-dragging"], .subs.is-dragging') !== null
 
 // ── Manejadores ──
 

@@ -121,10 +121,11 @@ before(async () => {
       { id: 'revolut', name: 'Revolut', color: 'purple' },
     ],
     subscriptions: [
-      { id: 'netflix', name: 'Netflix', amount: 1299, currency: 'EUR', period: 'month', billingDate: inDays(8), cardId: 'bbva', remind: 1, notes: 'Plan estándar', createdAt: '2026-09-01T10:00:00.000Z' },
-      { id: 'icloud', name: 'iCloud+', amount: 299, currency: 'EUR', period: 'month', billingDate: inDays(1), cardId: 'revolut', createdAt: '2026-09-01T10:00:00.000Z' },
+      { id: 'netflix', name: 'Netflix', amount: 1299, currency: 'EUR', period: 'month', billingDate: inDays(8), cardId: 'bbva', columnId: 'p', remind: 1, notes: 'Plan estándar', createdAt: '2026-09-01T10:00:00.000Z' },
+      { id: 'icloud', name: 'iCloud+', amount: 299, currency: 'EUR', period: 'month', billingDate: inDays(1), cardId: 'revolut', columnId: 't', createdAt: '2026-09-01T10:00:00.000Z' },
       { id: 'chatgpt', name: 'ChatGPT', amount: 24000, currency: 'USD', period: 'year', billingDate: today, cardId: null, createdAt: '2026-09-01T10:00:00.000Z' },
-      { id: 'spotify', name: 'Spotify', amount: 1099, currency: 'EUR', period: 'month', billingDate: inDays(-40), cardId: 'bbva', cancelledOn: inDays(-7), createdAt: '2026-01-01T10:00:00.000Z' },
+      { id: 'spotify', name: 'Spotify', amount: 1099, currency: 'EUR', period: 'month', billingDate: inDays(-40), cardId: 'bbva', columnId: 'p', cancelledOn: inDays(-7), createdAt: '2026-01-01T10:00:00.000Z' },
+      { id: 'github', name: 'GitHub', amount: 400, currency: 'USD', period: 'month', billingDate: inDays(20), cardId: 'revolut', columnId: 'p', createdAt: '2026-09-01T10:00:00.000Z' },
     ],
   }
   await writeFile(path.join(dir, 'board.json'), JSON.stringify({ app: 'tablero', version: 1, rev: 1, board }))
@@ -251,25 +252,57 @@ test('tablero_completar: por id o su principio; si se repite, avisa de la siguie
   assert.match(text(nada), /No hay ninguna tarea/)
 })
 
-test('tablero_suscripciones: por próximo cobro, con tarjeta y aviso, y los totales por moneda', async () => {
+test('tablero_suscripciones: por próximo cobro, con tarjeta, columna y aviso, y los totales por moneda y por columna', async () => {
   const all = plain(text(await mcp.tool('tablero_suscripciones', {})))
   assert.match(all, new RegExp(`^Suscripciones activas — hoy es ${today}`))
-  const lines = all.split('\n').filter((l) => l.startsWith('- '))
-  assert.deepEqual(lines.map((l) => /^- ([^:]+):/.exec(l)[1]), ['ChatGPT', 'iCloud+', 'Netflix'])
-  assert.equal(lines[0], '- ChatGPT: 240,00 $ / año (≈ 20,00 $ / mes) · próximo cobro Hoy · sin tarjeta · id: chatgpt')
-  assert.equal(lines[1], '- iCloud+: 2,99 € / mes · próximo cobro Mañana · Revolut · id: icloud')
-  assert.match(lines[2], /^- Netflix: 12,99 € \/ mes · próximo cobro \S+, \d+ \S+ \(en 8 días\) · BBVA · aviso 1 día antes · id: netflix$/)
+  const [list, byColumn] = all.split('\nPor columna:\n')
+  const lines = list.split('\n').filter((l) => l.startsWith('- '))
+  assert.deepEqual(lines.map((l) => /^- ([^:]+):/.exec(l)[1]), ['ChatGPT', 'iCloud+', 'Netflix', 'GitHub'])
+  assert.equal(lines[0], '- ChatGPT: 240,00 $ / año (≈ 20,00 $ / mes) · próximo cobro Hoy · sin tarjeta · sin columna · id: chatgpt')
+  assert.equal(lines[1], '- iCloud+: 2,99 € / mes · próximo cobro Mañana · Revolut · columna Trabajo · id: icloud')
+  assert.match(lines[2], /^- Netflix: 12,99 € \/ mes · próximo cobro \S+, \d+ \S+ \(en 8 días\) · BBVA · columna Personal · aviso 1 día antes · id: netflix$/)
   assert.match(all, /\n  Notas: Plan estándar/)
-  assert.match(all, /Total: 15,98 € al mes · 191,76 € al año \(2 activas\)/)
-  assert.match(all, /Total: 20,00 \$ al mes · 240,00 \$ al año \(1 activa\)/)
+  assert.match(list, /Total: 15,98 € al mes · 191,76 € al año \(2 activas\)/)
+  assert.match(list, /Total: 24,00 \$ al mes · 288,00 \$ al año \(2 activas\)/)
   assert.doesNotMatch(all, /Spotify|Dadas de baja/)
+  // Por columna, en el orden del tablero y «Sin columna» al final; nunca se suman monedas distintas.
+  assert.deepEqual(byColumn.trim().split('\n'), [
+    '- Personal: 12,99 € al mes · 155,88 € al año (1 activa); 4,00 $ al mes · 48,00 $ al año (1 activa)',
+    '- Trabajo: 2,99 € al mes · 35,88 € al año (1 activa)',
+    '- Sin columna: 20,00 $ al mes · 240,00 $ al año (1 activa)',
+  ])
+})
+
+test('tablero_suscripciones: por columna (sin acentos ni mayúsculas), sin columna y con tarjeta a la vez', async () => {
+  const personal = plain(text(await mcp.tool('tablero_suscripciones', { columna: 'personal' })))
+  assert.match(personal, /^Suscripciones activas en Personal — hoy es/)
+  assert.deepEqual(personal.split('\n').filter((l) => l.startsWith('- ')).map((l) => /^- ([^:]+):/.exec(l)[1]), ['Netflix', 'GitHub'])
+  assert.match(personal, /Total: 12,99 € al mes · 155,88 € al año \(1 activa\)\nTotal: 4,00 \$ al mes · 48,00 \$ al año \(1 activa\)$/)
+  assert.doesNotMatch(personal, /Por columna/)
+
+  const sin = plain(text(await mcp.tool('tablero_suscripciones', { columna: 'Sin columna' })))
+  assert.match(sin, /^Suscripciones activas sin columna/)
+  assert.match(sin, /- ChatGPT:/)
+  assert.doesNotMatch(sin, /Netflix|iCloud|GitHub/)
+
+  const ambos = plain(text(await mcp.tool('tablero_suscripciones', { columna: 'trabajó', tarjeta: 'revolut' })))
+  assert.match(ambos, /^Suscripciones activas en Trabajo con Revolut/)
+  assert.deepEqual(ambos.split('\n').filter((l) => l.startsWith('- ')).map((l) => /^- ([^:]+):/.exec(l)[1]), ['iCloud+'])
+
+  const bajas = plain(text(await mcp.tool('tablero_suscripciones', { columna: 'Personal', tarjeta: 'BBVA', incluirBajas: true })))
+  assert.match(bajas, /Dadas de baja:\n- Spotify:/)
+  assert.equal(plain(text(await mcp.tool('tablero_suscripciones', { columna: 'Viejo' }))), 'No hay suscripciones activas en Viejo.')
+
+  const mal = await mcp.tool('tablero_suscripciones', { columna: 'LTO' })
+  assert.equal(mal.isError, true)
+  assert.match(text(mal), /No hay ninguna columna «LTO»\. Columnas: Personal, Trabajo\./)
 })
 
 test('tablero_suscripciones: por tarjeta (sin acentos ni mayúsculas), sin tarjeta y con las bajas', async () => {
   const bbva = plain(text(await mcp.tool('tablero_suscripciones', { tarjeta: 'bbvá' })))
   assert.match(bbva, /^Suscripciones activas con BBVA/)
   assert.match(bbva, /- Netflix:/)
-  assert.doesNotMatch(bbva, /iCloud|ChatGPT|\$/)
+  assert.doesNotMatch(bbva, /iCloud|ChatGPT|GitHub|\$/)
   assert.match(bbva, /Total: 12,99 € al mes · 155,88 € al año \(1 activa\)/)
 
   const sin = plain(text(await mcp.tool('tablero_suscripciones', { tarjeta: 'Sin tarjeta' })))

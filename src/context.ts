@@ -5,8 +5,11 @@ import type { AvisosStatus } from './sync'
 
 export type View = 'today' | 'board' | 'calendar' | 'subscriptions'
 
-/** Lo que la vista Suscripciones abre en cuanto está en pantalla: la ficha de una o «Nueva suscripción». */
-export type SubscriptionRequest = { id: string } | { create: true }
+/**
+ * Lo que la vista Suscripciones abre en cuanto está en pantalla: la ficha de una, «Nueva suscripción» o
+ * una columna (desde la ficha de su proyecto).
+ */
+export type SubscriptionRequest = { id: string } | { create: true } | { column: string }
 
 export interface UI {
   /** Estado de los avisos en el iPhone (null hasta saberlo). */
@@ -38,6 +41,8 @@ export interface UI {
   openSubscription: (id: string) => void
   /** Va a Suscripciones y abre «Nueva suscripción» (N en esa vista, la búsqueda). */
   newSubscription: () => void
+  /** Va a Suscripciones con esa columna a la vista (desde la ficha de su proyecto). */
+  openSubscriptionColumn: (columnId: string) => void
   /** Lo pedido con openSubscription o newSubscription, hasta que la vista lo atiende. */
   subscriptionRequest: SubscriptionRequest | null
   clearSubscriptionRequest: () => void

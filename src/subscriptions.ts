@@ -3,18 +3,22 @@
 // server/suscripciones.mjs, compartidas con el servidor y el MCP. Solo importa tipos de './model',
 // así se prueba con Node tal cual (server/pruebas/suscripciones.test.mjs).
 import {
+  afterLastOpen,
   chargeAfter,
+  CURRENCIES,
   daysBetween,
+  formatMoney,
   hasCardNumber,
   isCurrency,
   isDay,
   isPeriod,
   localDay,
   REMINDER_FIELDS,
+  reminderColumn,
   totals,
   type Totals,
 } from '../server/suscripciones.mjs'
-import type { Board, Card, ColorKey, Subscription, Task } from './model'
+import type { Board, Card, ColorKey, Column, Subscription, Task } from './model'
 
 // Lo que la vista necesita de las cuentas, a mano desde aquí.
 export {
@@ -31,6 +35,7 @@ export {
   periodLabel,
   periodUnit,
   REMINDER_FIELDS,
+  reminderColumn,
   yearlyAmount,
 } from '../server/suscripciones.mjs'
 export type { BillingPeriod, Currency, Totals } from '../server/suscripciones.mjs'
@@ -96,6 +101,74 @@ export const nextCharge = (board: Board, today: string, cardId?: CardFilter): Up
 /** Al mes y al año por moneda, de las activas (de la tarjeta `cardId`, si se da). */
 export const subscriptionTotals = (board: Board, cardId?: CardFilter): Totals => totals(subscriptionsOf(board), { cardId })
 
+// ── Por columna (la empresa a la que pertenece cada una) ──
+
+/** Su columna del tablero, si existe (si no, está «Sin columna»). */
+export const columnOf = (board: Board, sub: Pick<Subscription, 'columnId'>): Column | null =>
+  (sub.columnId && board.columns.find((c) => c.id === sub.columnId)) || null
+
+/** ¿Se le ponen suscripciones? Las columnas del tablero sin archivar, salvo la Bandeja. */
+export const isAssignable = (column: Column) => !column.archived && !column.inbox
+
+/** Una columna de la vista Suscripciones: la del tablero (o «Sin columna») con sus activas. */
+export interface SubscriptionGroup {
+  /** null = «Sin columna». */
+  column: Column | null
+  /** Las activas (de la tarjeta del filtro, si hay), por próximo cobro. */
+  items: UpcomingSubscription[]
+  /** Lo que suman esas, por moneda. */
+  totals: Totals
+}
+
+/**
+ * Las activas por columna, en el orden del tablero. Las columnas sin archivar que no son la Bandeja
+ * salen siempre, aunque no tengan ninguna (para añadir o soltar ahí); una archivada o la Bandeja, solo
+ * si tiene alguna; y «Sin columna», al final, solo si tiene alguna. Con `cardId`, solo las de esa tarjeta.
+ */
+export function subscriptionColumns(board: Board, today: string, cardId?: CardFilter): SubscriptionGroup[] {
+  const byColumn = new Map<string | null, UpcomingSubscription[]>()
+  for (const item of activeSubscriptions(board, today, cardId)) {
+    const key = columnOf(board, item.subscription)?.id ?? null
+    byColumn.set(key, [...(byColumn.get(key) ?? []), item])
+  }
+  const group = (column: Column | null, items: UpcomingSubscription[]): SubscriptionGroup => ({
+    column,
+    items,
+    totals: totals(items.map((i) => i.subscription)),
+  })
+  const groups = board.columns
+    .filter((c) => isAssignable(c) || byColumn.has(c.id))
+    .map((c) => group(c, byColumn.get(c.id) ?? []))
+  const loose = byColumn.get(null)
+  return loose ? [...groups, group(null, loose)] : groups
+}
+
+/** Cuántas suman unos totales (de todas las monedas). */
+export const totalCount = (t: Totals) => Object.values(t).reduce((n, total) => n + total.count, 0)
+
+/** «28,22 € / mes»; con varias monedas, una tras otra: «28,22 € · 20,00 $ / mes» (nunca se suman). '' si no hay. */
+export function perMonthText(t: Totals): string {
+  const parts = CURRENCIES.filter((c) => t[c]).map((c) => formatMoney(t[c].monthly, c))
+  return parts.length ? `${parts.join(' · ')} / mes` : ''
+}
+
+/** Al mes y al año por moneda, de las activas de una columna (null = las que no tienen). */
+export const columnTotals = (board: Board, columnId: string | null): Totals =>
+  totals(subscriptionsOf(board).filter((s) => (columnOf(board, s)?.id ?? null) === columnId))
+
+/**
+ * Las columnas que ofrece la ficha: las que admiten suscripciones y, si la suya es una archivada o la
+ * Bandeja, también esa (para no perderla con solo abrir la ficha).
+ */
+export const columnChoices = (board: Board, current: string | null): Column[] =>
+  board.columns.filter((c) => isAssignable(c) || c.id === current)
+
+/** Dónde va una nueva desde «+ Suscripción» de arriba: la última columna usada si aún vale; si no, la primera. */
+export function newSubscriptionColumn(board: Board, lastId: string | null | undefined): string | null {
+  const columns = board.columns.filter(isAssignable)
+  return (columns.find((c) => c.id === lastId) ?? columns[0])?.id ?? null
+}
+
 // ── Tarjetas: solo un nombre ──
 
 export const CARD_NUMBER_MESSAGE = 'Sin números de tarjeta: basta un nombre, como «BBVA» o «Revolut»'
@@ -139,7 +212,7 @@ export function removeCard(board: Board, id: string): Board {
 
 /** Lo que se cambia desde la ficha. `undefined` en url, notes o remind los quita. */
 export type SubscriptionPatch = Partial<
-  Pick<Subscription, 'name' | 'amount' | 'currency' | 'period' | 'billingDate' | 'cardId' | 'url' | 'notes' | 'remind'>
+  Pick<Subscription, 'name' | 'amount' | 'currency' | 'period' | 'billingDate' | 'cardId' | 'columnId' | 'url' | 'notes' | 'remind'>
 >
 
 /** Avisos que se ofrecen en la ficha (`null` = sin aviso). */
@@ -181,6 +254,9 @@ function cleanPatch(board: Board, patch: Record<string, unknown>): [keyof Subscr
         break
       case 'cardId':
         if (value === null || (typeof value === 'string' && findCard(board, value))) out.push([key, value])
+        break
+      case 'columnId':
+        if (value === null || (typeof value === 'string' && board.columns.some((c) => c.id === value))) out.push([key, value])
         break
       case 'url':
         if (value === undefined || value === null || value === '') out.push([key, undefined])
@@ -227,6 +303,7 @@ export function insertSubscription(board: Board, sub: Subscription): Board {
     period: 'month',
     billingDate: isDay(sub.billingDate) ? sub.billingDate : localDay(),
     cardId: null,
+    columnId: null,
     createdAt: sub.createdAt,
   }
   return { ...board, subscriptions: [...subscriptionsOf(board), patched(board, blank, { ...sub })] }
@@ -235,15 +312,35 @@ export function insertSubscription(board: Board, sub: Subscription): Board {
 /**
  * Cambia campos de una suscripción (los que no valen se ignoran). Si cambia algo de lo que sale en el
  * aviso o decide cuándo toca (REMINDER_FIELDS), en el mismo cambio se rehace el aviso (resetReminder).
- * Notas y enlace no lo tocan.
+ * Si cambia de columna, su aviso pendiente se va con ella (moveReminders). Notas y enlace no lo tocan.
  */
 export function changeSubscription(board: Board, id: string, patch: SubscriptionPatch): Board {
   const sub = findSubscription(board, id)
   if (!sub) return board
   const next = patched(board, sub, patch)
   if (next === sub) return board
-  const updated = replaceSubscription(board, next)
+  let updated = replaceSubscription(board, next)
+  if ((next.columnId ?? null) !== (sub.columnId ?? null)) {
+    updated = moveReminders(updated, id, reminderColumn(board, sub)?.id, reminderColumn(updated, next)?.id)
+  }
   return REMINDER_FIELDS.some((key) => next[key] !== sub[key]) ? resetReminder(updated, id) : updated
+}
+
+/**
+ * Los avisos pendientes de la suscripción `id` que están en la columna donde se crearon (`from`) pasan
+ * a `to`, detrás de su última pendiente: el aviso va donde va ella. Uno que se movió a mano a otra
+ * columna se queda donde está. Mismo tablero si no hay nada que mover.
+ */
+function moveReminders(board: Board, id: string, from: string | undefined, to: string | undefined): Board {
+  if (!from || !to || from === to) return board
+  const moving = board.columns.find((c) => c.id === from)?.tasks.filter((t) => t.subscriptionId === id && !t.done) ?? []
+  if (moving.length === 0) return board
+  const columns = board.columns.map((c) => {
+    if (c.id === from) return { ...c, tasks: c.tasks.filter((t) => !moving.includes(t)) }
+    if (c.id === to) return { ...c, tasks: afterLastOpen(c.tasks, moving) }
+    return c
+  })
+  return { ...board, columns }
 }
 
 /** Da de baja (`on`, con fecha `today`) o reactiva. El aviso pendiente se quita en el mismo cambio. */

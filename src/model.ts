@@ -103,6 +103,8 @@ export interface Subscription {
   /** Un día de cobro conocido ('AAAA-MM-DD'); los siguientes se calculan desde él. */
   billingDate: string
   cardId: string | null
+  /** La columna del tablero (la empresa) a la que pertenece; null = sin columna. */
+  columnId: string | null
   /** Para gestionarla o darse de baja (http/https). */
   url?: string
   notes?: string
@@ -145,7 +147,7 @@ export function newColumn(name: string, color: ColorKey): Column {
   return { id: uid(), name, color, tasks: [], showCompleted: false }
 }
 
-/** Una suscripción nueva: mensual, en euros, sin tarjeta y con cobro `today` salvo que se diga otra cosa. */
+/** Una suscripción nueva: mensual, en euros, sin tarjeta ni columna y con cobro `today` salvo que se diga otra cosa. */
 export function newSubscription(input: NewSubscription, today: string): Subscription {
   return {
     id: uid(),
@@ -155,6 +157,7 @@ export function newSubscription(input: NewSubscription, today: string): Subscrip
     period: 'month',
     billingDate: today,
     cardId: null,
+    columnId: null,
     ...input,
     createdAt: new Date().toISOString(),
   }
@@ -311,9 +314,11 @@ function normalizeCards(raw: unknown): Card[] {
   return list.map((c) => ({ ...c, id: str(c.id) || uid(), name: cardName(c.name), color: isColor(c.color) ? c.color : 'gray' }))
 }
 
-function normalizeSubscriptions(raw: unknown, cards: Card[]): Subscription[] {
+/** Las de una columna que ya no existe (o sin columna, de antes de haberlas) quedan «Sin columna». */
+function normalizeSubscriptions(raw: unknown, cards: Card[], columns: Column[]): Subscription[] {
   const list = Array.isArray(raw) ? raw.filter(isRaw) : []
   const cardIds = new Set(cards.map((c) => c.id))
+  const columnIds = new Set(columns.map((c) => c.id))
   const remind = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 30 ? v : undefined)
   return list.map((s) =>
     compact({
@@ -325,6 +330,7 @@ function normalizeSubscriptions(raw: unknown, cards: Card[]): Subscription[] {
       period: isPeriod(s.period) ? s.period : 'month',
       billingDate: isRealDay(s.billingDate) ? s.billingDate : localDay(),
       cardId: typeof s.cardId === 'string' && cardIds.has(s.cardId) ? s.cardId : null,
+      columnId: typeof s.columnId === 'string' && columnIds.has(s.columnId) ? s.columnId : null,
       url: isUrl(s.url) ? s.url : undefined,
       notes: str(s.notes).slice(0, 10_000) || undefined,
       remind: remind(s.remind),
@@ -338,7 +344,7 @@ function normalizeSubscriptions(raw: unknown, cards: Card[]): Subscription[] {
 export function normalizeBoard(raw: unknown): Board {
   const columns = isRaw(raw) && Array.isArray(raw.columns) ? raw.columns.filter(isRaw) : []
   const cards = normalizeCards(isRaw(raw) ? raw.cards : undefined)
-  return {
+  const board: Board = {
     columns: columns.map((c) => ({
       ...c,
       id: str(c.id) || uid(),
@@ -367,6 +373,8 @@ export function normalizeBoard(raw: unknown): Board {
       })),
     })),
     cards,
-    subscriptions: normalizeSubscriptions(isRaw(raw) ? raw.subscriptions : undefined, cards),
   }
+  // Las suscripciones, después: su columna tiene que ser una de estas.
+  board.subscriptions = normalizeSubscriptions(isRaw(raw) ? raw.subscriptions : undefined, cards, board.columns)
+  return board
 }

@@ -101,6 +101,53 @@
   background: var(--tint);
 }
 
+/* Sus suscripciones: cuántas y cuánto al mes. Lleva a Suscripciones, con esta columna a la vista. */
+.project-subs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--tint) 9%, transparent);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  transition: background-color 120ms;
+}
+
+.project-subs:hover {
+  background: color-mix(in srgb, var(--tint) 15%, transparent);
+}
+
+.project-subs svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--text-2);
+}
+
+.project-subs svg:last-child {
+  width: 11px;
+  height: 11px;
+}
+
+.project-subs-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.project-subs-detail {
+  font-weight: 400;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
 .project-fields {
   display: grid;
   gap: 8px;

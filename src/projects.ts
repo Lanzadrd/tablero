@@ -1,5 +1,7 @@
 // Columnas como proyectos: la Bandeja, archivar, la ficha, el «pulso» y «Lo hecho». Lógica pura:
-// solo importa tipos de './model', así se prueba con Node tal cual (server/pruebas/proyectos.test.mjs).
+// de './model' solo importa tipos (y de server/suscripciones.mjs, dónde va el aviso de una suscripción),
+// así se prueba con Node tal cual (server/pruebas/proyectos.test.mjs).
+import { pendingReminderOf, placeReminders } from '../server/suscripciones.mjs'
 import type { Board, Column, Project, Task } from './model'
 
 // ── Bandeja ──
@@ -51,19 +53,35 @@ function mapColumn(board: Board, columnId: string, fn: (c: Column) => Column): B
   return changed ? { ...board, columns } : board
 }
 
-/** Archiva o restaura una columna. La Bandeja no se archiva. */
+/**
+ * Archiva o restaura una columna. La Bandeja no se archiva. Al archivarla, sus suscripciones no cambian, pero
+ * el aviso pendiente de una activa que estaba en ella pasa, en el mismo cambio, a donde va ahora su aviso (la
+ * Bandeja, si era de esa columna): en una archivada no se vería ni en Hoy ni en el tablero. Al restaurarla,
+ * no vuelve.
+ */
 export function setArchived(board: Board, columnId: string, archived: boolean): Board {
-  return mapColumn(board, columnId, (c) => {
-    if (Boolean(c.archived) === archived || (archived && c.inbox)) return c
-    return archived ? { ...c, archived: true } : without(c, 'archived')
-  })
+  const column = board.columns.find((c) => c.id === columnId)
+  if (!column || Boolean(column.archived) === archived || (archived && column.inbox)) return board
+  if (!archived) return mapColumn(board, columnId, (c) => without(c, 'archived'))
+  const moving = column.tasks.filter((t) => pendingReminderOf(board, t))
+  const next = mapColumn(board, columnId, (c) => ({ ...c, archived: true, tasks: moving.length ? c.tasks.filter((t) => !moving.includes(t)) : c.tasks }))
+  return placeReminders(next, moving)
 }
 
-/** Borra una columna, salvo la Bandeja (es única). */
+/**
+ * Borra una columna, salvo la Bandeja (es única). En el mismo cambio, sus suscripciones se quedan «Sin
+ * columna» y el aviso pendiente de una suscripción activa que estaba en ella no se pierde con sus
+ * tareas: pasa a donde va ahora su aviso (la Bandeja, si era de esa columna).
+ */
 export function deleteColumn(board: Board, columnId: string): Board {
   const column = board.columns.find((c) => c.id === columnId)
   if (!column || column.inbox) return board
-  return { ...board, columns: board.columns.filter((c) => c !== column) }
+  const next: Board = { ...board, columns: board.columns.filter((c) => c !== column) }
+  const subscriptions = board.subscriptions ?? []
+  if (subscriptions.some((s) => s.columnId === columnId)) {
+    next.subscriptions = subscriptions.map((s) => (s.columnId === columnId ? { ...s, columnId: null } : s))
+  }
+  return placeReminders(next, column.tasks)
 }
 
 /** Índice en el tablero de la columna `toId`, para mover `id` a su sitio (las archivadas no se ven). */

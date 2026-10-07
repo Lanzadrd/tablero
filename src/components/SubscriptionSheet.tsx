@@ -1,7 +1,8 @@
-// La ficha de una suscripción (se abre al lado de su fila, como el detalle de una tarea) y la de una
+// La ficha de una suscripción (se abre al lado de su tarjeta, como el detalle de una tarea) y la de una
 // tarjeta (nueva o para editarla: solo un nombre y un color, nunca el número). Todo se guarda al
 // momento, con deshacer; una suscripción nueva no se guarda hasta que tiene nombre, y ninguna se
-// guarda sin él.
+// guarda sin él. «Columna» es la empresa (la columna del tablero) a la que pertenece: la alternativa
+// a arrastrarla, también con el teclado.
 import { useEffect, useId, useRef, useState } from 'react'
 import { useActions, useBoard, useNow, useUI } from '../context'
 import { formatDay, formatWhen, todayISO } from '../dates'
@@ -12,6 +13,7 @@ import {
   cardNameError,
   cardsOf,
   chargeAfter,
+  columnChoices,
   CURRENCIES,
   daysBetween,
   findCard,
@@ -23,6 +25,7 @@ import {
   PERIODS,
   REMIND_OPTIONS,
   remindLabel,
+  reminderColumn,
   type SubscriptionPatch,
 } from '../subscriptions'
 import { cx, tint } from '../util'
@@ -50,17 +53,20 @@ export function onDay(day: string, now: Date) {
 }
 
 /**
- * La ficha de una suscripción (o de una nueva, `id` null, que empieza con la tarjeta `cardId`). Todo se
- * guarda al momento. Al cerrarse, `onClose` recibe el id de la que enseñaba (null si la nueva no se guardó).
+ * La ficha de una suscripción (o de una nueva, `id` null, que empieza con la tarjeta `cardId` y en la
+ * columna `columnId`). Todo se guarda al momento. Al cerrarse, `onClose` recibe el id de la que enseñaba
+ * (null si la nueva no se guardó).
  */
 export function SubscriptionSheet({
   id: initialId,
   cardId: initialCard = null,
+  columnId: initialColumn = null,
   anchor,
   onClose,
 }: {
   id: string | null
   cardId?: string | null
+  columnId?: string | null
   anchor: DOMRect
   onClose: (id: string | null) => void
 }) {
@@ -75,7 +81,13 @@ export function SubscriptionSheet({
   // Una nueva no se guarda hasta que tiene nombre: hasta entonces, todo va al borrador.
   const [createdId, setCreatedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Subscription>(() =>
-    newSubscription({ cardId: findCard(board, initialCard) ? initialCard : null }, today),
+    newSubscription(
+      {
+        cardId: findCard(board, initialCard) ? initialCard : null,
+        columnId: board.columns.some((c) => c.id === initialColumn) ? initialColumn : null,
+      },
+      today,
+    ),
   )
   const id = initialId ?? createdId
   const stored = id ? findSubscription(board, id) : null
@@ -119,6 +131,10 @@ export function SubscriptionSheet({
   const cancelled = Boolean(sub.cancelledOn)
   const cards = cardsOf(board)
   const card = findCard(board, sub.cardId)
+  const columns = columnChoices(board, sub.columnId)
+  // Dónde crea el servidor la tarea de aviso: en su columna (si no está archivada) o en la Bandeja.
+  const reminderTarget = reminderColumn(board, sub)
+  const reminderWhere = !reminderTarget || reminderTarget.inbox ? 'la Bandeja' : `«${reminderTarget.name}»`
 
   const update = (patch: SubscriptionPatch, coalesce?: string) => {
     if (id) return actions.updateSubscription(id, patch, coalesce)
@@ -333,6 +349,44 @@ export function SubscriptionSheet({
         </div>
 
         <div className="field">
+          <span className="field-label" id={`${ids}-column`}>
+            <Icon.Columns />
+            Columna
+          </span>
+          <div className="field-controls">
+            <div className="subs-choice" role="radiogroup" aria-labelledby={`${ids}-column`}>
+              {columns.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={sub.columnId === c.id}
+                  className={cx('chip', 'subs-card-chip', sub.columnId === c.id && 'is-active')}
+                  style={tint(c.color)}
+                  title={c.archived ? 'Columna archivada' : undefined}
+                  onClick={() => update({ columnId: c.id })}
+                >
+                  <span className="subs-chip-dot" aria-hidden="true" />
+                  {c.name}
+                  {c.archived && <span className="sr-only"> (archivada)</span>}
+                </button>
+              ))}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={sub.columnId === null}
+                className={cx('chip', 'subs-card-chip', sub.columnId === null && 'is-active')}
+                style={tint('gray')}
+                onClick={() => update({ columnId: null })}
+              >
+                <span className="subs-chip-dot is-empty" aria-hidden="true" />
+                Sin columna
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="field">
           <span className="field-label" id={`${ids}-card`}>
             <Icon.Card />
             Tarjeta
@@ -398,7 +452,7 @@ export function SubscriptionSheet({
               {!remindKnown && <option value={remindValue}>{remindLabel(sub.remind)}</option>}
             </select>
             <span id={`${ids}-remind-note`} className="subs-note">
-              Crea una tarea en la Bandeja que llega al iPhone
+              Crea una tarea en {reminderWhere} que llega al iPhone
             </span>
           </div>
         </div>

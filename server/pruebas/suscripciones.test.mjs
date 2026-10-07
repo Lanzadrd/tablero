@@ -16,6 +16,7 @@ import {
   parseMoney,
   periodLabel,
   periodUnit,
+  reminderColumn,
   remindersDue,
   totals,
   yearlyAmount,
@@ -26,6 +27,8 @@ const load = async (file) => (ts ? import(new URL(`../../src/${file}`, import.me
 const model = await load('model.ts')
 const subs = await load('subscriptions.ts')
 const merge = await load('merge.ts')
+const projects = await load('projects.ts')
+const vistas = await load('today.ts')
 const opts = { skip: ts ? false : 'Este Node no ejecuta TypeScript' }
 
 const HOY = '2026-10-07' // miércoles
@@ -168,6 +171,23 @@ test('totals: por moneda (nunca se suman), solo las activas, y por tarjeta', () 
   assert.deepEqual(totals(undefined), {})
   // Una anual: el total del año sale exacto.
   assert.deepEqual(totals([sub('x', { amount: 9999, period: 'year' })]).EUR, { monthly: 833.25, yearly: 9999, count: 1 })
+})
+
+test('totals: por columna (null = sin columna, también las que no la tienen), y con tarjeta a la vez', () => {
+  const list = [
+    sub('a', { columnId: 'lto' }),
+    sub('b', { columnId: 'lto', currency: 'USD', amount: 2000 }),
+    sub('c'),
+    sub('d', { columnId: null, cardId: 'bbva' }),
+    sub('e', { columnId: 'lto', cancelledOn: HOY }),
+  ]
+  assert.deepEqual(totals(list, { columnId: 'lto' }), {
+    EUR: { monthly: 1000, yearly: 12000, count: 1 },
+    USD: { monthly: 2000, yearly: 24000, count: 1 },
+  })
+  assert.deepEqual(totals(list, { columnId: null }), { EUR: { monthly: 2000, yearly: 24000, count: 2 } })
+  assert.deepEqual(totals(list, { columnId: null, cardId: 'bbva' }), { EUR: { monthly: 1000, yearly: 12000, count: 1 } })
+  assert.deepEqual(totals(list, { columnId: 'personal' }), {})
 })
 
 test('formatMoney: «12,99 €», con su símbolo y redondeando al céntimo', () => {
@@ -356,6 +376,45 @@ test('applyReminders: sin Bandeja, la primera columna sin archivar; sin ninguna,
   assert.equal(applyReminders({ columns: [column('c')] }, HOY, { newId: () => 'x' }), 0, 'sin suscripciones')
 })
 
+test('applyReminders: la tarea va a la columna de la suscripción; archivada, borrada o sin columna, a la Bandeja', () => {
+  const b = {
+    columns: [
+      column('bandeja', [task('a')], { name: 'Bandeja', inbox: true }),
+      column('lto', [task('l'), task('l-hecha', { done: true })], { name: 'LTO' }),
+      column('viejo', [], { archived: true }),
+    ],
+    subscriptions: [
+      sub('en-lto', { remind: 3, columnId: 'lto' }),
+      sub('archivada', { remind: 3, columnId: 'viejo' }),
+      sub('borrada', { remind: 3, columnId: 'no-existe' }),
+      sub('suelta', { remind: 3 }),
+    ],
+  }
+  let n = 0
+  assert.equal(applyReminders(b, '2026-10-10', { newId: () => `t${++n}` }), 4)
+  assert.deepEqual(
+    b.columns.map((c) => c.tasks.map((t) => [t.id, t.subscriptionId ?? null])),
+    [
+      [['a', null], ['t2', 'archivada'], ['t3', 'borrada'], ['t4', 'suelta']],
+      [['l', null], ['t1', 'en-lto'], ['l-hecha', null]], // detrás de la última pendiente de LTO
+      [],
+    ],
+  )
+  assert.equal(applyReminders(b, '2026-10-11', { newId: () => 'otra' }), 0, 'una sola vez, esté donde esté')
+
+  assert.equal(reminderColumn(b, { columnId: 'lto' }).id, 'lto')
+  assert.equal(reminderColumn(b, { columnId: 'bandeja' }).id, 'bandeja')
+  assert.equal(reminderColumn(b, { columnId: 'viejo' }).id, 'bandeja')
+  assert.equal(reminderColumn(b, { columnId: null }).id, 'bandeja')
+  assert.equal(reminderColumn(b, {}).id, 'bandeja')
+  // Sin Bandeja, la primera sin archivar; sin ninguna, ninguna.
+  const sinBandeja = { columns: [column('viejo', [], { archived: true }), column('personal'), column('lto')] }
+  assert.equal(reminderColumn(sinBandeja, { columnId: 'viejo' }).id, 'personal')
+  assert.equal(reminderColumn(sinBandeja, { columnId: 'lto' }).id, 'lto')
+  assert.equal(reminderColumn({ columns: [column('viejo', [], { archived: true })] }, { columnId: 'viejo' }), null)
+  assert.equal(reminderColumn(null, {}), null)
+})
+
 // ── Leer el tablero (src/model.ts) ──
 
 test('normalizeBoard: siempre trae tarjetas y suscripciones; las tarjetas nunca con número', opts, () => {
@@ -409,6 +468,7 @@ test('normalizeBoard: suscripciones con valores raros', opts, () => {
         period: 'daily',
         billingDate: '2026-02-31',
         cardId: 'no-existe',
+        columnId: 'no-existe',
         url: 'javascript:alert(1)',
         notes: '',
         remind: 31,
@@ -424,6 +484,7 @@ test('normalizeBoard: suscripciones con valores raros', opts, () => {
         period: 'quarter',
         billingDate: '2026-09-15',
         cardId: 'bbva',
+        columnId: 'c',
         url: 'https://netflix.com/account',
         notes: 'Plan estándar',
         remind: 0,
@@ -431,7 +492,7 @@ test('normalizeBoard: suscripciones con valores raros', opts, () => {
         cancelledOn: '2026-10-01',
         createdAt: '2026-09-01T10:00:00.000Z',
       },
-      { amount: 12.5, remind: 2.5 },
+      { amount: 12.5, remind: 2.5, columnId: 7 },
       null,
     ],
   })
@@ -439,8 +500,8 @@ test('normalizeBoard: suscripciones con valores raros', opts, () => {
   assert.equal(b.subscriptions.length, 3)
   assert.equal(raro.name.length, 60)
   assert.deepEqual(
-    { amount: raro.amount, currency: raro.currency, period: raro.period, billingDate: raro.billingDate, cardId: raro.cardId, otra: raro.otra },
-    { amount: 0, currency: 'EUR', period: 'month', billingDate: hoy, cardId: null, otra: 'se conserva' },
+    { amount: raro.amount, currency: raro.currency, period: raro.period, billingDate: raro.billingDate, cardId: raro.cardId, columnId: raro.columnId, otra: raro.otra },
+    { amount: 0, currency: 'EUR', period: 'month', billingDate: hoy, cardId: null, columnId: null, otra: 'se conserva' },
   )
   for (const key of ['url', 'notes', 'remind', 'remindedFor', 'cancelledOn']) assert.equal(key in raro, false, key)
   assert.ok(!Number.isNaN(Date.parse(raro.createdAt)))
@@ -452,6 +513,7 @@ test('normalizeBoard: suscripciones con valores raros', opts, () => {
     period: 'quarter',
     billingDate: '2026-09-15',
     cardId: 'bbva',
+    columnId: 'c',
     url: 'https://netflix.com/account',
     notes: 'Plan estándar',
     remind: 0,
@@ -460,6 +522,7 @@ test('normalizeBoard: suscripciones con valores raros', opts, () => {
     createdAt: '2026-09-01T10:00:00.000Z',
   })
   assert.equal(minimo.amount, 0)
+  assert.equal(minimo.columnId, null, 'sin columna (las de antes no la tienen)')
   assert.equal('remind' in minimo, false)
   assert.equal(minimo.name, '')
   assert.equal(typeof minimo.id, 'string')
@@ -469,7 +532,7 @@ test('normalizeBoard: suscripciones con valores raros', opts, () => {
   assert.deepEqual(model.normalizeBoard(JSON.parse(JSON.stringify(b))).subscriptions, b.subscriptions)
 })
 
-test('newSubscription: mensual, en euros, sin tarjeta y con cobro hoy por defecto', opts, () => {
+test('newSubscription: mensual, en euros, sin tarjeta ni columna y con cobro hoy por defecto', opts, () => {
   const s = model.newSubscription({ name: 'Netflix', amount: 1299 }, HOY)
   assert.deepEqual({ ...s, id: 'x', createdAt: 'y' }, {
     id: 'x',
@@ -479,6 +542,7 @@ test('newSubscription: mensual, en euros, sin tarjeta y con cobro hoy por defect
     period: 'month',
     billingDate: HOY,
     cardId: null,
+    columnId: null,
     createdAt: 'y',
   })
   assert.notEqual(model.newSubscription({}, HOY).id, s.id)
@@ -663,6 +727,221 @@ test('lectura: activas por próximo cobro, bajas, el próximo, totales y la de u
   assert.equal(subs.remindLabel(14), '14 días antes')
 })
 
+// ── Por columna: la empresa de cada una (src/subscriptions.ts, src/projects.ts) ──
+
+/**
+ * Bandeja, Personal, LTO y una archivada. Netflix y Spotify (de baja) en Personal; iCloud+ y ChatGPT
+ * (en dólares) en LTO; Figma en la archivada; Notion sin columna.
+ */
+function companies() {
+  const b = board()
+  b.columns.push(column('lto', [task('l')], { name: 'LTO', color: 'orange' }), column('viejo', [], { name: 'Viejo', archived: true }))
+  const columnOf = { netflix: 'personal', spotify: 'personal', icloud: 'lto', chatgpt: 'lto' }
+  for (const s of b.subscriptions) s.columnId = columnOf[s.id]
+  b.subscriptions.push(
+    sub('figma', { name: 'Figma', amount: 1500, billingDate: '2026-09-09', cardId: 'bbva', columnId: 'viejo' }),
+    sub('notion', { name: 'Notion', amount: 800, billingDate: '2026-09-10', columnId: null }),
+  )
+  return b
+}
+const groups = (list) => list.map((g) => [g.column?.id ?? null, g.items.map((i) => i.subscription.id)])
+
+test('subscriptionColumns: las del tablero en su orden, cada una con sus activas por próximo cobro', opts, () => {
+  const b = companies()
+  const all = subs.subscriptionColumns(b, HOY)
+  // La Bandeja (sin ninguna) no sale; la archivada, porque tiene una; «Sin columna», al final.
+  assert.deepEqual(groups(all), [
+    ['personal', ['netflix']],
+    ['lto', ['icloud', 'chatgpt']],
+    ['viejo', ['figma']],
+    [null, ['notion']],
+  ])
+  const [personal, lto, , loose] = all
+  assert.equal(personal.column, b.columns[1])
+  assert.equal(loose.column, null)
+  assert.deepEqual(
+    lto.items.map((i) => [i.charge, i.days, i.card?.name ?? null]),
+    [
+      ['2026-10-08', 1, 'Revolut'],
+      ['2026-10-20', 13, null],
+    ],
+  )
+  // Totales por moneda (nunca se suman) y sin las de baja.
+  assert.deepEqual(lto.totals, { EUR: { monthly: 299, yearly: 3588, count: 1 }, USD: { monthly: 2000, yearly: 24000, count: 1 } })
+  assert.deepEqual(personal.totals, { EUR: { monthly: 1299, yearly: 15588, count: 1 } })
+
+  // Con el filtro de tarjeta: las columnas normales siguen (aunque se queden vacías); las demás, no.
+  assert.deepEqual(groups(subs.subscriptionColumns(b, HOY, 'bbva')), [
+    ['personal', ['netflix']],
+    ['lto', []],
+    ['viejo', ['figma']],
+  ])
+  assert.deepEqual(subs.subscriptionColumns(b, HOY, 'bbva')[1].totals, {})
+  assert.deepEqual(groups(subs.subscriptionColumns(b, HOY, null)), [
+    ['personal', []],
+    ['lto', ['chatgpt']],
+    [null, ['notion']],
+  ])
+
+  // En la Bandeja, sale (la primera, como en el tablero); en una columna que ya no existe, «Sin columna».
+  const enBandeja = subs.changeSubscription(b, 'notion', { columnId: 'bandeja' })
+  assert.deepEqual(groups(subs.subscriptionColumns(enBandeja, HOY)).map(([id]) => id), ['bandeja', 'personal', 'lto', 'viejo'])
+  const perdida = structuredClone(b)
+  perdida.subscriptions.find((s) => s.id === 'figma').columnId = 'borrada'
+  assert.deepEqual(groups(subs.subscriptionColumns(perdida, HOY)).at(-1), [null, ['figma', 'notion']])
+
+  // Sin suscripciones, igual: para poder añadirlas en su columna.
+  assert.deepEqual(groups(subs.subscriptionColumns({ columns: b.columns }, HOY)), [
+    ['personal', []],
+    ['lto', []],
+  ])
+})
+
+test('columnTotals, columnChoices, columnOf y la columna de una nueva', opts, () => {
+  const b = companies()
+  assert.deepEqual(subs.columnTotals(b, 'lto'), { EUR: { monthly: 299, yearly: 3588, count: 1 }, USD: { monthly: 2000, yearly: 24000, count: 1 } })
+  assert.deepEqual(subs.columnTotals(b, 'personal'), { EUR: { monthly: 1299, yearly: 15588, count: 1 } }, 'sin la de baja')
+  assert.deepEqual(subs.columnTotals(b, null), { EUR: { monthly: 800, yearly: 9600, count: 1 } })
+  assert.deepEqual(subs.columnTotals(b, 'bandeja'), {})
+
+  // La ficha ofrece las normales; la archivada o la Bandeja, solo si es la suya.
+  const ids = (list) => list.map((c) => c.id)
+  assert.deepEqual(ids(subs.columnChoices(b, null)), ['personal', 'lto'])
+  assert.deepEqual(ids(subs.columnChoices(b, 'viejo')), ['personal', 'lto', 'viejo'])
+  assert.deepEqual(ids(subs.columnChoices(b, 'bandeja')), ['bandeja', 'personal', 'lto'])
+
+  assert.equal(subs.columnOf(b, { columnId: 'lto' }).name, 'LTO')
+  assert.equal(subs.columnOf(b, { columnId: 'borrada' }), null)
+  assert.equal(subs.columnOf(b, { columnId: null }), null)
+
+  assert.equal(subs.newSubscriptionColumn(b, 'lto'), 'lto')
+  assert.equal(subs.newSubscriptionColumn(b, 'viejo'), 'personal', 'una archivada no: la primera')
+  assert.equal(subs.newSubscriptionColumn(b, 'bandeja'), 'personal')
+  assert.equal(subs.newSubscriptionColumn(b, undefined), 'personal')
+  assert.equal(subs.newSubscriptionColumn({ columns: [b.columns[0]] }, null), null, 'solo la Bandeja: sin columna')
+})
+
+test('perMonthText y totalCount: lo de la cabecera de cada columna, sin sumar monedas distintas', opts, () => {
+  const b = companies()
+  assert.equal(plain(subs.perMonthText(subs.columnTotals(b, 'personal'))), '12,99 € / mes')
+  assert.equal(plain(subs.perMonthText(subs.columnTotals(b, 'lto'))), '2,99 € · 20,00 $ / mes')
+  assert.equal(subs.perMonthText({}), '')
+  assert.equal(subs.totalCount(subs.columnTotals(b, 'lto')), 2)
+  assert.equal(subs.totalCount({}), 0)
+  // Anual: lo que sale al mes.
+  assert.equal(plain(subs.perMonthText(totals([sub('x', { amount: 12000, period: 'year' })]))), '10,00 € / mes')
+})
+
+test('changeSubscription e insertSubscription: la columna tiene que existir', opts, () => {
+  const b = companies()
+  for (const columnId of ['borrada', 7, '', undefined]) {
+    assert.equal(subs.changeSubscription(b, 'notion', { columnId }), b, String(columnId))
+  }
+  assert.equal(subs.changeSubscription(b, 'notion', { columnId: null }), b, 'ya estaba sin columna')
+  assert.equal(subs.changeSubscription(b, 'notion', { columnId: 'personal' }).subscriptions.at(-1).columnId, 'personal')
+  assert.equal(subs.changeSubscription(b, 'icloud', { columnId: null }).subscriptions[1].columnId, null)
+  // Una archivada o la Bandeja existen: valen (la ficha no las ofrece, pero tampoco las pierde).
+  assert.equal(subs.changeSubscription(b, 'notion', { columnId: 'viejo' }).subscriptions.at(-1).columnId, 'viejo')
+
+  const nueva = model.newSubscription({ name: 'Linear', columnId: 'lto' }, HOY)
+  assert.equal(subs.insertSubscription(b, nueva).subscriptions.at(-1).columnId, 'lto')
+  const mala = model.newSubscription({ name: 'X', columnId: 'borrada' }, HOY)
+  assert.equal(subs.insertSubscription(b, mala).subscriptions.at(-1).columnId, null)
+})
+
+test('changeSubscription: al cambiar de columna, su aviso pendiente se va con ella (el mismo, sin rehacerlo)', opts, () => {
+  const b = companies()
+  applyReminders(b, '2026-10-12', { newId: () => 'aviso' }) // Netflix (Personal), 1 día antes del 15
+  b.columns[1].tasks.push(task('aviso-sept', { subscriptionId: 'netflix', due: '2026-09-14', done: true, completedAt: '2026-09-14T09:00:00.000Z' }))
+  const tasksOf = (x) => x.columns.map((c) => c.tasks.map((t) => t.id))
+  assert.deepEqual(tasksOf(b), [['a', 'b'], ['p', 'aviso', 'aviso-sept'], ['l'], []])
+
+  const lto = subs.changeSubscription(b, 'netflix', { columnId: 'lto' })
+  assert.equal(lto.subscriptions[0].columnId, 'lto')
+  assert.deepEqual(tasksOf(lto), [['a', 'b'], ['p', 'aviso-sept'], ['l', 'aviso'], []], 'la completada se queda')
+  assert.equal(lto.columns[2].tasks[1], b.columns[1].tasks[1], 'la misma tarea')
+  assert.equal(lto.subscriptions[0].remindedFor, '2026-10-15')
+  assert.equal(lto.columns[0], b.columns[0], 'las demás columnas, intactas')
+  assert.equal(applyReminders(structuredClone(lto), '2026-10-13', { newId: () => 'otra' }), 0, 'el servidor no crea otro')
+
+  // Sin columna (o a una archivada): su aviso va a la Bandeja, detrás de la última pendiente.
+  assert.deepEqual(tasksOf(subs.changeSubscription(lto, 'netflix', { columnId: null })), [['a', 'aviso', 'b'], ['p', 'aviso-sept'], ['l'], []])
+  assert.deepEqual(tasksOf(subs.changeSubscription(lto, 'netflix', { columnId: 'viejo' }))[0], ['a', 'aviso', 'b'])
+  // De una archivada a la Bandeja: su aviso ya estaba ahí.
+  const archivada = subs.changeSubscription(lto, 'netflix', { columnId: 'viejo' })
+  assert.equal(subs.changeSubscription(archivada, 'netflix', { columnId: null }).columns, archivada.columns)
+
+  // Uno que se movió a mano a otra columna se queda donde está.
+  const aMano = structuredClone(lto)
+  aMano.columns[2].tasks = aMano.columns[2].tasks.filter((t) => t.id !== 'aviso')
+  aMano.columns[0].tasks.unshift(structuredClone(lto.columns[2].tasks[1]))
+  assert.deepEqual(tasksOf(subs.changeSubscription(aMano, 'netflix', { columnId: 'personal' })), tasksOf(aMano))
+
+  // Si a la vez cambia algo del aviso, se rehace como siempre.
+  const ambos = subs.changeSubscription(b, 'netflix', { columnId: 'lto', amount: 1499 })
+  assert.ok(!tasksOf(ambos).flat().includes('aviso'))
+  assert.equal('remindedFor' in ambos.subscriptions[0], false)
+  assert.equal(applyReminders(ambos, '2026-10-12', { newId: () => 'rehecho' }), 1)
+  assert.deepEqual(ambos.columns[2].tasks.map((t) => t.id), ['l', 'rehecho'])
+})
+
+test('deleteColumn: sus suscripciones se quedan sin columna y su aviso pendiente pasa a la Bandeja, en el mismo cambio', opts, () => {
+  const b = companies()
+  applyReminders(b, '2026-10-12', { newId: () => 'aviso' }) // en Personal
+  const personal = b.columns[1]
+  personal.tasks.push(
+    task('aviso-sept', { subscriptionId: 'netflix', done: true }),
+    task('aviso-icloud', { subscriptionId: 'icloud', due: '2026-10-08' }), // de LTO, movido aquí a mano
+    task('aviso-spotify', { subscriptionId: 'spotify', due: '2026-10-14' }), // de una dada de baja
+  )
+  const next = projects.deleteColumn(b, 'personal')
+  assert.deepEqual(next.columns.map((c) => c.id), ['bandeja', 'lto', 'viejo'])
+  const byId = Object.fromEntries(next.subscriptions.map((s) => [s.id, s]))
+  assert.equal(byId.netflix.columnId, null)
+  assert.equal(byId.spotify.columnId, null, 'también las dadas de baja')
+  assert.equal(byId.icloud, b.subscriptions[1], 'las de otras columnas, intactas')
+  assert.equal(byId.netflix.remindedFor, '2026-10-15', 'el aviso es el mismo: no se rehace')
+  assert.deepEqual(
+    next.columns.map((c) => c.tasks.map((t) => t.id)),
+    [['a', 'aviso', 'b'], ['l', 'aviso-icloud'], []],
+    'los avisos pendientes de las activas no se pierden; lo demás se va con la columna',
+  )
+  assert.equal(applyReminders(structuredClone(next), '2026-10-12', { newId: () => 'otra' }), 0)
+  assert.deepEqual(groups(subs.subscriptionColumns(next, HOY)).at(-1), [null, ['notion', 'netflix']], 'por próximo cobro')
+
+  // Una sin suscripciones: solo se borra. La Bandeja, nunca. Archivar no toca las suscripciones.
+  const vacia = projects.deleteColumn(companies(), 'lto')
+  assert.deepEqual(vacia.subscriptions.filter((s) => s.columnId === null).map((s) => s.id), ['icloud', 'chatgpt', 'notion'])
+  assert.equal(projects.deleteColumn(b, 'bandeja'), b)
+  assert.equal(projects.setArchived(b, 'lto', true).subscriptions, b.subscriptions)
+  const sinLista = { columns: [column('bandeja', [], { inbox: true }), column('x')] }
+  assert.equal('subscriptions' in projects.deleteColumn(sinLista, 'x'), false)
+})
+
+test('setArchived: el aviso pendiente que estaba en la columna pasa a la Bandeja (a la vista), en el mismo cambio', opts, () => {
+  const b = companies()
+  applyReminders(b, '2026-10-12', { newId: () => 'aviso' }) // Netflix, en Personal
+  b.columns[1].tasks.push(
+    task('aviso-sept', { subscriptionId: 'netflix', done: true }),
+    task('aviso-spotify', { subscriptionId: 'spotify', due: '2026-10-14' }), // de una dada de baja
+  )
+  const tasksOf = (x) => x.columns.map((c) => c.tasks.map((t) => t.id))
+  const next = projects.setArchived(b, 'personal', true)
+  assert.equal(next.columns[1].archived, true)
+  assert.deepEqual(tasksOf(next), [['a', 'aviso', 'b'], ['p', 'aviso-sept', 'aviso-spotify'], ['l'], []])
+  assert.equal(next.columns[0].tasks[1], b.columns[1].tasks[1], 'la misma tarea: no se rehace')
+  assert.equal(next.subscriptions, b.subscriptions, 'las suscripciones, intactas')
+  assert.equal(next.columns[2], b.columns[2])
+  assert.ok(vistas.todayData(next, '2026-10-14').groups.some((g) => g.items.some((i) => i.task.id === 'aviso')), 'se ve en Hoy')
+  assert.equal(applyReminders(structuredClone(next), '2026-10-13', { newId: () => 'otra' }), 0)
+
+  // Restaurarla no la devuelve (se queda donde está, como uno movido a mano); sin avisos, solo se archiva.
+  assert.deepEqual(tasksOf(projects.setArchived(next, 'personal', false)), tasksOf(next))
+  assert.deepEqual(tasksOf(projects.setArchived(b, 'lto', true)), tasksOf(b))
+  // Luego, al cambiarla de columna, el aviso de la Bandeja se va con ella.
+  assert.deepEqual(tasksOf(subs.changeSubscription(next, 'netflix', { columnId: 'lto' }))[2], ['l', 'aviso'])
+})
+
 // ── Fusión (src/merge.ts) ──
 
 test('mergeBoards: campos distintos de la misma suscripción se conservan los dos', opts, () => {
@@ -772,4 +1051,79 @@ test('mergeBoards: si ninguna versión tiene la lista, no la añade', opts, () =
   const withList = { ...plainBoard, cards: [{ id: 'bbva', name: 'BBVA', color: 'blue' }] }
   assert.deepEqual(merge.mergeBoards(plainBoard, withList, plainBoard).cards, withList.cards)
   assert.deepEqual(merge.mergeBoards(plainBoard, plainBoard, withList).cards, withList.cards)
+})
+
+test('mergeBoards: la columna se fusiona campo a campo; si en el otro lado se borró, sin columna', opts, () => {
+  const base = companies()
+  const ours = subs.changeSubscription(base, 'notion', { columnId: 'lto' })
+  const theirs = subs.changeSubscription(base, 'notion', { notes: 'Plan Plus' })
+  const notion = (b) => b.subscriptions.find((s) => s.id === 'notion')
+  assert.deepEqual([notion(merge.mergeBoards(base, ours, theirs)).columnId, notion(merge.mergeBoards(base, ours, theirs)).notes], ['lto', 'Plan Plus'])
+  assert.equal(notion(merge.mergeBoards(base, theirs, ours)).columnId, 'lto', 'la cambió el otro lado')
+  // Si los dos la cambian, gana la de aquí.
+  assert.equal(notion(merge.mergeBoards(base, ours, subs.changeSubscription(base, 'notion', { columnId: 'personal' }))).columnId, 'lto')
+
+  // Aquí se pone en LTO mientras en otra ventana se borra LTO: sin columna.
+  const borrada = merge.mergeBoards(base, ours, projects.deleteColumn(base, 'lto'))
+  assert.equal(borrada.columns.some((c) => c.id === 'lto'), false)
+  assert.equal(notion(borrada).columnId, null)
+  assert.equal(borrada.subscriptions.find((s) => s.id === 'icloud').columnId, null)
+})
+
+test('mergeBoards: si aquí cambia de columna mientras el servidor crea su aviso en la de antes, se crea otra vez donde toca', opts, () => {
+  const base = companies()
+  const theirs = structuredClone(base)
+  applyReminders(theirs, '2026-10-12', { newId: () => 'T1' })
+  assert.deepEqual(theirs.columns[1].tasks.map((t) => t.id), ['p', 'T1'], 'en Personal')
+  const merged = merge.mergeBoards(base, subs.changeSubscription(base, 'netflix', { columnId: 'lto' }), theirs)
+  const netflix = merged.subscriptions.find((s) => s.id === 'netflix')
+  assert.equal(netflix.columnId, 'lto')
+  assert.ok(!allTasks(merged).some((t) => t.id === 'T1'))
+  assert.equal('remindedFor' in netflix, false)
+  assert.equal(applyReminders(merged, '2026-10-12', { newId: () => 'T2' }), 1)
+  assert.deepEqual(merged.columns.find((c) => c.id === 'lto').tasks.map((t) => t.id), ['l', 'T2'])
+})
+
+test('mergeBoards: el aviso pendiente no se pierde si su columna se borra o se archiva en el otro lado', opts, () => {
+  const pending = (b, id = 'netflix') => b.columns.flatMap((c) => c.tasks.filter((t) => t.subscriptionId === id && !t.done).map((t) => [c.id, t.id]))
+  const netflix = (b) => b.subscriptions.find((s) => s.id === 'netflix')
+
+  // Aquí se borra Personal mientras el servidor crea en ella el aviso de Netflix: el servidor lo crea otra vez, en la Bandeja.
+  const base = companies()
+  const servidor = structuredClone(base)
+  applyReminders(servidor, '2026-10-12', { newId: () => 'T1' })
+  assert.deepEqual(pending(servidor), [['personal', 'T1']])
+  const borrada = merge.mergeBoards(base, projects.deleteColumn(base, 'personal'), servidor)
+  assert.equal(netflix(borrada).columnId, null)
+  applyReminders(borrada, '2026-10-12', { newId: () => 'T2' })
+  assert.equal(pending(borrada).length, 1, 'uno, ni cero ni dos')
+  assert.equal(pending(borrada)[0][0], 'bandeja')
+
+  // Aquí se archiva Personal mientras el servidor crea el aviso en ella: pasa a la Bandeja, a la vista.
+  const archivada = merge.mergeBoards(base, projects.setArchived(base, 'personal', true), servidor)
+  assert.equal(archivada.columns.find((c) => c.id === 'personal').archived, true)
+  assert.deepEqual(pending(archivada), [['bandeja', 'T1']])
+  assert.equal(applyReminders(structuredClone(archivada), '2026-10-12', { newId: () => 'T2' }), 0)
+
+  // Aquí pasa a LTO (y su aviso con ella) mientras en otra ventana se borra LTO: sin columna, y el aviso a la Bandeja.
+  const conAviso = companies()
+  applyReminders(conAviso, '2026-10-12', { newId: () => 'T1' })
+  const aLto = subs.changeSubscription(conAviso, 'netflix', { columnId: 'lto' })
+  assert.deepEqual(pending(aLto), [['lto', 'T1']])
+  for (const merged of [
+    merge.mergeBoards(conAviso, aLto, projects.deleteColumn(conAviso, 'lto')),
+    merge.mergeBoards(conAviso, projects.deleteColumn(conAviso, 'lto'), aLto),
+  ]) {
+    assert.equal(netflix(merged).columnId, null)
+    assert.equal(netflix(merged).remindedFor, '2026-10-15')
+    assert.deepEqual(pending(merged), [['bandeja', 'T1']])
+    assert.equal(applyReminders(structuredClone(merged), '2026-10-12', { newId: () => 'T2' }), 0)
+  }
+
+  // Lo demás de una columna borrada se va con ella (también el aviso de una dada de baja).
+  const otras = structuredClone(conAviso)
+  otras.columns[2].tasks.push(task('aviso-spotify', { subscriptionId: 'spotify', due: '2026-10-14' }))
+  const sinLto = merge.mergeBoards(otras, subs.changeSubscription(otras, 'icloud', { notes: 'x' }), projects.deleteColumn(otras, 'lto'))
+  assert.deepEqual(pending(sinLto, 'spotify'), [])
+  assert.ok(!allTasks(sinLto).some((t) => t.id === 'l'))
 })

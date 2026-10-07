@@ -1,7 +1,7 @@
-// Suscripciones: cuánto cuestan, cuándo se cobran y el aviso en la Bandeja antes de cada cobro.
-// Lógica pura, sin dependencias: la usan la app (src/subscriptions.ts), el servidor (el aviso,
-// server/api.mjs) y el MCP de Claude Code. Las fechas son días 'AAAA-MM-DD' (hora local de
-// quien llama); las cuentas se hacen en UTC para que los cambios de hora no muevan ningún día.
+// Suscripciones: cuánto cuestan, cuándo se cobran y el aviso antes de cada cobro (en la columna de la
+// suscripción o en la Bandeja). Lógica pura, sin dependencias: la usan la app (src/subscriptions.ts),
+// el servidor (el aviso, server/api.mjs) y el MCP de Claude Code. Las fechas son días 'AAAA-MM-DD'
+// (hora local de quien llama); las cuentas se hacen en UTC para que los cambios de hora no muevan ningún día.
 
 export const PERIODS = ['week', 'month', 'quarter', 'half', 'year']
 export const CURRENCIES = ['EUR', 'USD', 'GBP']
@@ -123,12 +123,13 @@ export const monthlyAmount = (sub) => yearlyAmount(sub) / 12
 /**
  * Totales de las activas por moneda (nunca se suman monedas distintas):
  * { EUR: { monthly, yearly, count }, … }, en céntimos sin redondear. Con `cardId`, solo las de esa
- * tarjeta (null = las que no tienen).
+ * tarjeta (null = las que no tienen); con `columnId`, solo las de esa columna (null = sin columna).
  */
-export function totals(subs, { cardId } = {}) {
+export function totals(subs, { cardId, columnId } = {}) {
   const out = {}
   for (const sub of Array.isArray(subs) ? subs : []) {
     if (!sub || !active(sub) || (cardId !== undefined && (sub.cardId ?? null) !== cardId)) continue
+    if (columnId !== undefined && (sub.columnId ?? null) !== columnId) continue
     const currency = isCurrency(sub.currency) ? sub.currency : 'EUR'
     const total = (out[currency] ??= { monthly: 0, yearly: 0, count: 0 })
     total.yearly += yearlyAmount(sub)
@@ -281,19 +282,51 @@ const remindsOf = (t, day, charge) =>
   isDay(t.subscriptionCharge) ? t.subscriptionCharge === charge : typeof t.due === 'string' && t.due >= day && t.due <= charge
 
 /**
- * Crea las tareas de aviso que tocan (remindersDue) en la Bandeja (o, si no hay, en la primera
- * columna sin archivar; si tampoco, en ninguna), cada una con el cobro del que avisa
+ * La columna donde va el aviso de `sub`: la suya, si existe y no está archivada; si no, la Bandeja (o,
+ * si no hay, la primera columna sin archivar). null si no hay ninguna.
+ */
+export function reminderColumn(board, sub) {
+  const columns = (Array.isArray(board?.columns) ? board.columns : []).filter((c) => c && !c.archived)
+  const own = typeof sub?.columnId === 'string' ? columns.find((c) => c.id === sub.columnId) : undefined
+  return own ?? columns.find((c) => c.inbox) ?? columns[0] ?? null
+}
+
+/** La suscripción activa de la que `task` es el aviso pendiente, o null. */
+export function pendingReminderOf(board, task) {
+  if (!task || task.done || typeof task.subscriptionId !== 'string') return null
+  const sub = (Array.isArray(board?.subscriptions) ? board.subscriptions : []).find((s) => s?.id === task.subscriptionId)
+  return sub && active(sub) ? sub : null
+}
+
+/**
+ * Lleva los avisos pendientes `tasks` (que ya no están en el tablero: los de una columna que se borra o se
+ * archiva) a donde va ahora el aviso de cada suscripción (reminderColumn), detrás de la última pendiente. Los
+ * que no son avisos pendientes de una activa se quedan fuera. Devuelve un tablero nuevo (el mismo si no hay
+ * ninguno que mover); no cambia `board`.
+ */
+export function placeReminders(board, tasks) {
+  let next = board
+  for (const task of tasks) {
+    const sub = pendingReminderOf(next, task)
+    const target = sub && reminderColumn(next, sub)
+    if (target) next = { ...next, columns: next.columns.map((c) => (c === target ? { ...c, tasks: afterLastOpen(c.tasks, [task]) } : c)) }
+  }
+  return next
+}
+
+/**
+ * Crea las tareas de aviso que tocan (remindersDue) en la columna de cada suscripción (reminderColumn:
+ * la suya o, si no tiene o está archivada, la Bandeja), cada una con el cobro del que avisa
  * (`subscriptionCharge`), y anota `remindedFor` en cada suscripción.
  * Modifica `board`. Devuelve cuántas ha creado. Llamarla otra vez no repite nada.
  */
 export function applyReminders(board, today, { newId, now = new Date().toISOString() }) {
-  const columns = Array.isArray(board?.columns) ? board.columns : []
-  const target = columns.find((c) => c?.inbox && !c.archived) ?? columns.find((c) => c && !c.archived)
-  if (!target) return 0
-  if (!Array.isArray(target.tasks)) target.tasks = []
-  const cards = Array.isArray(board.cards) ? board.cards : []
+  const cards = Array.isArray(board?.cards) ? board.cards : []
   let created = 0
   for (const { subscription: sub, charge, due } of remindersDue(board, today)) {
+    const target = reminderColumn(board, sub)
+    if (!target) continue
+    if (!Array.isArray(target.tasks)) target.tasks = []
     insertOpen(target, {
       id: newId(),
       title: reminderTitle(sub, charge, { today, cards }),
@@ -314,9 +347,14 @@ export function applyReminders(board, today, { newId, now = new Date().toISOStri
 
 /** Detrás de la última pendiente, como al añadir una tarea (igual que insertOpen de operaciones.mjs). */
 function insertOpen(column, task) {
+  column.tasks = afterLastOpen(column.tasks, [task])
+}
+
+/** Una lista nueva con `added` detrás de la última pendiente de `tasks` (sin cambiar `tasks`). */
+export function afterLastOpen(tasks, added) {
   let last = -1
-  column.tasks.forEach((t, i) => {
-    if (!t.done) last = i
+  tasks.forEach((t, i) => {
+    if (!t?.done) last = i
   })
-  column.tasks.splice(last + 1, 0, task)
+  return [...tasks.slice(0, last + 1), ...added, ...tasks.slice(last + 1)]
 }

@@ -80,19 +80,28 @@ sincronización se guarda en `datos/sincronizacion.json` y su registro en `datos
 ## Suscripciones
 
 La vista **Suscripciones** (`U`) apunta lo que pagas cada semana, mes, trimestre, semestre o año:
-cuánto suma al mes y al año (por moneda: euros, dólares y libras nunca se mezclan), el próximo cobro
-y la lista ordenada por fecha. Las dadas de baja quedan plegadas al final y se pueden reactivar.
+cuánto suma al mes y al año (por moneda: euros, dólares y libras nunca se mezclan) y el próximo
+cobro. Las dadas de baja quedan plegadas al final y se pueden reactivar.
 
+- **Por empresa**: cada suscripción pertenece a una columna del tablero («Personal», «LTO»…; una
+  empresa nueva es una columna nueva). Se ven en columnas lado a lado, como el tablero, cada una con
+  lo que suma al mes; dentro, por próximo cobro. Se arrastran de una columna a otra (con el teclado:
+  `Espacio`, `←` `→` y `Espacio`) o se elige «Columna» en su ficha; «+ Suscripción» al pie de una
+  columna la crea ahí. Las que no tienen columna salen en «Sin columna». Borrar una columna las deja
+  sin columna (con deshacer); archivarla no las toca. En la **ficha del proyecto** de una columna,
+  «Suscripciones · 3 · 28,22 € / mes» lleva a ellas.
 - **Tarjetas**: cada suscripción puede llevar una tarjeta, que es solo un nombre y un color
   («BBVA», «Revolut»). **Nunca el número**: Tablero rechaza 6 cifras o más (vale «BBVA ··1234»).
-  Pulsar una tarjeta filtra la lista y los totales.
-- **Avisos**: con «Aviso» (el mismo día, 1, 3 o 7 días antes), el servidor crea en la Bandeja una
-  tarea «Netflix se cobra el 15 oct · 12,99 € · BBVA», que llega al iPhone como cualquier otra (con
-  dos días de margen, por si el Mac se duerme). Una sola vez por cobro; si cambias el precio, la
-  fecha o la tarjeta mientras está pendiente, se rehace. En el detalle de esa tarea, «Ver suscripción» lleva a su ficha.
-  `TABLERO_SIN_AVISOS_SUSCRIPCIONES=1` los desactiva.
+  Pulsar una tarjeta filtra las columnas y los totales.
+- **Avisos**: con «Aviso» (el mismo día, 1, 3 o 7 días antes), el servidor crea una tarea «Netflix
+  se cobra el 15 oct · 12,99 € · BBVA» en la columna de la suscripción (en la Bandeja si no tiene o
+  está archivada), que llega al iPhone como cualquier otra (con dos días de margen, por si el Mac se
+  duerme). Una sola vez por cobro; si cambias el precio, la fecha o la tarjeta mientras está
+  pendiente, se rehace, y si la cambias de columna, se va con ella (si borras o archivas su columna,
+  pasa a la Bandeja). En el detalle de esa tarea, «Ver suscripción» lleva a su ficha. `TABLERO_SIN_AVISOS_SUSCRIPCIONES=1` los desactiva.
 - Se guardan en `datos/board.json` con las tareas (copias diarias, deshacer y sincronización
-  entre ventanas incluidos). Claude Code las ve con la herramienta `tablero_suscripciones` del MCP.
+  entre ventanas incluidos). Claude Code las ve con la herramienta `tablero_suscripciones` del MCP,
+  con su columna, los totales por columna y, si se pide, solo las de una (`columna`) o una tarjeta.
 
 ## Atajos
 
@@ -101,7 +110,7 @@ y la lista ordenada por fecha. Las dadas de baja quedan plegadas al final y se p
 | `D` / `T` / `C` / `U` | Hoy / Tablero / Calendario / Suscripciones |
 | `N` · `1`–`9` · `⇧N` | Nueva tarea (en Suscripciones, nueva suscripción) · en esa columna · nueva columna |
 | `⌘K` o `/` | Buscar (también completadas y archivadas) |
-| `↑↓` `←→` (o `J`/`K`) | Moverse entre tareas y columnas |
+| `↑↓` `←→` (o `J`/`K`) | Moverse entre tareas (o suscripciones) y columnas |
 | `X` · `H` · `M` · `L` · `0` | Completar · hoy · mañana · próxima semana · sin fecha |
 | `A` · `F` · `⌥1`–`9` · `⌘D` · `⌫` | Algún día · lo primero · mover · duplicar · eliminar |
 | `⌘clic` / `⇧clic` | Seleccionar varias (las teclas se aplican a todas) |

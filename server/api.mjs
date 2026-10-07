@@ -112,8 +112,9 @@ async function patchTask(taskId, body) {
 }
 
 /**
- * Avisos de las suscripciones (suscripciones.mjs): crea en la Bandeja la tarea de los cobros que se
- * acercan, sobre la versión guardada. Solo guarda (rev+1 y aviso a las ventanas) si ha creado alguna.
+ * Avisos de las suscripciones (suscripciones.mjs): crea la tarea de los cobros que se acercan en la columna
+ * de cada suscripción (o en la Bandeja si no tiene o está archivada), sobre la versión guardada. Solo guarda
+ * (rev+1 y aviso a las ventanas) si ha creado alguna.
  * Sin tablero todavía, no hace nada. Lo llama server/index.mjs al arrancar y cada 15 minutos.
  */
 export async function subscriptionReminders({ today = localDay(), newId = randomUUID } = {}) {

@@ -166,11 +166,12 @@ const TOOLS = [
     name: 'tablero_suscripciones',
     title: 'Suscripciones en Tablero',
     description:
-      'Lista las suscripciones del usuario apuntadas en Tablero (Netflix, iCloud…), con su importe, periodicidad, próximo cobro, tarjeta y aviso, y lo que suman al mes y al año por moneda. Las tarjetas son solo un nombre («BBVA»), nunca números. Solo lectura.',
+      'Lista las suscripciones del usuario apuntadas en Tablero (Netflix, iCloud…), con su importe, periodicidad, próximo cobro, tarjeta, columna (la empresa o el área del tablero a la que pertenece) y aviso, y lo que suman al mes y al año por moneda, en total y por columna. Las tarjetas son solo un nombre («BBVA»), nunca números. Solo lectura.',
     inputSchema: {
       type: 'object',
       properties: {
         tarjeta: { type: 'string', description: 'Nombre (o principio del nombre) de una tarjeta, para ver solo las suyas; «sin tarjeta» para las que no tienen.' },
+        columna: { type: 'string', description: 'Nombre (o parte del nombre) de una columna del tablero (una empresa), para ver solo las suyas; «sin columna» para las que no tienen.' },
         incluirBajas: { type: 'boolean', description: 'También las dadas de baja (por defecto, no).' },
       },
       additionalProperties: false,
@@ -281,42 +282,74 @@ function price(sub) {
   return `${text} (≈ ${formatMoney(sub.amount * factor, sub.currency)} / mes)`
 }
 
+/** «28,22 € al mes · 338,64 € al año (3 activas)», una moneda tras otra (nunca se suman). */
+const totalsText = (sums) =>
+  Object.entries(sums)
+    .map(([currency, total]) => `${formatMoney(total.monthly, currency)} al mes · ${formatMoney(total.yearly, currency)} al año (${plural(total.count, 'activa', 'activas')})`)
+    .join('; ')
+
 async function suscripciones(args) {
   const board = await loadBoard()
   const today = localDay()
   const cards = (Array.isArray(board.cards) ? board.cards : []).filter((c) => typeof c?.id === 'string' && typeof c.name === 'string')
+  const columns = board.columns.filter((c) => typeof c?.id === 'string' && typeof c.name === 'string')
+  // Una tarjeta o una columna que ya no existe cuenta como ninguna.
   const subs = (Array.isArray(board.subscriptions) ? board.subscriptions : [])
     .filter((s) => typeof s?.id === 'string' && isDay(s.billingDate))
-    .map((s) => ({ ...s, currency: isCurrency(s.currency) ? s.currency : 'EUR', amount: Number.isFinite(s.amount) ? s.amount : 0 }))
+    .map((s) => ({
+      ...s,
+      currency: isCurrency(s.currency) ? s.currency : 'EUR',
+      amount: Number.isFinite(s.amount) ? s.amount : 0,
+      cardId: cards.some((c) => c.id === s.cardId) ? s.cardId : null,
+      columnId: columns.some((c) => c.id === s.columnId) ? s.columnId : null,
+    }))
   const cardName = (sub) => cards.find((c) => c.id === sub.cardId)?.name ?? null
+  const columnName = (sub) => columns.find((c) => c.id === sub.columnId)?.name ?? null
 
-  // undefined = todas; null = las que no tienen tarjeta.
+  // undefined = todas; null = las que no tienen tarjeta (o columna).
   let cardId
-  let scope = ''
+  let columnId
+  const scope = []
+  const wantedColumn = str(args.columna)
+  if (wantedColumn) {
+    if (['sin columna', 'sin', 'ninguna'].includes(fold(wantedColumn))) {
+      columnId = null
+      scope.push(' sin columna')
+    } else {
+      const column = columns.find((c) => c.id === wantedColumn) ?? findColumn(wantedColumn, columns)
+      if (!column) {
+        // Las que admiten suscripciones (como en la app: ni archivadas ni la Bandeja).
+        const names = columns.filter((c) => !c.archived && !c.inbox).map((c) => c.name)
+        throw new ToolError(`No hay ninguna columna «${wantedColumn}». Columnas: ${names.join(', ')}.`)
+      }
+      columnId = column.id
+      scope.push(` en ${column.name}`)
+    }
+  }
   const wanted = str(args.tarjeta)
   if (wanted) {
     if (['sin tarjeta', 'sin', 'ninguna'].includes(fold(wanted))) {
       cardId = null
-      scope = ' sin tarjeta'
+      scope.push(' sin tarjeta')
     } else {
       const card = cards.find((c) => c.id === wanted) ?? findColumn(wanted, cards)
       if (!card) {
         throw new ToolError(cards.length ? `No hay ninguna tarjeta «${wanted}». Tarjetas: ${cards.map((c) => c.name).join(', ')}.` : 'Aún no hay ninguna tarjeta.')
       }
       cardId = card.id
-      scope = ` con ${card.name}`
+      scope.push(` con ${card.name}`)
     }
   }
-  const mine = subs.filter((s) => cardId === undefined || (cardName(s) ? s.cardId : null) === cardId)
+  const mine = subs.filter((s) => (cardId === undefined || s.cardId === cardId) && (columnId === undefined || s.columnId === columnId))
   const active = mine
     .filter((s) => !s.cancelledOn)
     .map((sub) => ({ sub, charge: chargeAfter(sub, today) }))
     .sort((a, b) => a.charge.localeCompare(b.charge) || String(a.sub.name).localeCompare(String(b.sub.name), 'es'))
   const cancelled = args.incluirBajas === true ? mine.filter((s) => s.cancelledOn) : []
   if (!subs.length) return 'No hay suscripciones apuntadas en Tablero.'
-  if (!active.length && !cancelled.length) return `No hay suscripciones activas${scope}.`
+  if (!active.length && !cancelled.length) return `No hay suscripciones activas${scope.join('')}.`
 
-  const out = [`Suscripciones activas${scope} — hoy es ${today}`, '']
+  const out = [`Suscripciones activas${scope.join('')} — hoy es ${today}`, '']
   for (const { sub, charge } of active) {
     const days = daysBetween(today, charge)
     const when = describe({ due: charge, time: null, someday: false, repeat: null, columnId: null }, { today })
@@ -324,6 +357,7 @@ async function suscripciones(args) {
       `- ${sub.name || '(sin nombre)'}: ${price(sub)}`,
       `próximo cobro ${when}${days > 1 ? ` (en ${plural(days, 'día', 'días')})` : ''}`,
       cardName(sub) ?? 'sin tarjeta',
+      columnName(sub) ? `columna ${columnName(sub)}` : 'sin columna',
     ]
     if (Number.isInteger(sub.remind)) parts.push(sub.remind === 0 ? 'aviso el mismo día' : `aviso ${plural(sub.remind, 'día', 'días')} antes`)
     out.push(`${parts.join(' · ')} · id: ${sub.id}`)
@@ -334,12 +368,19 @@ async function suscripciones(args) {
   if (!active.length) out.push('(ninguna)')
 
   // Nunca se suman monedas distintas: una línea por moneda.
-  const sums = totals(mine.map((s) => (cardName(s) ? s : { ...s, cardId: null })), { cardId })
   if (active.length) out.push('')
-  for (const [currency, total] of Object.entries(sums)) {
+  for (const [currency, total] of Object.entries(totals(mine))) {
     out.push(
       `Total: ${formatMoney(total.monthly, currency)} al mes · ${formatMoney(total.yearly, currency)} al año (${plural(total.count, 'activa', 'activas')})`,
     )
+  }
+  // Y por columna (en el orden del tablero; las que no tienen, al final), si no se ha pedido una.
+  if (columnId === undefined && active.length) {
+    out.push('', 'Por columna:')
+    for (const column of [...columns, null]) {
+      const sums = totals(mine, { columnId: column?.id ?? null })
+      if (Object.keys(sums).length) out.push(`- ${column?.name ?? 'Sin columna'}: ${totalsText(sums)}`)
+    }
   }
 
   if (cancelled.length) {
@@ -385,7 +426,7 @@ async function dispatch(method, params) {
           'Tablero es el gestor de tareas del usuario (columnas por proyecto o área, fechas, una Bandeja de entrada). ' +
           'tablero_listar para ver qué hay, tablero_anadir para crear tareas en lenguaje natural, ' +
           'tablero_completar con el id y tablero_buscar para encontrarlas. ' +
-          'tablero_suscripciones enseña las suscripciones (importe, próximo cobro, tarjeta) y lo que suman al mes y al año.',
+          'tablero_suscripciones enseña las suscripciones (importe, próximo cobro, tarjeta, columna) y lo que suman al mes y al año, en total y por columna.',
       }
     case 'ping':
       return {}

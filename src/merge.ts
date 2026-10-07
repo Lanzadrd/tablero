@@ -1,4 +1,4 @@
-import { REMINDER_FIELDS } from '../server/suscripciones.mjs'
+import { pendingReminderOf, placeReminders, REMINDER_FIELDS } from '../server/suscripciones.mjs'
 import type { Board, Column, Subscription, Task } from './model'
 
 /**
@@ -39,16 +39,42 @@ export function mergeBoards(base: Board, ours: Board, theirs: Board): Board {
     columns.set(id, { ...merged, tasks: [] })
   }
 
-  // Tareas: campo a campo; la columna es la de quien la movió.
+  const merged: Board = { ...theirs, ...ours, columns: [] }
+  // Tarjetas y suscripciones: por id y campo a campo (si el servidor anota `remindedFor` mientras
+  // aquí se cambia el precio, se quedan los dos).
+  const cards = mergeList(base.cards, ours.cards, theirs.cards)
+  if (cards) merged.cards = cards
+  const subscriptions = mergeList(base.subscriptions, ours.subscriptions, theirs.subscriptions)
+  if (subscriptions) {
+    // Una tarjeta o una columna que se borró en un lado mientras en el otro se elegía: sin tarjeta o sin columna.
+    const cardIds = new Set((cards ?? []).map((c) => c.id))
+    merged.subscriptions = subscriptions.map((s) => {
+      const cardId = s.cardId && !cardIds.has(s.cardId) ? null : s.cardId
+      const columnId = s.columnId && !columns.has(s.columnId) ? null : s.columnId
+      return cardId === s.cardId && columnId === s.columnId ? s : { ...s, cardId, columnId }
+    })
+  }
+
+  // Tareas: campo a campo; la columna es la de quien la movió. Si un lado borró o archivó esa columna
+  // mientras el otro creaba ahí el aviso de una suscripción o lo llevaba ahí, el aviso no se pierde ni se
+  // esconde: va a donde va ahora su aviso, como al borrar o archivar la columna (src/projects.ts).
   const placed = new Map<string, Task[]>()
+  const homeless: Task[] = []
   for (const id of new Set([...O.keys(), ...T.keys()])) {
     const b = B.get(id)
     const o = O.get(id)
     const t = T.get(id)
     if (b ? !(o && t) : !(o || t)) continue
     const task = mergeTask(b?.task, o?.task, t?.task)
-    const columnId = o && (!b || o.columnId !== b.columnId) ? o.columnId : (t ?? o)!.columnId
-    if (!columns.has(columnId)) continue
+    const fromOurs = Boolean(o && (!b || o.columnId !== b.columnId)) || !t
+    const columnId = (fromOurs ? o : t)!.columnId
+    const column = columns.get(columnId)
+    const lost = !column || (column.archived && !(fromOurs ? ourCols : theirCols).get(columnId)?.archived)
+    if (lost && pendingReminderOf(merged, task)) {
+      homeless.push(task)
+      continue
+    }
+    if (!column) continue
     const list = placed.get(columnId) ?? []
     list.push(task)
     placed.set(columnId, list)
@@ -64,27 +90,16 @@ export function mergeBoards(base: Board, ours: Board, theirs: Board): Board {
     const rank = new Map(order.map((taskId, i) => [taskId, i]))
     column.tasks = tasks.sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity))
   }
-
-  const merged: Board = { ...theirs, ...ours, columns: [...columns.values()] }
-  // Tarjetas y suscripciones: por id y campo a campo (si el servidor anota `remindedFor` mientras
-  // aquí se cambia el precio, se quedan los dos).
-  const cards = mergeList(base.cards, ours.cards, theirs.cards)
-  if (cards) merged.cards = cards
-  const subscriptions = mergeList(base.subscriptions, ours.subscriptions, theirs.subscriptions)
-  if (subscriptions) {
-    // Una tarjeta que se borró en un lado mientras en el otro se elegía: sin tarjeta.
-    const cardIds = new Set((cards ?? []).map((c) => c.id))
-    merged.subscriptions = subscriptions.map((s) => (s.cardId && !cardIds.has(s.cardId) ? { ...s, cardId: null } : s))
-  }
-  return settleReminders(merged, base, ours, theirs)
+  merged.columns = [...columns.values()]
+  return settleReminders(placeReminders(merged, homeless), base, ours, theirs)
 }
 
 /**
  * Los avisos de las suscripciones, coherentes tras fusionar. Si aquí se cambió una (algo de lo que sale
- * en su aviso o decide cuándo toca, o la baja) mientras el servidor creaba su aviso con los datos de
- * antes, ese aviso sobra: se quita y `remindedFor` vuelve a ser el de aquí, para que el servidor cree
- * otro (como hace resetReminder en src/subscriptions.ts). Y los avisos pendientes de una suscripción
- * que ya no existe, también se quitan.
+ * en su aviso o decide cuándo toca, la baja o la columna, que decide dónde va) mientras el servidor creaba
+ * su aviso con los datos de antes, ese aviso sobra: se quita y `remindedFor` vuelve a ser el de aquí, para
+ * que el servidor cree otro (como hace resetReminder en src/subscriptions.ts). Y los avisos pendientes de
+ * una suscripción que ya no existe, también se quitan.
  */
 function settleReminders(merged: Board, base: Board, ours: Board, theirs: Board): Board {
   if (!merged.subscriptions) return merged
@@ -95,7 +110,7 @@ function settleReminders(merged: Board, base: Board, ours: Board, theirs: Board)
   const changedHere = new Set<string>()
   for (const [id, o] of O) {
     const b = B.get(id)
-    if (b && [...REMINDER_FIELDS, 'cancelledOn' as const].some((key) => differs(b, o, key))) changedHere.add(id)
+    if (b && [...REMINDER_FIELDS, 'cancelledOn' as const, 'columnId' as const].some((key) => differs(b, o, key))) changedHere.add(id)
   }
   const known = new Set([...B.keys(), ...O.keys(), ...(theirs.subscriptions ?? []).map((s) => s.id)])
   const ourTasks = new Set(ours.columns.flatMap((c) => c.tasks.map((t) => t.id)))

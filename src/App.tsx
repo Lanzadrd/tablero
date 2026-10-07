@@ -199,6 +199,13 @@ export default function App() {
     setView('subscriptions')
     setSubscriptionRequest({ create: true })
   }, [setView])
+  const openSubscriptionColumn = useCallback(
+    (columnId: string) => {
+      setView('subscriptions')
+      setSubscriptionRequest({ column: columnId })
+    },
+    [setView],
+  )
   const clearSubscriptionRequest = useCallback(() => setSubscriptionRequest(null), [])
 
   // ── Enseñar una tarea o una columna en el tablero (búsqueda, enlaces /t/<id>, 1–9) ──
@@ -272,6 +279,7 @@ export default function App() {
       refresh,
       openSubscription,
       newSubscription,
+      openSubscriptionColumn,
       subscriptionRequest,
       clearSubscriptionRequest,
     }),
@@ -294,6 +302,7 @@ export default function App() {
       refresh,
       openSubscription,
       newSubscription,
+      openSubscriptionColumn,
       subscriptionRequest,
       clearSubscriptionRequest,
     ],

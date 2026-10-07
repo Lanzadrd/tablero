@@ -12,6 +12,8 @@ export interface SubscriptionLike {
   /** Un día de cobro conocido, 'AAAA-MM-DD'. */
   billingDate: string
   cardId: string | null
+  /** La columna del tablero (la empresa) a la que pertenece; null o sin definir = sin columna. */
+  columnId?: string | null
   remind?: number
   remindedFor?: string
   cancelledOn?: string
@@ -54,8 +56,14 @@ export function chargesBetween(sub: SubscriptionLike, from: string, to: string, 
 export function yearlyAmount(sub: Pick<SubscriptionLike, 'amount' | 'period'>): number
 /** Céntimos al mes, sin redondear. */
 export function monthlyAmount(sub: Pick<SubscriptionLike, 'amount' | 'period'>): number
-/** Totales de las activas por moneda; con `cardId`, solo las de esa tarjeta (null = sin tarjeta). */
-export function totals(subs: readonly SubscriptionLike[] | undefined, options?: { cardId?: string | null }): Totals
+/**
+ * Totales de las activas por moneda; con `cardId`, solo las de esa tarjeta (null = sin tarjeta); con
+ * `columnId`, solo las de esa columna (null = sin columna).
+ */
+export function totals(
+  subs: readonly SubscriptionLike[] | undefined,
+  options?: { cardId?: string | null; columnId?: string | null },
+): Totals
 /** «12,99 €» */
 export function formatMoney(cents: number, currency?: string): string
 /** «12,99», «1.299,00», «€ 9,5»… → céntimos; null si no se entiende. */
@@ -85,5 +93,19 @@ interface BoardLike {
 }
 
 export function remindersDue<B extends BoardLike>(board: B, today: string): ReminderDue<NonNullable<B['subscriptions']>[number]>[]
+/** Dónde va el aviso: su columna si existe y no está archivada; si no, la Bandeja (o la primera sin archivar). */
+export function reminderColumn<B extends BoardLike>(board: B, sub: Pick<SubscriptionLike, 'columnId'>): B['columns'][number] | null
+/** La suscripción activa de la que `task` es el aviso pendiente, o null. */
+export function pendingReminderOf<B extends BoardLike>(
+  board: B,
+  task: { done?: boolean; subscriptionId?: string } | null | undefined,
+): NonNullable<B['subscriptions']>[number] | null
+/**
+ * Un tablero nuevo con los avisos pendientes `tasks` (de suscripciones activas; los demás se ignoran) donde
+ * va ahora el aviso de cada una (reminderColumn), detrás de la última pendiente.
+ */
+export function placeReminders<B extends BoardLike>(board: B, tasks: readonly B['columns'][number]['tasks'][number][]): B
+/** Una lista nueva con `added` detrás de la última pendiente de `tasks` (como al añadir una tarea). */
+export function afterLastOpen<T extends { done?: boolean }>(tasks: readonly T[], added: readonly T[]): T[]
 /** Modifica `board`: crea las tareas de aviso que tocan y anota `remindedFor`. Devuelve cuántas. */
 export function applyReminders(board: BoardLike, today: string, options: { newId: () => string; now?: string }): number

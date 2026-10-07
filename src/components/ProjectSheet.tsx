@@ -1,10 +1,11 @@
 // «Ficha del proyecto»: carpeta, repositorio, producción, staging, entrega y otros enlaces de una
-// columna. Cada campo se guarda al salir de él (y todo al cerrar); la ficha entera es un solo
-// paso de deshacer.
+// columna, y lo que cuestan al mes sus suscripciones (si tiene). Cada campo se guarda al salir de él
+// (y todo al cerrar); la ficha entera es un solo paso de deshacer.
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { useActions } from '../context'
+import { useActions, useBoard, useUI } from '../context'
 import type { Column } from '../model'
 import { draftOf, normalizeUrl, projectFromDraft, type ProjectDraft, type UrlField } from '../projects'
+import { columnTotals, perMonthText, totalCount } from '../subscriptions'
 import { tint } from '../util'
 import * as Icon from './Icons'
 import { Popover } from './Popover'
@@ -20,7 +21,12 @@ const BAD_URL = 'Dirección no válida (solo http y https)'
 
 export function ProjectSheet({ column, anchor, onClose }: { column: Column; anchor: HTMLElement; onClose: () => void }) {
   const actions = useActions()
+  const board = useBoard()
+  const ui = useUI()
   const ids = useId()
+  // Sus suscripciones activas: cuántas y cuánto al mes (por moneda). Sin ninguna, no sale nada.
+  const subscriptions = columnTotals(board, column.id)
+  const subscriptionCount = totalCount(subscriptions)
   const [draft, setDraft] = useState<ProjectDraft>(() => draftOf(column.project))
   // Los errores se enseñan al salir del campo, no mientras se escribe.
   const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set())
@@ -82,6 +88,28 @@ export function ProjectSheet({ column, anchor, onClose }: { column: Column; anch
         <span className="project-dot" aria-hidden="true" />
         {column.name}
       </h3>
+
+      {subscriptionCount > 0 && (
+        <button
+          type="button"
+          className="project-subs"
+          title={`Ver las suscripciones de ${column.name}`}
+          onClick={() => {
+            close()
+            ui.openSubscriptionColumn(column.id)
+          }}
+        >
+          <Icon.Card />
+          <span className="project-subs-text">
+            Suscripciones
+            <span className="project-subs-detail">
+              {' · '}
+              {subscriptionCount} · {perMonthText(subscriptions)}
+            </span>
+          </span>
+          <Icon.Chevron />
+        </button>
+      )}
 
       <div className="project-fields">
         <div className="field">
