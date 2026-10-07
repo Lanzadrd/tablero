@@ -74,14 +74,32 @@ sincronización se guarda en `datos/sincronizacion.json` y su registro en `datos
   (`{"atajoCaptura": "option+space", "atajoCapturaPagina": "option+shift+space"}`).
 - **Claude Code**: «Abrir en Claude Code» en una tarea abre una sesión en la carpeta del
   proyecto con la tarea escrita. Y el MCP (`npm run mcp` muestra cómo registrarlo) deja
-  pedir a Claude «apunta esto en Tablero» o «¿qué tengo hoy?».
+  pedir a Claude «apunta esto en Tablero», «¿qué tengo hoy?» o «¿cuánto pago al mes en
+  suscripciones?».
+
+## Suscripciones
+
+La vista **Suscripciones** (`U`) apunta lo que pagas cada semana, mes, trimestre, semestre o año:
+cuánto suma al mes y al año (por moneda: euros, dólares y libras nunca se mezclan), el próximo cobro
+y la lista ordenada por fecha. Las dadas de baja quedan plegadas al final y se pueden reactivar.
+
+- **Tarjetas**: cada suscripción puede llevar una tarjeta, que es solo un nombre y un color
+  («BBVA», «Revolut»). **Nunca el número**: Tablero rechaza 6 cifras o más (vale «BBVA ··1234»).
+  Pulsar una tarjeta filtra la lista y los totales.
+- **Avisos**: con «Aviso» (el mismo día, 1, 3 o 7 días antes), el servidor crea en la Bandeja una
+  tarea «Netflix se cobra el 15 oct · 12,99 € · BBVA», que llega al iPhone como cualquier otra (con
+  dos días de margen, por si el Mac se duerme). Una sola vez por cobro; si cambias el precio, la
+  fecha o la tarjeta mientras está pendiente, se rehace. En el detalle de esa tarea, «Ver suscripción» lleva a su ficha.
+  `TABLERO_SIN_AVISOS_SUSCRIPCIONES=1` los desactiva.
+- Se guardan en `datos/board.json` con las tareas (copias diarias, deshacer y sincronización
+  entre ventanas incluidos). Claude Code las ve con la herramienta `tablero_suscripciones` del MCP.
 
 ## Atajos
 
 | Tecla | Acción |
 | --- | --- |
-| `D` / `T` / `C` | Hoy / Tablero / Calendario |
-| `N` · `1`–`9` · `⇧N` | Nueva tarea · en esa columna · nueva columna |
+| `D` / `T` / `C` / `U` | Hoy / Tablero / Calendario / Suscripciones |
+| `N` · `1`–`9` · `⇧N` | Nueva tarea (en Suscripciones, nueva suscripción) · en esa columna · nueva columna |
 | `⌘K` o `/` | Buscar (también completadas y archivadas) |
 | `↑↓` `←→` (o `J`/`K`) | Moverse entre tareas y columnas |
 | `X` · `H` · `M` · `L` · `0` | Completar · hoy · mañana · próxima semana · sin fecha |
@@ -133,6 +151,8 @@ npm run build  # comprueba tipos y compila a dist/
 ```
 
 - `src/` — la app (React + TypeScript). Modelo en `src/model.ts`, fusión de cambios en `src/merge.ts`.
+  Las cuentas de las suscripciones (cobros, importes, avisos) están en `server/suscripciones.mjs`,
+  compartidas por la app, el servidor y el MCP.
 - `server/` — servidor sin dependencias: web, API `/api/board`, eventos en vivo `/api/eventos`
   y actualizaciones automáticas (`actualizador.mjs`).
 - `avisos/` — el ayudante de Recordatorios (Swift + EventKit): `Modelo.swift` (fusión, sin

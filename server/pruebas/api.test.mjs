@@ -9,7 +9,7 @@ import { after, before, beforeEach, test } from 'node:test'
 
 const dir = await mkdtemp(path.join(os.tmpdir(), 'tablero-api-'))
 process.env.TABLERO_DATA_DIR = path.join(dir, 'datos')
-const { createApi } = await import('../api.mjs')
+const { createApi, subscriptionReminders } = await import('../api.mjs')
 const { localDay } = await import('../almacen.mjs')
 
 const project = path.join(dir, 'mi proyecto')
@@ -323,6 +323,82 @@ test('PATCH /api/tareas/:id completa una que se repite y crea la siguiente', asy
   assert.equal(tasks[1].done, false)
   assert.deepEqual(tasks[1].repeat, { every: 'day' })
   assert.equal((await call('PATCH', '/api/tareas/zzz', { body: { done: true } })).status, 404)
+})
+
+// ── Avisos de las suscripciones ──
+
+test('avisos de suscripciones: crea la tarea en la Bandeja una sola vez, y solo entonces guarda', async () => {
+  const board = fixture()
+  board.columns.unshift({ id: 'bandeja', name: 'Bandeja', color: 'gray', inbox: true, showCompleted: false, tasks: [task('b1')] })
+  board.cards = [{ id: 'bbva', name: 'BBVA', color: 'blue' }]
+  board.subscriptions = [
+    {
+      id: 'netflix',
+      name: 'Netflix',
+      amount: 1299,
+      currency: 'EUR',
+      period: 'month',
+      billingDate: '2026-09-15',
+      cardId: 'bbva',
+      remind: 1,
+      createdAt: '2026-09-01T10:00:00.000Z',
+    },
+  ]
+  await reset(board)
+
+  // Aún pronto: nada (y no se escribe).
+  assert.deepEqual(await subscriptionReminders({ today: '2026-10-11' }), { rev: 1, creadas: 0 })
+  assert.equal((await stored()).rev, 1)
+
+  const events = await listen()
+  let n = 0
+  const r = await subscriptionReminders({ today: '2026-10-12', newId: () => `aviso-${++n}` })
+  assert.deepEqual(r, { rev: 2, creadas: 1 })
+  assert.match(await events.until(/event: rev\ndata: \{"rev":2\}/), /rev/)
+  events.close()
+  const data = await stored()
+  assert.equal(data.rev, 2)
+  const bandeja = column(data, 'bandeja')
+  assert.deepEqual(bandeja.tasks.map((t) => t.id), ['b1', 'aviso-1'])
+  assert.equal(bandeja.tasks[1].title.replace(/\s/g, ' '), 'Netflix se cobra el 15 oct · 12,99 € · BBVA')
+  assert.equal(bandeja.tasks[1].due, '2026-10-14')
+  assert.equal(bandeja.tasks[1].subscriptionId, 'netflix')
+  assert.equal(data.board.subscriptions[0].remindedFor, '2026-10-15')
+
+  // Otra vez (el siguiente cuarto de hora, o al reiniciar): nada.
+  assert.deepEqual(await subscriptionReminders({ today: '2026-10-12', newId: () => 'otra' }), { rev: 2, creadas: 0 })
+  assert.deepEqual(await subscriptionReminders({ today: '2026-10-13', newId: () => 'otra' }), { rev: 2, creadas: 0 })
+  assert.equal((await stored()).rev, 2)
+  assert.equal(column(await stored(), 'bandeja').tasks.length, 2)
+})
+
+test('guardar: una ventana con la web de antes no borra las tarjetas ni las suscripciones', async () => {
+  const board = fixture()
+  board.cards = [{ id: 'bbva', name: 'BBVA', color: 'blue' }]
+  board.subscriptions = [{ id: 'netflix', name: 'Netflix', amount: 1299, currency: 'EUR', period: 'month', billingDate: '2026-09-15', cardId: 'bbva', createdAt: 'x' }]
+  await reset(board)
+  // La web de antes no las conoce: guarda el tablero sin ellas.
+  const viejo = { columns: fixture().columns }
+  viejo.columns[0].tasks[0].done = true
+  assert.equal((await call('PUT', '/api/board', { body: { baseRev: 1, board: viejo } })).status, 200)
+  const data = await stored()
+  assert.equal(data.rev, 2)
+  assert.equal(column(data, 'p').tasks[0].done, true)
+  assert.deepEqual(data.board.cards, board.cards)
+  assert.deepEqual(data.board.subscriptions, board.subscriptions)
+  // La de ahora siempre las manda: si las vacía, se vacían.
+  assert.equal((await call('PUT', '/api/board', { body: { baseRev: 2, board: { ...data.board, cards: [], subscriptions: [] } } })).status, 200)
+  const vacio = await stored()
+  assert.deepEqual([vacio.board.cards, vacio.board.subscriptions], [[], []])
+  // Y una revisión vieja sigue siendo un 409.
+  assert.equal((await call('PUT', '/api/board', { body: { baseRev: 1, board: viejo } })).status, 409)
+})
+
+test('avisos de suscripciones: sin tablero o sin suscripciones, nada', async () => {
+  assert.deepEqual(await subscriptionReminders({ today: '2026-10-12' }), { rev: 1, creadas: 0 })
+  assert.equal((await stored()).rev, 1)
+  await rm(path.join(process.env.TABLERO_DATA_DIR, 'board.json'))
+  assert.deepEqual(await subscriptionReminders(), { rev: 0, creadas: 0 })
 })
 
 // ── Título de enlaces ──

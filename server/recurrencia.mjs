@@ -89,9 +89,12 @@ export function nextTaskId(id) {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`
 }
 
-/** La tarea siguiente de una que se repite (la original deja de repetirse). */
+/**
+ * La tarea siguiente de una que se repite (la original deja de repetirse). Si la original era el aviso
+ * de una suscripción, la siguiente ya no lo es: es una tarea más.
+ */
 export function nextOccurrence(task, { id = nextTaskId(task.id), doneOn, now = new Date().toISOString() }) {
-  const { firstOn: _first, completedAt: _completed, ...rest } = task
+  const { firstOn: _first, completedAt: _completed, subscriptionId: _subscription, subscriptionCharge: _charge, ...rest } = task
   return {
     ...rest,
     id,

@@ -15,6 +15,12 @@ import { localDay } from '../almacen.mjs'
 const SERVER = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const ROOT = path.dirname(SERVER)
 const today = localDay()
+/** `n` días después de hoy, 'AAAA-MM-DD'. */
+const inDays = (n) => {
+  const d = new Date()
+  d.setDate(d.getDate() + n)
+  return localDay(d)
+}
 
 let dir
 let port
@@ -110,11 +116,28 @@ before(async () => {
       { id: 't', name: 'Trabajo', color: 'orange', showCompleted: false, tasks: [task('t-1', { title: 'Revisar PR de login' })] },
       { id: 'v', name: 'Viejo', color: 'brown', archived: true, showCompleted: false, tasks: [task('v-1', { title: 'Cancion antigua' })] },
     ],
+    cards: [
+      { id: 'bbva', name: 'BBVA', color: 'blue' },
+      { id: 'revolut', name: 'Revolut', color: 'purple' },
+    ],
+    subscriptions: [
+      { id: 'netflix', name: 'Netflix', amount: 1299, currency: 'EUR', period: 'month', billingDate: inDays(8), cardId: 'bbva', remind: 1, notes: 'Plan estándar', createdAt: '2026-09-01T10:00:00.000Z' },
+      { id: 'icloud', name: 'iCloud+', amount: 299, currency: 'EUR', period: 'month', billingDate: inDays(1), cardId: 'revolut', createdAt: '2026-09-01T10:00:00.000Z' },
+      { id: 'chatgpt', name: 'ChatGPT', amount: 24000, currency: 'USD', period: 'year', billingDate: today, cardId: null, createdAt: '2026-09-01T10:00:00.000Z' },
+      { id: 'spotify', name: 'Spotify', amount: 1099, currency: 'EUR', period: 'month', billingDate: inDays(-40), cardId: 'bbva', cancelledOn: inDays(-7), createdAt: '2026-01-01T10:00:00.000Z' },
+    ],
   }
   await writeFile(path.join(dir, 'board.json'), JSON.stringify({ app: 'tablero', version: 1, rev: 1, board }))
   tablero = spawn(process.execPath, [path.join(SERVER, 'index.mjs')], {
     cwd: ROOT,
-    env: { ...process.env, TABLERO_DATA_DIR: dir, PORT: String(port), TABLERO_SIN_ACTUALIZAR: '1', TABLERO_SIMULAR_ABRIR: '1' },
+    env: {
+      ...process.env,
+      TABLERO_DATA_DIR: dir,
+      PORT: String(port),
+      TABLERO_SIN_ACTUALIZAR: '1',
+      TABLERO_SIMULAR_ABRIR: '1',
+      TABLERO_SIN_AVISOS_SUSCRIPCIONES: '1', // que el aviso de Netflix no cambie el tablero a mitad de las pruebas
+    },
     stdio: 'ignore',
   })
   await waitForHealth()
@@ -129,6 +152,8 @@ after(async () => {
 
 const board = async () => JSON.parse(await readFile(path.join(dir, 'board.json'), 'utf8')).board
 const text = (result) => result.content.map((c) => c.text).join('\n')
+/** Intl separa la cifra y el símbolo con un espacio duro: aquí, uno normal. */
+const plain = (s) => s.replace(/[\u00a0\u202f]/g, ' ')
 
 test('initialize: la versión del cliente si se conoce; si no, 2025-06-18', async () => {
   const r = await mcp.request('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'prueba', version: '1' } })
@@ -150,7 +175,8 @@ test('las notificaciones no tienen respuesta; ping sí', async () => {
 test('tools/list', async () => {
   const r = await mcp.request('tools/list', {})
   const names = r.result.tools.map((t) => t.name)
-  assert.deepEqual(names, ['tablero_listar', 'tablero_anadir', 'tablero_completar', 'tablero_buscar'])
+  assert.deepEqual(names, ['tablero_listar', 'tablero_anadir', 'tablero_completar', 'tablero_buscar', 'tablero_suscripciones'])
+  assert.equal(r.result.tools.find((t) => t.name === 'tablero_suscripciones').annotations.readOnlyHint, true)
   for (const tool of r.result.tools) {
     assert.equal(tool.inputSchema.type, 'object')
     assert.ok(tool.description)
@@ -223,6 +249,39 @@ test('tablero_completar: por id o su principio; si se repite, avisa de la siguie
   const nada = await mcp.tool('tablero_completar', { id: 'no-existe' })
   assert.equal(nada.isError, true)
   assert.match(text(nada), /No hay ninguna tarea/)
+})
+
+test('tablero_suscripciones: por próximo cobro, con tarjeta y aviso, y los totales por moneda', async () => {
+  const all = plain(text(await mcp.tool('tablero_suscripciones', {})))
+  assert.match(all, new RegExp(`^Suscripciones activas — hoy es ${today}`))
+  const lines = all.split('\n').filter((l) => l.startsWith('- '))
+  assert.deepEqual(lines.map((l) => /^- ([^:]+):/.exec(l)[1]), ['ChatGPT', 'iCloud+', 'Netflix'])
+  assert.equal(lines[0], '- ChatGPT: 240,00 $ / año (≈ 20,00 $ / mes) · próximo cobro Hoy · sin tarjeta · id: chatgpt')
+  assert.equal(lines[1], '- iCloud+: 2,99 € / mes · próximo cobro Mañana · Revolut · id: icloud')
+  assert.match(lines[2], /^- Netflix: 12,99 € \/ mes · próximo cobro \S+, \d+ \S+ \(en 8 días\) · BBVA · aviso 1 día antes · id: netflix$/)
+  assert.match(all, /\n  Notas: Plan estándar/)
+  assert.match(all, /Total: 15,98 € al mes · 191,76 € al año \(2 activas\)/)
+  assert.match(all, /Total: 20,00 \$ al mes · 240,00 \$ al año \(1 activa\)/)
+  assert.doesNotMatch(all, /Spotify|Dadas de baja/)
+})
+
+test('tablero_suscripciones: por tarjeta (sin acentos ni mayúsculas), sin tarjeta y con las bajas', async () => {
+  const bbva = plain(text(await mcp.tool('tablero_suscripciones', { tarjeta: 'bbvá' })))
+  assert.match(bbva, /^Suscripciones activas con BBVA/)
+  assert.match(bbva, /- Netflix:/)
+  assert.doesNotMatch(bbva, /iCloud|ChatGPT|\$/)
+  assert.match(bbva, /Total: 12,99 € al mes · 155,88 € al año \(1 activa\)/)
+
+  const sin = plain(text(await mcp.tool('tablero_suscripciones', { tarjeta: 'Sin tarjeta' })))
+  assert.match(sin, /- ChatGPT:/)
+  assert.doesNotMatch(sin, /Netflix|iCloud/)
+
+  const bajas = plain(text(await mcp.tool('tablero_suscripciones', { tarjeta: 'BBVA', incluirBajas: true })))
+  assert.match(bajas, /Dadas de baja:\n- Spotify: 10,99 € \/ mes · baja desde el \d+ [a-z]+( \d{4})? · id: spotify/)
+
+  const mal = await mcp.tool('tablero_suscripciones', { tarjeta: 'Visa' })
+  assert.equal(mal.isError, true)
+  assert.match(text(mal), /No hay ninguna tarjeta «Visa»\. Tarjetas: BBVA, Revolut\./)
 })
 
 test('errores de protocolo', async () => {

@@ -27,7 +27,7 @@ export interface ShortcutSection {
   items: Shortcut[]
 }
 
-/** En la ayuda van en dos columnas: General y Calendario; Tareas y Selección. */
+/** En la ayuda van en dos columnas: General, Calendario y Suscripciones; Tareas y Selección. */
 export const SHORTCUTS: ShortcutSection[] = [
   {
     title: 'General',
@@ -35,6 +35,7 @@ export const SHORTCUTS: ShortcutSection[] = [
       { keys: [['D']], label: 'Hoy' },
       { keys: [['T']], label: 'Tablero' },
       { keys: [['C']], label: 'Calendario' },
+      { keys: [['U']], label: 'Suscripciones' },
       { keys: [['N']], label: 'Nueva tarea' },
       { keys: [['1', '…', '9']], label: 'Nueva tarea en esa columna' },
       { keys: [['⇧', 'N']], label: 'Nueva columna' },
@@ -53,6 +54,13 @@ export const SHORTCUTS: ShortcutSection[] = [
       { keys: [['H']], label: 'Hoy' },
       { keys: [['S']], label: 'Semana' },
       { keys: [['M']], label: 'Mes' },
+    ],
+  },
+  {
+    title: 'Suscripciones',
+    items: [
+      { keys: [['N']], label: 'Nueva suscripción' },
+      { keys: [['↑', '↓']], label: 'Moverse por la lista' },
     ],
   },
   {
@@ -253,7 +261,7 @@ export interface KeyContext {
   /** La paleta de búsqueda está abierta: las teclas son suyas. */
   blocked: () => boolean
   setView: (view: View) => void
-  /** N en la vista abierta (el calendario atiende la suya). */
+  /** N en la vista abierta (el calendario atiende la suya; en Suscripciones, «Nueva suscripción»). */
   newTask: () => void
   newColumn: () => void
   /** 1–9: «Nueva tarea» de esa columna en el tablero. */
@@ -263,7 +271,7 @@ export interface KeyContext {
   openTask: (id: string, anchor: HTMLElement) => void
 }
 
-const VIEW_KEYS: Record<string, View> = { d: 'today', t: 'board', c: 'calendar' }
+const VIEW_KEYS: Record<string, View> = { d: 'today', t: 'board', c: 'calendar', u: 'subscriptions' }
 const NAV_KEYS: Record<string, Direction> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', k: 'up', j: 'down' }
 const WHEN_KEYS: Record<string, When> = { h: 'today', m: 'tomorrow', l: 'nextWeek' }
 

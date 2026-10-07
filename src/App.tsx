@@ -5,10 +5,11 @@ import { BoardView } from './components/Board'
 import { CalendarView } from './components/Calendar'
 import { Palette, type CommandId } from './components/Palette'
 import { SelectionBar } from './components/SelectionBar'
+import { SubscriptionsView } from './components/Subscriptions'
 import { TaskSheet } from './components/TaskSheet'
 import { TODAY_ADD, TodayView } from './components/Today'
 import { TopBar } from './components/TopBar'
-import { ActionsContext, BoardContext, NowContext, UIContext, type UI, type View } from './context'
+import { ActionsContext, BoardContext, NowContext, UIContext, type SubscriptionRequest, type UI, type View } from './context'
 import { formatDay, formatWhen, todayISO } from './dates'
 import { useAppBadge, useLaunch } from './dock'
 import { focusTask, revealQuickAdd, useSelectionClicks, useShortcuts, whenTaskShown } from './keys'
@@ -83,6 +84,7 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [pending, setPending] = useState<Pending | null>(null)
   const [linkedTask, setLinkedTask] = useState<string | null>(null)
+  const [subscriptionRequest, setSubscriptionRequest] = useState<SubscriptionRequest | null>(null)
 
   const boardRef = useRef(state.board)
   boardRef.current = state.board
@@ -184,6 +186,21 @@ export default function App() {
   const saveNow = useCallback(() => sync.current?.saveNow() ?? Promise.resolve(false), [])
   const refresh = useCallback(() => void sync.current?.refresh(), [])
 
+  // ── Suscripciones: la vista abre la ficha pedida (o «Nueva suscripción») en cuanto está en pantalla ──
+  const openSubscription = useCallback(
+    (id: string) => {
+      setOpenTask(null)
+      setView('subscriptions')
+      setSubscriptionRequest({ id })
+    },
+    [setView],
+  )
+  const newSubscription = useCallback(() => {
+    setView('subscriptions')
+    setSubscriptionRequest({ create: true })
+  }, [setView])
+  const clearSubscriptionRequest = useCallback(() => setSubscriptionRequest(null), [])
+
   // ── Enseñar una tarea o una columna en el tablero (búsqueda, enlaces /t/<id>, 1–9) ──
   const revealTask = useCallback(
     (taskId: string, open = true) => {
@@ -253,6 +270,10 @@ export default function App() {
       revealTask,
       saveNow,
       refresh,
+      openSubscription,
+      newSubscription,
+      subscriptionRequest,
+      clearSubscriptionRequest,
     }),
     [
       avisos,
@@ -271,6 +292,10 @@ export default function App() {
       revealTask,
       saveNow,
       refresh,
+      openSubscription,
+      newSubscription,
+      subscriptionRequest,
+      clearSubscriptionRequest,
     ],
   )
 
@@ -288,6 +313,7 @@ export default function App() {
       // En el calendario, N la atiende el propio calendario (nueva tarea para hoy).
       if (view === 'today') focusQuickAdd(TODAY_ADD)
       else if (view === 'board') focusQuickAdd()
+      else if (view === 'subscriptions') newSubscription()
     },
     newColumn,
     addInColumn: (columnId) => (view === 'board' ? focusQuickAdd(columnId) : goToColumn(columnId, true)),
@@ -304,19 +330,34 @@ export default function App() {
     if (board) selection.retain((id) => findTask(board, id) !== null)
   }, [state.board])
 
+  // «Nueva tarea» (búsqueda, Dock) es N en la vista abierta; en Suscripciones N es otra cosa: va al tablero.
+  // La vista se lee de viewRef: el Dock puede haberla cambiado en esa misma llamada (a «Hoy», la primera
+  // vez del día), antes de que se pinte.
+  const viewRef = useRef(view)
+  viewRef.current = view
+  const newTaskHere = () => {
+    if (viewRef.current === 'subscriptions') setView('board')
+    setNewTaskPending(true)
+  }
+
   const runCommand = (id: CommandId) => {
-    if (id === 'new-task') setNewTaskPending(true)
+    if (id === 'new-task') newTaskHere()
     else if (id === 'new-column') newColumn()
+    else if (id === 'new-subscription') newSubscription()
     else if (id === 'shortcuts') setShortcutsOpen(true)
-    else setView(id === 'today' ? 'today' : id === 'board' ? 'board' : 'calendar')
+    else setView(id)
   }
 
   // ── Dock: número de pendientes, «Hoy» la primera vez de cada día y atajos del icono ──
   useAppBadge(state.board, todayISO(now))
   const [newTaskPending, setNewTaskPending] = useState(false)
   useLaunch((launch) => {
-    if (launch.view) setView(launch.view)
-    if (launch.newTask) setNewTaskPending(true)
+    if (launch.view) {
+      viewRef.current = launch.view
+      setView(launch.view)
+    }
+    if (launch.newTask && !launch.view) newTaskHere()
+    else if (launch.newTask) setNewTaskPending(true)
     if (launch.task) setLinkedTask(launch.task)
   })
   // «Nueva tarea» del Dock = pulsar N en la vista abierta, cuando ya está en pantalla.
@@ -349,7 +390,15 @@ export default function App() {
         <UIContext.Provider value={ui}>
           <NowContext.Provider value={now}>
             <TopBar />
-            {view === 'today' ? <TodayView /> : view === 'board' ? <BoardView /> : <CalendarView />}
+            {view === 'today' ? (
+              <TodayView />
+            ) : view === 'board' ? (
+              <BoardView />
+            ) : view === 'calendar' ? (
+              <CalendarView />
+            ) : (
+              <SubscriptionsView />
+            )}
             {openTask && <TaskSheet key={openTask.id} taskId={openTask.id} anchor={openTask.anchor} onClose={closeTask} />}
             <SelectionBar commands={commands} />
             {paletteOpen && (

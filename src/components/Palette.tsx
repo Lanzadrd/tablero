@@ -21,7 +21,7 @@ import { cx, tint } from '../util'
 import * as Icon from './Icons'
 import '../styles/teclado.css'
 
-export type CommandId = 'new-task' | 'new-column' | 'today' | 'board' | 'calendar' | 'shortcuts'
+export type CommandId = 'new-task' | 'new-column' | 'new-subscription' | 'today' | 'board' | 'calendar' | 'subscriptions' | 'shortcuts'
 
 interface Command {
   id: CommandId
@@ -33,9 +33,11 @@ interface Command {
 const COMMANDS: Command[] = [
   { id: 'new-task', label: 'Nueva tarea', keys: ['N'], icon: Icon.Plus },
   { id: 'new-column', label: 'Nueva columna', keys: ['⇧', 'N'], icon: Icon.Plus },
+  { id: 'new-subscription', label: 'Nueva suscripción', keys: [], icon: Icon.Plus },
   { id: 'today', label: 'Hoy', keys: ['D'], icon: Icon.Star },
   { id: 'board', label: 'Tablero', keys: ['T'], icon: Icon.Columns },
   { id: 'calendar', label: 'Calendario', keys: ['C'], icon: Icon.Calendar },
+  { id: 'subscriptions', label: 'Suscripciones', keys: ['U'], icon: Icon.Card },
   { id: 'shortcuts', label: 'Atajos de teclado', keys: ['?'], icon: Icon.Keyboard },
 ]
 

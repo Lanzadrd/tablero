@@ -74,7 +74,8 @@ export function removeTasks(board: Board, ids: Iterable<string>): Board {
 
 /**
  * Copia cada tarea justo detrás de la original; `copyIds[i]` es el id de la copia de `ids[i]`.
- * La copia queda pendiente y sin «Lo primero» (solo hay una por día).
+ * La copia queda pendiente y sin «Lo primero» (solo hay una por día). La de un aviso de suscripción ya
+ * es una tarea más: si no, se iría con el aviso al cambiar la suscripción.
  */
 export function duplicateTasks(board: Board, ids: string[], copyIds: string[], createdAt: string): Board {
   const copies = new Map(ids.map((id, i) => [id, copyIds[i]]))
@@ -87,6 +88,8 @@ export function duplicateTasks(board: Board, ids: string[], copyIds: string[], c
       if (!id) return [task]
       const copy: Task = { ...task, id, createdAt, done: false, completedAt: null }
       delete copy.firstOn
+      delete copy.subscriptionId
+      delete copy.subscriptionCharge
       return [task, copy]
     })
     return { ...column, tasks }

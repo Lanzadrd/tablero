@@ -30,6 +30,11 @@
       "name": "Calendario",
       "url": "/?vista=calendario",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Suscripciones",
+      "url": "/?vista=suscripciones",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]
 }

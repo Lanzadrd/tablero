@@ -152,6 +152,7 @@ export function TopBar() {
           { value: 'today', label: 'Hoy', hint: 'D' },
           { value: 'board', label: 'Tablero', hint: 'T' },
           { value: 'calendar', label: 'Calendario', hint: 'C' },
+          { value: 'subscriptions', label: 'Suscripciones', hint: 'U' },
         ]}
       />
       <div className="topbar-actions">
@@ -188,9 +189,9 @@ export function TopBar() {
         <button type="button" className="icon-btn" aria-label="Buscar" title="Buscar (⌘K)" onClick={ui.openSearch}>
           <Icon.Search />
         </button>
-        <button type="button" className="btn" onClick={ui.newColumn} title="Nueva columna (⇧N)">
+        <button type="button" className="btn topbar-new-column" onClick={ui.newColumn} title="Nueva columna (⇧N)">
           <Icon.Plus />
-          Columna
+          <span className="topbar-btn-label">Columna</span>
         </button>
       </div>
 

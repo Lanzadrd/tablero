@@ -120,6 +120,16 @@ test('duplicateTasks: la copia va justo detrás, pendiente, con id nuevo y sin �
   assert.equal(tasks[0].firstOn, HOY, 'la original no cambia')
 })
 
+test('duplicateTasks: la copia de un aviso de suscripción es una tarea más (no se va con el aviso)', opts, () => {
+  const aviso = task('Netflix se cobra el 15 oct', { done: true, due: '2026-10-14', subscriptionId: 'netflix', subscriptionCharge: '2026-10-15' })
+  const board = { columns: [column('Bandeja', [aviso])] }
+  const [original, copia] = batch.duplicateTasks(board, [aviso.id], ['copia'], '2026-10-04T12:00:00.000Z').columns[0].tasks
+  assert.equal('subscriptionId' in copia, false)
+  assert.equal('subscriptionCharge' in copia, false)
+  assert.equal(copia.done, false)
+  assert.equal(original.subscriptionId, 'netflix', 'la original sigue siendo el aviso')
+})
+
 // ── Búsqueda ──
 
 test('matchTask: título que empieza > palabra que empieza > contiene > notas', opts, () => {

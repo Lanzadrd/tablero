@@ -227,3 +227,19 @@ export const Inbox = () => (
     <path d="M2.25 9.25 4 3.9c.17-.5.63-.85 1.16-.85h5.68c.53 0 1 .34 1.16.85l1.75 5.35v3.25c0 .55-.45 1-1 1h-9.5c-.55 0-1-.45-1-1V9.25Z" />
   </svg>
 )
+
+/** Tarjeta (suscripciones): una tarjeta con su banda */
+export const Card = () => (
+  <svg {...stroke}>
+    <rect x="1.75" y="3.25" width="12.5" height="9.5" rx="2" />
+    <path d="M1.75 6.5h12.5M4.5 10h2.5" />
+  </svg>
+)
+
+/** Enlace que se abre fuera (la web de una suscripción) */
+export const External = () => (
+  <svg {...stroke}>
+    <path d="M9.25 2.75h4v4M13.25 2.75 7.5 8.5" />
+    <path d="M11.75 9.5v2.25c0 .83-.67 1.5-1.5 1.5h-6c-.83 0-1.5-.67-1.5-1.5v-6c0-.83.67-1.5 1.5-1.5H6.5" />
+  </svg>
+)

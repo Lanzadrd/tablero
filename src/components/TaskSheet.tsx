@@ -6,6 +6,7 @@ import { addDays, formatWhen, nextMonday, todayISO } from '../dates'
 import { findLinks } from '../links'
 import { findTask, type Task } from '../model'
 import { openClaude } from '../projectApi'
+import { subscriptionOfTask } from '../subscriptions'
 import { isSomeday } from '../today'
 import { cx, tint } from '../util'
 import { Checklist } from './Checklist'
@@ -84,6 +85,8 @@ export function TaskSheet({ taskId, anchor, onClose }: { taskId: string; anchor:
     const result = await openClaude({ taskId: task.id })
     if (!result.ok) ui.toast(result.message)
   }
+  // El aviso de un cobro lleva a su suscripción (si aún existe).
+  const subscription = subscriptionOfTask(board, task)
   // Las archivadas no son destino; la suya sí sale, para que se vea dónde está.
   const columns = board.columns.filter((c) => !c.archived || c.id === column.id)
   // Enlace a la tarea: abre Tablero con ella a la vista y su detalle abierto (src/dock.ts).
@@ -130,6 +133,20 @@ export function TaskSheet({ taskId, anchor, onClose }: { taskId: string; anchor:
         </button>
       )}
       <LinkRow links={findLinks(task.title, task.notes)} />
+      {subscription && (
+        <button
+          type="button"
+          className="link-btn sheet-subscription"
+          title={`Abrir la ficha de ${subscription.name || 'la suscripción'} en Suscripciones`}
+          onClick={() => {
+            close()
+            ui.openSubscription(subscription.id)
+          }}
+        >
+          <Icon.Card />
+          Ver suscripción
+        </button>
+      )}
 
       <div className="sheet-fields">
         <div className="field">

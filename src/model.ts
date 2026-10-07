@@ -1,6 +1,7 @@
 import { isRepeat, type Repeat } from '../server/recurrencia.mjs'
+import { hasCardNumber, isCurrency, isDay as isRealDay, isPeriod, localDay, withoutDigits, type BillingPeriod } from '../server/suscripciones.mjs'
 
-export type { Repeat }
+export type { BillingPeriod, Repeat }
 
 export type ColorKey =
   | 'blue'
@@ -53,6 +54,10 @@ export interface Task {
   someday?: boolean
   /** Se repite: al completarla se crea la siguiente (src/../server/recurrencia.mjs). */
   repeat?: Repeat
+  /** Es el aviso de un cobro de esta suscripción (lo crea el servidor: server/suscripciones.mjs). */
+  subscriptionId?: string
+  /** El cobro ('AAAA-MM-DD') del que avisa. */
+  subscriptionCharge?: string
 }
 
 /** Ficha de un proyecto: lo que se abre a menudo, a un clic desde la columna. */
@@ -80,8 +85,44 @@ export interface Column {
   project?: Project
 }
 
+/** Una tarjeta: solo un nombre y un color, nunca el número. */
+export interface Card {
+  id: string
+  name: string
+  color: ColorKey
+}
+
+export interface Subscription {
+  id: string
+  name: string
+  /** Importe de cada cobro, en céntimos (entero ≥ 0). */
+  amount: number
+  /** Moneda ISO 4217: 'EUR' (por defecto), 'USD' o 'GBP'. */
+  currency: string
+  period: BillingPeriod
+  /** Un día de cobro conocido ('AAAA-MM-DD'); los siguientes se calculan desde él. */
+  billingDate: string
+  cardId: string | null
+  /** Para gestionarla o darse de baja (http/https). */
+  url?: string
+  notes?: string
+  /** Avisar N días antes del cobro (0 = el mismo día; 0..30). Sin definir = sin aviso. */
+  remind?: number
+  /** Último cobro ('AAAA-MM-DD') del que ya se creó la tarea de aviso (y con él, los anteriores), para no repetirla. */
+  remindedFor?: string
+  /** Dada de baja ese día ('AAAA-MM-DD'): ya no suma ni avisa. */
+  cancelledOn?: string
+  createdAt: string
+}
+
+/** Lo que se pide al crear una suscripción: lo que falte toma su valor por defecto (newSubscription). */
+export type NewSubscription = Partial<Omit<Subscription, 'id' | 'createdAt'>>
+
 export interface Board {
   columns: Column[]
+  /** Tarjetas para las suscripciones (normalizeBoard siempre las trae, aunque sea vacía). */
+  cards?: Card[]
+  subscriptions?: Subscription[]
 }
 
 const uid = () => crypto.randomUUID()
@@ -104,6 +145,21 @@ export function newColumn(name: string, color: ColorKey): Column {
   return { id: uid(), name, color, tasks: [], showCompleted: false }
 }
 
+/** Una suscripción nueva: mensual, en euros, sin tarjeta y con cobro `today` salvo que se diga otra cosa. */
+export function newSubscription(input: NewSubscription, today: string): Subscription {
+  return {
+    id: uid(),
+    name: '',
+    amount: 0,
+    currency: 'EUR',
+    period: 'month',
+    billingDate: today,
+    cardId: null,
+    ...input,
+    createdAt: new Date().toISOString(),
+  }
+}
+
 export function starterBoard(today: string): Board {
   const personal = newColumn('Personal', 'blue')
   personal.tasks = [
@@ -112,7 +168,7 @@ export function starterBoard(today: string): Board {
     newTask('Arrastra las tareas entre columnas'),
     newTask('Haz clic en una tarea para añadir notas o una fecha', { due: today }),
   ]
-  return { columns: [personal, newColumn('Trabajo', 'orange'), newColumn('Casa', 'green')] }
+  return { columns: [personal, newColumn('Trabajo', 'orange'), newColumn('Casa', 'green')], cards: [], subscriptions: [] }
 }
 
 /** Primer color que no usa ninguna columna. */
@@ -237,8 +293,51 @@ function normalizeProject(raw: unknown): Project | undefined {
   return Object.keys(project).length ? project : undefined
 }
 
+/** Quita las claves que han quedado sin valor (así el JSON y las comparaciones salen limpios). */
+function compact<T extends object>(value: T): T {
+  for (const key of Object.keys(value) as (keyof T)[]) if (value[key] === undefined) delete value[key]
+  return value
+}
+
+/** Nombre de una tarjeta: nunca un número de tarjeta (si lo trae, se le quitan las cifras). */
+function cardName(raw: unknown) {
+  const name = str(raw).slice(0, 60)
+  if (hasCardNumber(name)) return withoutDigits(name) || 'Tarjeta'
+  return name.trim() ? name : 'Tarjeta'
+}
+
+function normalizeCards(raw: unknown): Card[] {
+  const list = Array.isArray(raw) ? raw.filter(isRaw) : []
+  return list.map((c) => ({ ...c, id: str(c.id) || uid(), name: cardName(c.name), color: isColor(c.color) ? c.color : 'gray' }))
+}
+
+function normalizeSubscriptions(raw: unknown, cards: Card[]): Subscription[] {
+  const list = Array.isArray(raw) ? raw.filter(isRaw) : []
+  const cardIds = new Set(cards.map((c) => c.id))
+  const remind = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 30 ? v : undefined)
+  return list.map((s) =>
+    compact({
+      ...s,
+      id: str(s.id) || uid(),
+      name: str(s.name).slice(0, 60),
+      amount: typeof s.amount === 'number' && Number.isSafeInteger(s.amount) && s.amount >= 0 ? s.amount : 0,
+      currency: isCurrency(s.currency) ? s.currency : 'EUR',
+      period: isPeriod(s.period) ? s.period : 'month',
+      billingDate: isRealDay(s.billingDate) ? s.billingDate : localDay(),
+      cardId: typeof s.cardId === 'string' && cardIds.has(s.cardId) ? s.cardId : null,
+      url: isUrl(s.url) ? s.url : undefined,
+      notes: str(s.notes).slice(0, 10_000) || undefined,
+      remind: remind(s.remind),
+      remindedFor: isRealDay(s.remindedFor) ? s.remindedFor : undefined,
+      cancelledOn: isRealDay(s.cancelledOn) ? s.cancelledOn : undefined,
+      createdAt: str(s.createdAt) || new Date().toISOString(),
+    }),
+  )
+}
+
 export function normalizeBoard(raw: unknown): Board {
   const columns = isRaw(raw) && Array.isArray(raw.columns) ? raw.columns.filter(isRaw) : []
+  const cards = normalizeCards(isRaw(raw) ? raw.cards : undefined)
   return {
     columns: columns.map((c) => ({
       ...c,
@@ -263,7 +362,11 @@ export function normalizeBoard(raw: unknown): Board {
         firstOn: isDay(t.firstOn) ? t.firstOn : undefined,
         someday: t.someday === true || undefined,
         repeat: isRepeat(t.repeat) ? t.repeat : undefined,
+        subscriptionId: str(t.subscriptionId) || undefined,
+        subscriptionCharge: isRealDay(t.subscriptionCharge) ? t.subscriptionCharge : undefined,
       })),
     })),
+    cards,
+    subscriptions: normalizeSubscriptions(isRaw(raw) ? raw.subscriptions : undefined, cards),
   }
 }

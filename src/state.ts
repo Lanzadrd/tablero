@@ -1,9 +1,20 @@
 import { todayISO } from './dates'
-import type { Board, ColorKey, Project, Task } from './model'
-import { insertTask, mapColumn, mapTask, moveColumn, moveTask, newColumn, newTask, removeTask } from './model'
+import type { Board, Card, ColorKey, NewSubscription, Project, Task } from './model'
+import { insertTask, mapColumn, mapTask, moveColumn, moveTask, newColumn, newSubscription, newTask, removeTask } from './model'
 import { duplicateTasks, mapTasks, moveTasksTo, removeTasks, scheduleTask, undateTask } from './batch'
 import { columnSlot, deleteColumn, ensureInbox, setArchived, withProject } from './projects'
 import { completeTask, upcomingDue } from './repeat'
+import {
+  cardNameError,
+  changeCard,
+  changeSubscription,
+  insertCard,
+  insertSubscription,
+  removeCard,
+  removeSubscription,
+  setCancelled,
+  type SubscriptionPatch,
+} from './subscriptions'
 import { rescheduleTasks, setFirstOn, withSomeday } from './today'
 
 export interface State {
@@ -22,7 +33,14 @@ type Edit = (board: Board) => Board
 
 export type Action =
   | { type: 'load'; board: Board }
-  | { type: 'apply'; edit: Edit; undoable: boolean; coalesce?: string }
+  | {
+      type: 'apply'
+      edit: Edit
+      undoable: boolean
+      coalesce?: string
+      /** Si el paso agrupado acaba como empezó (crear y borrar), se quita del historial. */
+      settle?: boolean
+    }
   | { type: 'undo' }
   | { type: 'redo' }
 
@@ -39,6 +57,10 @@ export function reducer(state: State, action: Action): State {
       if (board === state.board) return state
       if (!action.undoable) return { ...state, board }
       const merge = action.coalesce !== undefined && action.coalesce === state.coalesce
+      const before = state.past.at(-1)
+      if (merge && action.settle && before && JSON.stringify(board) === JSON.stringify(before)) {
+        return { board: before, past: state.past.slice(0, -1), future: [], coalesce: null, seq: state.seq + 1 }
+      }
       return {
         board,
         past: merge ? state.past : [...state.past, state.board].slice(-HISTORY),
@@ -85,8 +107,8 @@ export interface NewTask {
 
 /** Todas las modificaciones del tablero. Los ids se crean aquí, fuera del reducer. */
 export function createActions(dispatch: (action: Action) => void, hooks: ActionHooks = {}) {
-  const apply = (edit: Edit, options: { undoable?: boolean; coalesce?: string } = {}) =>
-    dispatch({ type: 'apply', edit, undoable: options.undoable ?? true, coalesce: options.coalesce })
+  const apply = (edit: Edit, options: { undoable?: boolean; coalesce?: string; settle?: boolean } = {}) =>
+    dispatch({ type: 'apply', edit, undoable: options.undoable ?? true, coalesce: options.coalesce, settle: options.settle })
 
   return {
     undo: () => dispatch({ type: 'undo' }),
@@ -194,6 +216,55 @@ export function createActions(dispatch: (action: Action) => void, hooks: ActionH
       apply((b) => duplicateTasks(b, ids, copyIds, createdAt))
       return copyIds
     },
+
+    // ── Suscripciones y tarjetas (src/subscriptions.ts). El aviso antes del cobro lo crea el servidor ──
+
+    /**
+     * Una tarjeta nueva: solo nombre y color. Devuelve su id, o null si el nombre está vacío o lleva un
+     * número de tarjeta (cardNameError dice qué enseñar). Con `subscriptionId` («Nueva tarjeta…» en la
+     * ficha), se le pone a esa suscripción en el mismo paso de deshacer.
+     */
+    addCard(name: string, color: ColorKey, subscriptionId?: string) {
+      if (cardNameError(name)) return null
+      const card: Card = { id: crypto.randomUUID(), name: name.trim().slice(0, 60), color }
+      apply((b) => {
+        const added = insertCard(b, card)
+        return subscriptionId ? changeSubscription(added, subscriptionId, { cardId: card.id }) : added
+      })
+      return card.id
+    },
+    /** Nombre o color. Un nombre vacío o con número de tarjeta no se guarda (la interfaz avisa). */
+    updateCard: (id: string, patch: { name?: string; color?: ColorKey }, coalesce?: string) =>
+      apply((b) => changeCard(b, id, patch), { coalesce }),
+    /** Las suscripciones que la usaban se quedan sin tarjeta, en el mismo paso de deshacer. */
+    deleteCard: (id: string) => apply((b) => removeCard(b, id)),
+    /**
+     * Una suscripción nueva (lo que falte: mensual, en euros, cobro hoy, sin tarjeta). Devuelve su id.
+     * Con `coalesce`, crearla y seguir escribiendo su nombre con la misma clave es un solo paso de deshacer.
+     */
+    addSubscription(input: NewSubscription = {}, coalesce?: string) {
+      const sub = newSubscription(input, todayISO())
+      apply((b) => insertSubscription(b, sub), { coalesce })
+      return sub.id
+    },
+    /**
+     * Cambia campos (`undefined` en url, notes o remind los quita). Las ediciones de texto seguidas con el
+     * mismo `coalesce` (p. ej. `sub:<id>:name`) son un solo paso de deshacer. Si cambia algo del aviso,
+     * su tarea pendiente se quita en el mismo paso y el servidor crea otra.
+     */
+    updateSubscription: (id: string, patch: SubscriptionPatch, coalesce?: string) =>
+      apply((b) => changeSubscription(b, id, patch), { coalesce }),
+    /** Dar de baja hoy (`on`) o reactivar. */
+    cancelSubscription(id: string, on: boolean) {
+      const today = todayISO()
+      apply((b) => setCancelled(b, id, on, today))
+    },
+    /**
+     * Con `coalesce`, va en el mismo paso de deshacer que lo anterior con esa clave: una nueva que se
+     * borra al quedarse sin nombre no deja rastro (ni un paso que, al deshacerlo, la devuelva a medias).
+     */
+    deleteSubscription: (id: string, coalesce?: string) =>
+      apply((b) => removeSubscription(b, id), { coalesce, settle: coalesce !== undefined }),
   }
 }
 

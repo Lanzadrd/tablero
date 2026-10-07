@@ -1,5 +1,6 @@
 // La app en el Dock: el número de pendientes para hoy, cómo se abre cada día y los atajos del
-// menú del icono (public/manifest.webmanifest → /?vista=hoy, /?vista=calendario, /?accion=nueva),
+// menú del icono (public/manifest.webmanifest → /?vista=hoy, /?vista=calendario, /?vista=suscripciones,
+// /?accion=nueva),
 // además de los enlaces a una tarea (/t/<id>).
 import { useEffect, useRef } from 'react'
 import type { View } from './context'
@@ -37,7 +38,7 @@ export interface Launch {
   task?: string
 }
 
-const VIEWS: Record<string, View> = { hoy: 'today', tablero: 'board', calendario: 'calendar' }
+const VIEWS: Record<string, View> = { hoy: 'today', tablero: 'board', calendario: 'calendar', suscripciones: 'subscriptions' }
 
 export function readLaunch(url: URL): Launch | null {
   const link = /^\/t\/([^/]+)\/?$/.exec(url.pathname)

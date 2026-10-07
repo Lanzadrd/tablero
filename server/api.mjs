@@ -1,10 +1,12 @@
 // API local de Tablero: el tablero (almacen.mjs), sus eventos en vivo y las acciones de
 // la app, del ayudante de Recordatorios y del MCP de Claude Code.
 // La usan tanto el servidor de producción (server/index.mjs) como Vite en desarrollo.
+import { randomUUID } from 'node:crypto'
 import { capture, interpret } from './captura.mjs'
 import { DATA_DIR, exclusive, HttpError, localDay, localTime, readArchive, readStore, writeArchive, writeStore } from './almacen.mjs'
 import { applyOperations } from './operaciones.mjs'
 import { claudeUrl, openOnMac, projectFolder, taskPrompt } from './proyectos.mjs'
+import { applyReminders } from './suscripciones.mjs'
 import { pageTitle, TitleError } from './titulo.mjs'
 
 export { DATA_DIR }
@@ -109,6 +111,37 @@ async function patchTask(taskId, body) {
   return { rev }
 }
 
+/**
+ * Avisos de las suscripciones (suscripciones.mjs): crea en la Bandeja la tarea de los cobros que se
+ * acercan, sobre la versión guardada. Solo guarda (rev+1 y aviso a las ventanas) si ha creado alguna.
+ * Sin tablero todavía, no hace nada. Lo llama server/index.mjs al arrancar y cada 15 minutos.
+ */
+export async function subscriptionReminders({ today = localDay(), newId = randomUUID } = {}) {
+  try {
+    const result = await updateBoard((board) => {
+      const created = applyReminders(board, today, { newId })
+      return created > 0 && { creadas: created }
+    })
+    return { creadas: 0, ...result }
+  } catch (err) {
+    if (err instanceof HttpError && err.status === 409) return { rev: 0, creadas: 0 }
+    throw err
+  }
+}
+
+/**
+ * Una ventana con la web de antes (abierta desde antes de actualizar, sin recargar) no conoce las
+ * tarjetas ni las suscripciones: guarda el tablero sin ellas. Si no las manda, se quedan las guardadas.
+ * La web de ahora siempre las manda (aunque estén vacías).
+ */
+function keepNewLists(board, current) {
+  const kept = { ...board }
+  for (const key of ['cards', 'subscriptions']) {
+    if (!Object.hasOwn(kept, key) && current && Object.hasOwn(current, key)) kept[key] = current[key]
+  }
+  return kept
+}
+
 /** Mueve las completadas de una columna a archivo.json. */
 async function archiveCompleted(columnId) {
   const result = await updateBoard(async (board) => {
@@ -181,8 +214,10 @@ function checkCaller(req) {
  * `version` identifica la compilación de la web: si cambia, las ventanas abiertas proponen recargar.
  * `abrir(destino)` abre una carpeta o un enlace (por defecto, «open» de macOS; en pruebas, otra cosa).
  * `titulo` son opciones para pageTitle (solo en pruebas).
+ * `guardado()` se llama cada vez que una ventana guarda el tablero (p. ej. para crear ya el aviso de
+ * una suscripción recién configurada).
  */
-export function createApi({ version = 'dev', appVersion = 'dev', abrir = openOnMac, titulo = {} } = {}) {
+export function createApi({ version = 'dev', appVersion = 'dev', abrir = openOnMac, titulo = {}, guardado = () => {} } = {}) {
   return async function tableroApi(req, res, next) {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const { pathname } = url
@@ -281,9 +316,10 @@ export function createApi({ version = 'dev', appVersion = 'dev', abrir = openOnM
         // Otra ventana guardó antes: se devuelve lo que hay para que el cliente lo cargue.
         if (body.baseRev !== current.rev) return send(res, 409, current)
         const rev = current.rev + 1
-        await writeStore(rev, body.board)
+        await writeStore(rev, keepNewLists(body.board, current.board))
         send(res, 200, { rev })
         broadcast('rev', { rev })
+        guardado()
       })
     } catch (err) {
       const status = err instanceof HttpError ? err.status : 500

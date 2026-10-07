@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { describe, findColumn, fold } from './lenguaje.mjs'
 import { isRepeat } from './recurrencia.mjs'
+import { chargeAfter, chargeDayText, daysBetween, formatMoney, isCurrency, isDay, periodUnit, totals } from './suscripciones.mjs'
 
 // Variable propia (no PORT: suele venir heredada de otros proyectos y mandaría las tareas a otro servidor).
 const BASE = `http://127.0.0.1:${process.env.TABLERO_PORT || 4747}`
@@ -161,6 +162,21 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
+  {
+    name: 'tablero_suscripciones',
+    title: 'Suscripciones en Tablero',
+    description:
+      'Lista las suscripciones del usuario apuntadas en Tablero (Netflix, iCloud…), con su importe, periodicidad, próximo cobro, tarjeta y aviso, y lo que suman al mes y al año por moneda. Las tarjetas son solo un nombre («BBVA»), nunca números. Solo lectura.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tarjeta: { type: 'string', description: 'Nombre (o principio del nombre) de una tarjeta, para ver solo las suyas; «sin tarjeta» para las que no tienen.' },
+        incluirBajas: { type: 'boolean', description: 'También las dadas de baja (por defecto, no).' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
 ]
 
 async function listar(args) {
@@ -257,7 +273,92 @@ async function buscar(args) {
   return out.join('\n')
 }
 
-const HANDLERS = { tablero_listar: listar, tablero_anadir: anadir, tablero_completar: completar, tablero_buscar: buscar }
+/** «12,99 € / mes» (y, si no es mensual, cuánto sale al mes). */
+function price(sub) {
+  const text = `${formatMoney(sub.amount, sub.currency)} / ${periodUnit(sub.period)}`
+  if (sub.period === 'month') return text
+  const factor = { week: 52 / 12, quarter: 1 / 3, half: 1 / 6, year: 1 / 12 }[sub.period] ?? 1
+  return `${text} (≈ ${formatMoney(sub.amount * factor, sub.currency)} / mes)`
+}
+
+async function suscripciones(args) {
+  const board = await loadBoard()
+  const today = localDay()
+  const cards = (Array.isArray(board.cards) ? board.cards : []).filter((c) => typeof c?.id === 'string' && typeof c.name === 'string')
+  const subs = (Array.isArray(board.subscriptions) ? board.subscriptions : [])
+    .filter((s) => typeof s?.id === 'string' && isDay(s.billingDate))
+    .map((s) => ({ ...s, currency: isCurrency(s.currency) ? s.currency : 'EUR', amount: Number.isFinite(s.amount) ? s.amount : 0 }))
+  const cardName = (sub) => cards.find((c) => c.id === sub.cardId)?.name ?? null
+
+  // undefined = todas; null = las que no tienen tarjeta.
+  let cardId
+  let scope = ''
+  const wanted = str(args.tarjeta)
+  if (wanted) {
+    if (['sin tarjeta', 'sin', 'ninguna'].includes(fold(wanted))) {
+      cardId = null
+      scope = ' sin tarjeta'
+    } else {
+      const card = cards.find((c) => c.id === wanted) ?? findColumn(wanted, cards)
+      if (!card) {
+        throw new ToolError(cards.length ? `No hay ninguna tarjeta «${wanted}». Tarjetas: ${cards.map((c) => c.name).join(', ')}.` : 'Aún no hay ninguna tarjeta.')
+      }
+      cardId = card.id
+      scope = ` con ${card.name}`
+    }
+  }
+  const mine = subs.filter((s) => cardId === undefined || (cardName(s) ? s.cardId : null) === cardId)
+  const active = mine
+    .filter((s) => !s.cancelledOn)
+    .map((sub) => ({ sub, charge: chargeAfter(sub, today) }))
+    .sort((a, b) => a.charge.localeCompare(b.charge) || String(a.sub.name).localeCompare(String(b.sub.name), 'es'))
+  const cancelled = args.incluirBajas === true ? mine.filter((s) => s.cancelledOn) : []
+  if (!subs.length) return 'No hay suscripciones apuntadas en Tablero.'
+  if (!active.length && !cancelled.length) return `No hay suscripciones activas${scope}.`
+
+  const out = [`Suscripciones activas${scope} — hoy es ${today}`, '']
+  for (const { sub, charge } of active) {
+    const days = daysBetween(today, charge)
+    const when = describe({ due: charge, time: null, someday: false, repeat: null, columnId: null }, { today })
+    const parts = [
+      `- ${sub.name || '(sin nombre)'}: ${price(sub)}`,
+      `próximo cobro ${when}${days > 1 ? ` (en ${plural(days, 'día', 'días')})` : ''}`,
+      cardName(sub) ?? 'sin tarjeta',
+    ]
+    if (Number.isInteger(sub.remind)) parts.push(sub.remind === 0 ? 'aviso el mismo día' : `aviso ${plural(sub.remind, 'día', 'días')} antes`)
+    out.push(`${parts.join(' · ')} · id: ${sub.id}`)
+    if (typeof sub.url === 'string' && sub.url) out.push(`  Enlace: ${sub.url}`)
+    const notes = typeof sub.notes === 'string' ? sub.notes.replace(/\s+/g, ' ').trim() : ''
+    if (notes) out.push(`  Notas: ${notes.length > 160 ? `${notes.slice(0, 159)}…` : notes}`)
+  }
+  if (!active.length) out.push('(ninguna)')
+
+  // Nunca se suman monedas distintas: una línea por moneda.
+  const sums = totals(mine.map((s) => (cardName(s) ? s : { ...s, cardId: null })), { cardId })
+  if (active.length) out.push('')
+  for (const [currency, total] of Object.entries(sums)) {
+    out.push(
+      `Total: ${formatMoney(total.monthly, currency)} al mes · ${formatMoney(total.yearly, currency)} al año (${plural(total.count, 'activa', 'activas')})`,
+    )
+  }
+
+  if (cancelled.length) {
+    out.push('', 'Dadas de baja:')
+    for (const sub of cancelled) {
+      const since = isDay(sub.cancelledOn) ? ` · baja desde el ${chargeDayText(sub.cancelledOn, today)}` : ''
+      out.push(`- ${sub.name || '(sin nombre)'}: ${price(sub)}${since} · id: ${sub.id}`)
+    }
+  }
+  return out.join('\n')
+}
+
+const HANDLERS = {
+  tablero_listar: listar,
+  tablero_anadir: anadir,
+  tablero_completar: completar,
+  tablero_buscar: buscar,
+  tablero_suscripciones: suscripciones,
+}
 
 async function callTool(params) {
   const handler = HANDLERS[params?.name]
@@ -283,7 +384,8 @@ async function dispatch(method, params) {
         instructions:
           'Tablero es el gestor de tareas del usuario (columnas por proyecto o área, fechas, una Bandeja de entrada). ' +
           'tablero_listar para ver qué hay, tablero_anadir para crear tareas en lenguaje natural, ' +
-          'tablero_completar con el id y tablero_buscar para encontrarlas.',
+          'tablero_completar con el id y tablero_buscar para encontrarlas. ' +
+          'tablero_suscripciones enseña las suscripciones (importe, próximo cobro, tarjeta) y lo que suman al mes y al año.',
       }
     case 'ping':
       return {}

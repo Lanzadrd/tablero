@@ -3,7 +3,10 @@ import type { Board } from './model'
 import type { Actions } from './state'
 import type { AvisosStatus } from './sync'
 
-export type View = 'today' | 'board' | 'calendar'
+export type View = 'today' | 'board' | 'calendar' | 'subscriptions'
+
+/** Lo que la vista Suscripciones abre en cuanto está en pantalla: la ficha de una o «Nueva suscripción». */
+export type SubscriptionRequest = { id: string } | { create: true }
 
 export interface UI {
   /** Estado de los avisos en el iPhone (null hasta saberlo). */
@@ -31,6 +34,13 @@ export interface UI {
   saveNow: () => Promise<boolean>
   /** Trae lo guardado (tras un cambio hecho en el servidor, como archivar). */
   refresh: () => void
+  /** Va a Suscripciones y abre la ficha de esa suscripción («Ver suscripción» en una tarea de aviso). */
+  openSubscription: (id: string) => void
+  /** Va a Suscripciones y abre «Nueva suscripción» (N en esa vista, la búsqueda). */
+  newSubscription: () => void
+  /** Lo pedido con openSubscription o newSubscription, hasta que la vista lo atiende. */
+  subscriptionRequest: SubscriptionRequest | null
+  clearSubscriptionRequest: () => void
 }
 
 export const BoardContext = createContext<Board | null>(null)

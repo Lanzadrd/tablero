@@ -31,6 +31,13 @@ test('la siguiente tarea: nueva, pendiente y con la checklist desmarcada', () =>
     { id: 'b', done: false, due: '2026-10-12', time: '09:00', notes: '- [ ] Servidor\n- [ ] Portátil', repeat: { every: 'week' }, firstOn: undefined, completedAt: null },
   )
 })
+test('la siguiente de un aviso de suscripción ya no es el aviso', () => {
+  const t = { id: 'a', title: 'Netflix se cobra el 15 oct', notes: '', done: true, due: '2026-10-14', repeat: { every: 'month' }, subscriptionId: 'netflix', subscriptionCharge: '2026-10-15' }
+  const n = nextOccurrence(t, { id: 'b', doneOn: '2026-10-14', now: 'z' })
+  assert.equal('subscriptionId' in n, false)
+  assert.equal('subscriptionCharge' in n, false)
+  assert.equal(n.due, '2026-11-14')
+})
 test('valida reglas', () => {
   assert.ok(isRepeat({ every: 'week', interval: 2, from: 'done' }))
   assert.ok(!isRepeat({ every: 'hour' }))
