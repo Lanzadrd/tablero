@@ -57,6 +57,10 @@ export function onDay(day: string, now: Date) {
  * columna `columnId`). Todo se guarda al momento. Al cerrarse, `onClose` recibe el id de la que enseñaba
  * (null si la nueva no se guardó).
  */
+/** Valores de los menús que no son una columna ni una tarjeta. */
+const NONE = ''
+const NEW_CARD = '__nueva'
+
 export function SubscriptionSheet({
   id: initialId,
   cardId: initialCard = null,
@@ -132,6 +136,7 @@ export function SubscriptionSheet({
   const cards = cardsOf(board)
   const card = findCard(board, sub.cardId)
   const columns = columnChoices(board, sub.columnId)
+  const column = columns.find((c) => c.id === sub.columnId)
   // Dónde crea el servidor la tarea de aviso: en su columna (si no está archivada) o en la Bandeja.
   const reminderTarget = reminderColumn(board, sub)
   const reminderWhere = !reminderTarget || reminderTarget.inbox ? 'la Bandeja' : `«${reminderTarget.name}»`
@@ -348,89 +353,66 @@ export function SubscriptionSheet({
           </div>
         </div>
 
+      </div>
+
+      <div className="sheet-fields subs-fields">
         <div className="field">
-          <span className="field-label" id={`${ids}-column`}>
+          <label className="field-label" htmlFor={`${ids}-column`}>
             <Icon.Columns />
             Columna
-          </span>
-          <div className="field-controls">
-            <div className="subs-choice" role="radiogroup" aria-labelledby={`${ids}-column`}>
+          </label>
+          <div className="field-controls subs-picker" style={tint(column?.color ?? 'gray')}>
+            <span className={cx('subs-chip-dot', !column && 'is-empty')} aria-hidden="true" />
+            <select
+              id={`${ids}-column`}
+              className="input"
+              value={sub.columnId ?? NONE}
+              onChange={(e) => update({ columnId: e.target.value === NONE ? null : e.target.value })}
+            >
               {columns.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={sub.columnId === c.id}
-                  className={cx('chip', 'subs-card-chip', sub.columnId === c.id && 'is-active')}
-                  style={tint(c.color)}
-                  title={c.archived ? 'Columna archivada' : undefined}
-                  onClick={() => update({ columnId: c.id })}
-                >
-                  <span className="subs-chip-dot" aria-hidden="true" />
-                  {c.name}
-                  {c.archived && <span className="sr-only"> (archivada)</span>}
-                </button>
+                <option key={c.id} value={c.id}>
+                  {c.archived ? `${c.name} (archivada)` : c.name}
+                </option>
               ))}
-              <button
-                type="button"
-                role="radio"
-                aria-checked={sub.columnId === null}
-                className={cx('chip', 'subs-card-chip', sub.columnId === null && 'is-active')}
-                style={tint('gray')}
-                onClick={() => update({ columnId: null })}
-              >
-                <span className="subs-chip-dot is-empty" aria-hidden="true" />
-                Sin columna
-              </button>
-            </div>
+              <option value={NONE}>Sin columna</option>
+            </select>
           </div>
         </div>
 
         <div className="field">
-          <span className="field-label" id={`${ids}-card`}>
+          <label className="field-label" htmlFor={`${ids}-card`}>
             <Icon.Card />
             Tarjeta
-          </span>
-          <div className="field-controls">
-            <div className="subs-choice" role="radiogroup" aria-labelledby={`${ids}-card`}>
-              {cards.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={sub.cardId === c.id}
-                  className={cx('chip', 'subs-card-chip', sub.cardId === c.id && 'is-active')}
-                  style={tint(c.color)}
-                  onClick={() => update({ cardId: c.id })}
-                >
-                  <span className="subs-chip-dot" aria-hidden="true" />
-                  {c.name}
-                </button>
-              ))}
-              <button
-                type="button"
-                role="radio"
-                aria-checked={sub.cardId === null}
-                className={cx('chip', 'subs-card-chip', sub.cardId === null && 'is-active')}
-                style={tint('gray')}
-                onClick={() => update({ cardId: null })}
-              >
-                Sin tarjeta
-              </button>
-            </div>
-            <button
-              type="button"
-              className="chip subs-new-card"
+          </label>
+          <div className="field-controls subs-picker" style={tint(card?.color ?? 'gray')}>
+            <span className={cx('subs-chip-dot', !card && 'is-empty')} aria-hidden="true" />
+            <select
+              id={`${ids}-card`}
+              className="input"
+              value={sub.cardId ?? NONE}
               aria-haspopup="dialog"
               aria-expanded={cardEditor !== null}
-              onClick={(e) => setCardEditor(cardEditor ? null : e.currentTarget)}
+              onChange={(e) => {
+                // «Nueva tarjeta…» no es una tarjeta: abre su editor y el menú sigue en la que había.
+                if (e.target.value === NEW_CARD) {
+                  e.target.value = sub.cardId ?? NONE
+                  setCardEditor(e.currentTarget)
+                } else update({ cardId: e.target.value === NONE ? null : e.target.value })
+              }}
             >
-              <Icon.Plus />
-              Nueva tarjeta…
-            </button>
+              {cards.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+              <option value={NONE}>Sin tarjeta</option>
+              <option value={NEW_CARD}>Nueva tarjeta…</option>
+            </select>
           </div>
         </div>
+      </div>
 
+      <div className="sheet-fields subs-fields">
         <div className="field">
           <label className="field-label" htmlFor={`${ids}-remind`}>
             <Icon.Bell />

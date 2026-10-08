@@ -766,7 +766,8 @@
 }
 
 .subs-fields.sheet-fields {
-  gap: 8px;
+  gap: 10px;
+  padding: 12px 0 12px;
 }
 
 .subs-fields .field {
@@ -787,6 +788,7 @@
 .subs-note,
 .subs-error {
   flex-basis: 100%;
+  margin-top: 1px;
   padding: 0 2px;
   font-size: 11.5px;
   line-height: 1.35;
@@ -800,48 +802,19 @@
   color: var(--overdue);
 }
 
-/* Las opciones de tarjeta son un grupo de radio, pero se reparten como chips sueltos. */
-.subs-choice {
-  display: contents;
+/* Columna y tarjeta: menú con el punto de su color delante. */
+.subs-picker {
+  flex-wrap: nowrap;
+  gap: 8px;
 }
 
-.chip.subs-card-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.subs-picker .subs-chip-dot {
+  margin-left: 2px;
 }
 
-/* La elegida lleva el color de su tarjeta (con borde: no depende solo del color). */
-.chip.subs-card-chip.is-active {
-  background: color-mix(in srgb, var(--tint) 16%, transparent);
-  box-shadow: inset 0 0 0 1.5px var(--tint);
-  color: var(--text);
-  font-weight: 600;
-}
-
-.chip.subs-new-card {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 10px 0 7px;
-  background: none;
-  box-shadow: inset 0 0 0 1px var(--separator);
-  color: var(--text-2);
-}
-
-.chip.subs-new-card:hover,
-.chip.subs-new-card[aria-expanded='true'] {
-  background: var(--hover);
-  color: var(--text);
-}
-
-.chip.subs-new-card svg {
-  width: 12px;
-  height: 12px;
+.subs-picker select.input {
+  min-width: 0;
+  max-width: 190px;
 }
 
 .subs-url {
