@@ -120,6 +120,14 @@ export function metaError(error, status) {
       'meta-sin-whatsapp',
     )
   }
+  // Los anuncios crean una publicación de la página con la app, y Meta no la acepta si la app sigue en desarrollo.
+  if (error?.error_subcode === 1885183) {
+    return new HttpError(
+      400,
+      'La app de Meta con la que está conectado Tablero sigue en modo desarrollo, y Meta no deja crear anuncios con ella. Pásala a modo público en developers.facebook.com › Mis apps › tu app: pon una URL de política de privacidad en Configuración de la app › Básica y luego «Publicar» en el menú de la izquierda. No hace falta la revisión de Meta.',
+      'meta-app-desarrollo',
+    )
+  }
   const title = error?.error_user_title
   const message = error?.error_user_msg || error?.message || `Meta ha respondido con un error (${status})`
   return new HttpError(502, title && !message.startsWith(title) ? `${title}: ${message}` : message, 'meta')

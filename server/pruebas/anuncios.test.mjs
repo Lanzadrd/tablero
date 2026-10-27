@@ -901,6 +901,19 @@ test('una página sin WhatsApp conectado: se explica qué hacer (y no queda nada
   assert.match(res.body.mensaje, /no tiene WhatsApp conectado.*Cuentas vinculadas › WhatsApp.*No se ha creado nada/)
 })
 
+test('la app de Meta en modo desarrollo: se explica cómo publicarla (y no queda nada creado)', async () => {
+  await connect()
+  launchRoutes()
+  routes['POST act_111/ads'] = {
+    error: { code: 100, error_subcode: 1885183, error_user_msg: 'La publicación del laboratorio de contenidos se ha realizado con una aplicación que se encuentra en modo de desarrollo.' },
+  }
+  routes['DELETE c1'] = { success: true }
+  const res = await request('POST', '/api/meta/lanzar', { body: plan() })
+  assert.equal(res.status, 400)
+  assert.match(res.body.mensaje, /modo desarrollo.*política de privacidad.*«Publicar».*No se ha creado nada/)
+  assert.ok(calls.some((c) => c.method === 'DELETE' && c.path === 'c1'), 'se borra la campaña')
+})
+
 test('nuevo conjunto: solo en campañas de la cuenta que admiten mensajes a WhatsApp; si falla, se borra', async () => {
   await connect()
   launchRoutes()
