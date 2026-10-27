@@ -109,9 +109,10 @@ La vista **Anuncios** (`P`, en el menú lateral) enseña cómo van las campañas
 todos tus portfolios y lanza campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
 
 - **Conectar (una vez)**: hace falta una app de Meta propia (developers.facebook.com, caso de uso «Crear y
-  gestionar anuncios con la API de marketing»; sin publicar ni revisión). En su inicio de sesión con Facebook,
-  añade `http://localhost:4747/api/meta/volver` a las URI de redireccionamiento (en desarrollo, también la del
-  puerto 5173). Tablero pide su identificador y su clave secreta y abre la ventana de Meta; si la app usa
+  gestionar anuncios con la API de marketing»; sin revisión, pero publicada: en modo desarrollo Meta no deja
+  crear anuncios, y para publicarla pide una URL de política de privacidad: sirve [PRIVACIDAD.md](PRIVACIDAD.md)).
+  En su inicio de sesión con Facebook, añade `http://localhost:4747/api/meta/volver` a las URI de
+  redireccionamiento (en desarrollo, también la del puerto 5173). Tablero pide su identificador y su clave secreta y abre la ventana de Meta; si la app usa
   «Inicio de sesión con Facebook para empresas», también el identificador de una configuración con token de
   usuario. La conexión dura unos 60 días (avisa una semana antes); «Volver a conectar» la renueva.
 - **En marcha**: las campañas activas de la cuenta con su presupuesto y sus métricas de hoy, ayer, 7 o 30
