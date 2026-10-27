@@ -34,6 +34,8 @@ const plan = (extra = {}) => ({
   ubicaciones: 'auto',
   texto: 'Escríbenos por WhatsApp',
   titular: 'Clases de prueba',
+  descripcion: 'Primera clase gratis',
+  bienvenida: '¡Hola! Te contamos todo',
   saludo: 'Hola, quiero probar una clase',
   nombre: 'Hoplon · WhatsApp · 26 oct',
   plantilla: 'Hoplon',
@@ -90,6 +92,12 @@ test('campaña y conjunto: mensajes a WhatsApp, en pausa, presupuesto en el conj
   assert.deepEqual(adSet.promoted_object, { page_id: '222' })
   assert.equal(adSet.start_time, undefined)
   assert.equal(adSet.end_time, undefined)
+
+  // En una campaña que reparte su presupuesto, el conjunto no lleva; el número de WhatsApp va con la página.
+  const shared = ads.adSetBody(plan(), { campaignId: 'c1', currency: 'EUR', sharedBudget: true, promoted: { whatsapp_phone_number: '34600' } })
+  assert.equal(shared.daily_budget, undefined)
+  assert.equal(shared.bid_strategy, undefined)
+  assert.deepEqual(shared.promoted_object, { page_id: '222', whatsapp_phone_number: '34600' })
 })
 
 test('fechas: inicio futuro y fin, con la zona del Mac; hoy no lleva inicio', () => {
@@ -111,26 +119,125 @@ test('anuncio con imagen: botón de WhatsApp, Instagram y el mensaje ya escrito'
   assert.equal(spec.link_data.link, 'https://api.whatsapp.com/send')
   assert.equal(spec.link_data.message, 'Escríbenos por WhatsApp')
   assert.equal(spec.link_data.name, 'Clases de prueba')
+  assert.equal(spec.link_data.description, 'Primera clase gratis')
   assert.deepEqual(spec.link_data.call_to_action, { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } })
   const welcome = JSON.parse(spec.link_data.page_welcome_message)
   assert.equal(welcome.text_format.customer_action_type, 'autofill_message')
+  assert.equal(welcome.text_format.message.text, '¡Hola! Te contamos todo')
   assert.equal(welcome.text_format.message.autofill_message.content, 'Hola, quiero probar una clase')
+  // Ninguna mejora automática ni anuncios multianunciante, salvo que se elijan; y siempre dicho a Meta.
   assert.deepEqual(body.contextual_multi_ads, { enroll_status: 'OPT_OUT' })
-  assert.equal(body.degrees_of_freedom_spec, undefined)
+  const features = body.degrees_of_freedom_spec.creative_features_spec
+  assert.ok(Object.values(features).every((f) => f.enroll_status === 'OPT_OUT'))
+  for (const name of ['image_touchups', 'adapt_to_placement', 'text_optimizations', 'inline_comment', 'image_templates', 'site_extensions']) {
+    assert.ok(features[name], `manda ${name}`)
+  }
+  assert.equal(features.standard_enhancements, undefined, 'el paquete viejo ya no se manda')
 
-  const plain = ads.creativeBody(plan({ instagram: null, saludo: '', titular: '' }), p.anuncios[0])
+  const plain = ads.creativeBody(plan({ instagram: null, saludo: '', titular: '', descripcion: '' }), p.anuncios[0])
   assert.equal(plain.object_story_spec.instagram_user_id, undefined)
   assert.equal(plain.object_story_spec.link_data.page_welcome_message, undefined)
   assert.equal(plain.object_story_spec.link_data.name, undefined)
+  assert.equal(plain.object_story_spec.link_data.description, undefined)
+})
+
+test('mensaje de WhatsApp: el vuestro y, para empezar, el de la persona ya escrito o preguntas frecuentes', () => {
+  const questions = JSON.parse(ads.welcomeMessage(plan({ tipoMensaje: 'preguntas', preguntas: ['¿Horarios?', ' ', '¿Precio?'] })))
+  assert.deepEqual(questions.text_format, {
+    customer_action_type: 'ice_breakers',
+    message: { text: '¡Hola! Te contamos todo', ice_breakers: [{ title: '¿Horarios?' }, { title: '¿Precio?' }] },
+  })
+  // Sin el vuestro, el de siempre; sin nada con que empezar, ninguno (el de Meta).
+  assert.equal(JSON.parse(ads.welcomeMessage(plan({ bienvenida: '' }))).text_format.message.text, '¡Hola! ¿En qué podemos ayudarte?')
+  assert.equal(ads.welcomeMessage(plan({ tipoMensaje: 'preguntas', preguntas: [] })), null)
+  assert.equal(ads.welcomeMessage(plan({ saludo: '' })), null)
+  // Lo que llega se limpia: como mucho 4 preguntas, de 80 caracteres.
+  const clean = ads.cleanSettings({ tipoMensaje: 'preguntas', preguntas: ['a', 'b', 'c', 'd', 'e', 'x'.repeat(100)] })
+  assert.deepEqual(clean.preguntas, ['a', 'b', 'c', 'd'])
+  assert.equal(ads.cleanSettings({ tipoMensaje: 'otro' }).tipoMensaje, 'escrito')
+  assert.equal(ads.cleanSettings({ preguntas: ['x'.repeat(100)] }).preguntas[0].length, 80)
+})
+
+test('con versión vertical: un solo anuncio, la del feed en el feed y la vertical en lo demás', () => {
+  const p = ads.cleanPlan(
+    plan({ anuncios: [{ nombre: 'Verano', medio: { tipo: 'imagen', hash: 'aaaa0000feed' }, vertical: { tipo: 'imagen', hash: 'bbbb1111cccc' } }] }),
+  )
+  const body = ads.creativeBody(p, p.anuncios[0], { tag: 't1' })
+  assert.deepEqual(body.object_story_spec, { page_id: '222', instagram_user_id: '333' })
+  const spec = body.asset_feed_spec
+  assert.deepEqual(
+    spec.images.map((i) => [i.hash, i.adlabels[0].name]),
+    [
+      ['aaaa0000feed', 'tablero_feed_t1'],
+      ['bbbb1111cccc', 'tablero_vertical_t1'],
+    ],
+  )
+  assert.deepEqual(spec.bodies, [{ text: 'Escríbenos por WhatsApp', adlabels: [{ name: 'tablero_feed_t1' }, { name: 'tablero_vertical_t1' }] }])
+  assert.equal(spec.titles[0].text, 'Clases de prueba')
+  assert.equal(spec.descriptions[0].text, 'Primera clase gratis')
+  assert.deepEqual(spec.call_to_actions, [{ type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } }])
+  assert.equal(spec.optimization_type, 'PLACEMENT')
+  assert.deepEqual(spec.ad_formats, ['SINGLE_IMAGE'])
+  const [feed, rest] = spec.asset_customization_rules
+  assert.equal(feed.image_label.name, 'tablero_feed_t1')
+  assert.deepEqual(feed.customization_spec.instagram_positions, ['stream', 'explore', 'explore_home', 'profile_feed'])
+  assert.equal(feed.title_label.name, 'tablero_feed_t1')
+  assert.equal(rest.image_label.name, 'tablero_vertical_t1')
+  assert.deepEqual(rest.customization_spec, { age_min: 13, age_max: 65 })
+  assert.equal(JSON.parse(spec.additional_data.page_welcome_message).text_format.message.text, '¡Hola! Te contamos todo')
+  assert.ok(body.degrees_of_freedom_spec)
+
+  // Con vídeos: con sus miniaturas; y sin título ni descripción, sin esas etiquetas.
+  const v = ads.cleanPlan(
+    plan({ titular: '', descripcion: '', anuncios: [{ nombre: 'V', medio: { tipo: 'video', id: '71' }, vertical: { tipo: 'video', id: '72' } }] }),
+  )
+  const videos = ads.creativeBody(v, v.anuncios[0], { thumbs: new Map([['71', 'h71'], ['72', 'h72']]), tag: 't2' }).asset_feed_spec
+  assert.deepEqual(videos.videos.map((x) => [x.video_id, x.thumbnail_hash]), [['71', 'h71'], ['72', 'h72']])
+  assert.deepEqual(videos.ad_formats, ['SINGLE_VIDEO'])
+  assert.equal(videos.titles, undefined)
+  assert.equal(videos.asset_customization_rules[0].title_label, undefined)
+  assert.ok(videos.asset_customization_rules[0].customization_spec.facebook_positions.includes('instream_video'))
+  // Una imagen con un vídeo no se juntan.
+  assert.throws(
+    () => ads.cleanPlan(plan({ anuncios: [{ medio: { tipo: 'imagen', hash: 'aaaa0000feed' }, vertical: { tipo: 'video', id: '72' } }] })),
+    /las dos imágenes o los dos vídeos/,
+  )
+})
+
+test('mejoras automáticas: solo las elegidas, con sus nombres de imagen y vídeo; y se leen de los anuncios', () => {
+  const p = plan({ mejoras: ['comentarios', 'retoques', 'inventada'], multianunciante: true })
+  const clean = ads.cleanPlan(p)
+  assert.deepEqual(clean.mejoras, ['retoques', 'comentarios'])
+  assert.equal(clean.multianunciante, true)
+  const body = ads.creativeBody(clean, clean.anuncios[0])
+  const on = Object.entries(body.degrees_of_freedom_spec.creative_features_spec)
+    .filter(([, f]) => f.enroll_status === 'OPT_IN')
+    .map(([name]) => name)
+    .sort()
+  assert.deepEqual(on, ['adapt_to_placement', 'image_touchups', 'inline_comment', 'video_auto_crop'])
+  assert.deepEqual(body.contextual_multi_ads, { enroll_status: 'OPT_IN' })
+  // Lo que llega sin elegir (plantillas de antes): nada.
+  assert.deepEqual(ads.cleanSettings({ multianunciante: 'sí' }).mejoras, [])
+  assert.equal(ads.cleanSettings({ multianunciante: 'sí' }).multianunciante, false)
+
+  // De un anuncio que ya existe: las activas (el paquete viejo cuenta como las suyas).
+  const spec = (features) => ({ degrees_of_freedom_spec: { creative_features_spec: features } })
+  assert.deepEqual(
+    ads.automaticOf({ ...spec({ image_brightness_and_contrast: { enroll_status: 'OPT_IN' }, video_uncrop: { enroll_status: 'OPT_IN' }, inline_comment: { enroll_status: 'OPT_OUT' } }), contextual_multi_ads: { enroll_status: 'OPT_IN' } }),
+    { mejoras: ['ampliar', 'brillo'], multianunciante: true },
+  )
+  assert.deepEqual(ads.automaticOf(spec({ standard_enhancements: { enroll_status: 'OPT_IN' } })).mejoras, ['retoques', 'superposiciones', 'texto', 'comentarios'])
+  assert.deepEqual(ads.automaticOf(undefined), { mejoras: [], multianunciante: false })
 })
 
 test('anuncio con vídeo: video_data con su miniatura', () => {
   const ad = { nombre: 'video-1', medio: { tipo: 'video', id: '999' } }
-  const spec = ads.creativeBody(plan(), ad, { thumbnailHash: 'feedbeef00' }).object_story_spec
+  const spec = ads.creativeBody(plan(), ad, { thumbs: new Map([['999', 'feedbeef00']]) }).object_story_spec
   assert.equal(spec.link_data, undefined)
   assert.equal(spec.video_data.video_id, '999')
   assert.equal(spec.video_data.image_hash, 'feedbeef00')
   assert.equal(spec.video_data.title, 'Clases de prueba')
+  assert.equal(spec.video_data.link_description, 'Primera clase gratis')
   assert.equal(spec.video_data.call_to_action.value.app_destination, 'WHATSAPP')
   assert.ok(spec.video_data.page_welcome_message)
 })
@@ -184,15 +291,83 @@ test('entrega: lo que pasa de verdad, aunque la campaña esté activa', () => {
   assert.equal(ads.deliveryOf(campaign(), NOW).tono, 'ok')
 })
 
+test('entrega de conjuntos y anuncios: en masculino, y lo que los para desde arriba', () => {
+  const conjunto = (extra = {}, adsList = [{ status: 'ACTIVE', effective_status: 'ACTIVE' }]) => ({ ...adSet(extra), ads: { data: adsList } })
+  const texto = (object, level) => ads.deliveryOf(object, NOW, level).texto
+  assert.equal(texto(conjunto(), 'conjunto'), 'Activo')
+  assert.equal(texto(conjunto({ effective_status: 'CAMPAIGN_PAUSED' }), 'conjunto'), 'Campaña en pausa')
+  assert.equal(texto(conjunto({ end_time: '2026-10-20T23:59:00-0300' }), 'conjunto'), 'Terminado')
+  assert.equal(texto(conjunto({ start_time: '2026-11-03T00:00:00+0100' }), 'conjunto'), 'Programado')
+  assert.equal(texto(conjunto({}, [{ status: 'PAUSED', effective_status: 'PAUSED' }]), 'conjunto'), 'Anuncios en pausa')
+  assert.equal(texto(conjunto({}, [{ status: 'ACTIVE', effective_status: 'DISAPPROVED' }]), 'conjunto'), 'Con problemas')
+  assert.equal(texto(conjunto({}, [{ status: 'ACTIVE', effective_status: 'PENDING_REVIEW' }]), 'conjunto'), 'En revisión')
+
+  const anuncio = (effective_status) => ({ status: 'ACTIVE', effective_status })
+  assert.equal(texto(anuncio('ACTIVE'), 'anuncio'), 'Activo')
+  assert.equal(texto(anuncio('ADSET_PAUSED'), 'anuncio'), 'Conjunto en pausa')
+  assert.equal(texto(anuncio('CAMPAIGN_PAUSED'), 'anuncio'), 'Campaña en pausa')
+  assert.equal(texto(anuncio('DISAPPROVED'), 'anuncio'), 'Rechazado')
+  assert.equal(ads.deliveryOf(anuncio('DISAPPROVED'), NOW, 'anuncio').tono, 'warning')
+  assert.equal(texto(anuncio('PENDING_REVIEW'), 'anuncio'), 'En revisión')
+})
+
 test('presupuesto: el de la campaña o la suma de los conjuntos que gastarían, en su moneda', () => {
-  assert.deepEqual(ads.budgetOf(campaign({ daily_budget: '2500' }), 'EUR', NOW), { cantidad: 25, tipo: 'dia' })
-  assert.deepEqual(ads.budgetOf(campaign({ lifetime_budget: '30000' }), 'EUR', NOW), { cantidad: 300, tipo: 'total' })
+  assert.deepEqual(ads.budgetOf(campaign({ daily_budget: '2500' }), 'EUR', NOW), { cantidad: 25, tipo: 'dia', reparte: true })
+  assert.deepEqual(ads.budgetOf(campaign({ lifetime_budget: '30000' }), 'EUR', NOW), { cantidad: 300, tipo: 'total', reparte: true })
   const sets = [adSet({ daily_budget: '20000' }), adSet({ daily_budget: '20000' }), adSet({ status: 'PAUSED', daily_budget: '90000' })]
   assert.deepEqual(ads.budgetOf(campaign({}, sets), 'PYG', NOW), { cantidad: 40000, tipo: 'dia' })
   assert.deepEqual(ads.budgetOf(campaign({}, [adSet({ daily_budget: '0', lifetime_budget: '5000' })]), 'USD', NOW), { cantidad: 50, tipo: 'total' })
   assert.equal(ads.budgetOf(campaign({}, [adSet({ status: 'PAUSED' })]), 'USD', NOW), null)
+  // El conjunto, el suyo (o ninguno si va en la campaña); el anuncio, nunca.
+  assert.deepEqual(ads.budgetOf(adSet({ daily_budget: '1400000' }), 'ARS', NOW, 'conjunto'), { cantidad: 14000, tipo: 'dia' })
+  assert.equal(ads.budgetOf(adSet({ daily_budget: undefined, lifetime_budget: undefined }), 'ARS', NOW, 'conjunto'), null)
+  assert.equal(ads.budgetOf(adSet(), 'ARS', NOW, 'anuncio'), null)
   assert.equal(ads.majorUnits('1050', 'EUR'), 10.5)
   assert.equal(ads.majorUnits('1050', 'JPY'), 1050)
+})
+
+test('métricas: lo que da Meta y los cocientes, null cuando no hay de qué', () => {
+  const m = ads.metricsOf({
+    spend: '200',
+    impressions: '40000',
+    reach: '25000',
+    inline_link_clicks: '160',
+    actions: [
+      { action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '50' },
+      { action_type: 'onsite_conversion.messaging_first_reply', value: '45' },
+      { action_type: 'onsite_conversion.messaging_block', value: '2' },
+      { action_type: 'link_click', value: '160' },
+    ],
+  })
+  assert.deepEqual(m, {
+    gasto: 200,
+    conversaciones: 50,
+    coste: 4,
+    contactos: 45,
+    alcance: 25000,
+    impresiones: 40000,
+    frecuencia: 1.6,
+    cpm: 5,
+    clics: 160,
+    ctr: 0.4,
+    cpc: 1.25,
+    bloqueos: 2,
+  })
+  // Sin datos (en pausa todo el periodo): ceros, y los cocientes sin valor.
+  assert.deepEqual(ads.metricsOf(undefined), {
+    gasto: 0,
+    conversaciones: 0,
+    coste: null,
+    contactos: 0,
+    alcance: 0,
+    impresiones: 0,
+    frecuencia: null,
+    cpm: null,
+    clics: 0,
+    ctr: null,
+    cpc: null,
+    bloqueos: 0,
+  })
 })
 
 test('filas: gasto, conversaciones y coste por conversación; primero las activas que más gastan', () => {
@@ -206,7 +381,7 @@ test('filas: gasto, conversaciones y coste por conversación; primero las activa
     { campaign_id: '1', spend: '13.90', actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '9' }, { action_type: 'link_click', value: '40' }] },
     { campaign_id: '3', spend: '50', actions: [{ action_type: 'link_click', value: '3' }] },
   ]
-  const rows = ads.campaignRows(campaigns, insights, { account: 'act_111', currency: 'USD', businessId: '888', now: NOW })
+  const rows = ads.rowsOf(campaigns, insights, { account: 'act_111', currency: 'USD', businessId: '888', now: NOW })
   assert.deepEqual(
     rows.map((r) => [r.nombre, r.estado]),
     [
@@ -217,16 +392,28 @@ test('filas: gasto, conversaciones y coste por conversación; primero las activa
     ],
   )
   const poca = rows[1]
-  assert.equal(poca.gasto, 13.9)
-  assert.equal(poca.conversaciones, 9)
-  assert.ok(Math.abs(poca.coste - 13.9 / 9) < 1e-9)
+  assert.equal(poca.metricas.gasto, 13.9)
+  assert.equal(poca.metricas.conversaciones, 9)
+  assert.ok(Math.abs(poca.metricas.coste - 13.9 / 9) < 1e-9)
   assert.deepEqual(poca.presupuesto, { cantidad: 4, tipo: 'dia' })
   assert.equal(poca.actualizada, '2026-10-10T17:00:00.000Z')
   assert.match(poca.enlace, /act=111&business_id=888&selected_campaign_ids=1/)
   // Sin conversaciones, sin coste (no 0 ni infinito).
-  assert.equal(rows[0].conversaciones, 0)
-  assert.equal(rows[0].coste, null)
-  assert.equal(rows[2].gasto, 0)
+  assert.equal(rows[0].metricas.conversaciones, 0)
+  assert.equal(rows[0].metricas.coste, null)
+  assert.equal(rows[2].metricas.gasto, 0)
+  assert.equal(poca.miniatura, null)
+
+  // Los anuncios: por ad_id, con su miniatura y su enlace.
+  const [ad] = ads.rowsOf(
+    [{ id: '7', name: 'Vídeo', status: 'ACTIVE', effective_status: 'ACTIVE', creative: { thumbnail_url: 'https://scontent.example/t.jpg' } }],
+    [{ ad_id: '7', spend: '3' }],
+    { level: 'anuncio', account: 'act_111', currency: 'USD', businessId: '888', now: NOW },
+  )
+  assert.equal(ad.metricas.gasto, 3)
+  assert.equal(ad.miniatura, 'https://scontent.example/t.jpg')
+  assert.equal(ad.presupuesto, null)
+  assert.match(ad.enlace, /\/manage\/ads\?act=111&business_id=888&selected_ad_ids=7$/)
 })
 
 // ── La API con una Meta de mentira ──
@@ -255,6 +442,21 @@ function fakeFetch(input, init = {}) {
 
 let server
 let port
+
+// Claude de mentira: apunta lo que se le pide y devuelve `claudeReply` (o lo lanza, si es un error).
+const claudeCalls = []
+let claudeReply = null
+const fakeClaude = {
+  beta: {
+    messages: {
+      parse: async (params) => {
+        claudeCalls.push(params)
+        if (claudeReply instanceof Error) throw claudeReply
+        return claudeReply
+      },
+    },
+  },
+}
 
 function request(method, pathname, { body, headers = {}, raw } = {}) {
   return new Promise((resolve, reject) => {
@@ -300,7 +502,7 @@ async function connect() {
 
 before(async () => {
   const meta = createMeta({ fetch: fakeFetch })
-  const api = createApi({ meta, anuncios: { wait: 1000, poll: 1, fetchImpl: fakeFetch } })
+  const api = createApi({ meta, anuncios: { wait: 1000, poll: 1, fetchImpl: fakeFetch, claude: fakeClaude } })
   server = http.createServer((req, res) => api(req, res, () => res.writeHead(404).end()))
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   port = server.address().port
@@ -465,7 +667,7 @@ test('cuentas: agrupadas por portfolio, sin repetir, y las sueltas al final', as
   assert.ok(calls.length > before)
 })
 
-test('páginas: con su Instagram (o el de la página) y sin WhatsApp si Meta no lo deja leer', async () => {
+test('páginas: las de la cuenta y las de su portfolio, con su Instagram, los que ya usan sus anuncios (o el de la página) y sin WhatsApp si Meta no lo deja leer', async () => {
   await connect()
   const pageTokenOnly = { error: { message: '(#190) This method must be called with a Page Access Token', code: 190 } }
   routes['GET act_111/promote_pages'] = {
@@ -489,12 +691,39 @@ test('páginas: con su Instagram (o el de la página) y sin WhatsApp si Meta no 
     url.searchParams.get('access_token') === 'token-p2' ? { data: [{ id: 'ig2', username: 'otra' }] } : pageTokenOnly
   routes['GET p3'] = ({ url }) => (url.searchParams.get('fields') === 'access_token' ? { error: { message: 'No', code: 10 } } : {})
   routes['GET p3/instagram_accounts'] = pageTokenOnly
+  // Los anuncios de la cuenta: con qué página e Instagram salen (el nombre, de su publicación en Instagram).
+  routes['GET act_111/ads'] = {
+    data: [
+      { creative: { instagram_user_id: 'ig4', effective_instagram_media_id: 'm4', object_story_spec: { page_id: 'p1' } } },
+      { creative: { instagram_user_id: 'ig1', object_story_spec: { page_id: 'p1' } } },
+      { creative: { instagram_user_id: 'ig5', effective_object_story_id: 'p1_77' } },
+      { creative: { instagram_user_id: 'ig5', effective_object_story_id: 'p1_78' } },
+      { creative: { object_story_spec: { page_id: 'p3' } } },
+      {},
+    ],
+  }
+  routes['GET m4'] = { username: 'hoplon.eventos', id: 'm4' }
+  // El portfolio de la cuenta tiene otra página que la cuenta aún no ha usado.
+  routes['GET act_111'] = { business: { id: 'b9' }, id: 'act_111' }
+  routes['GET b9/owned_pages'] = { data: [{ id: 'p1', name: 'Hoplon' }, { id: 'p4', name: 'Del portfolio' }] }
+  routes['GET b9/client_pages'] = { data: [] }
   const res = await request('GET', '/api/meta/paginas?cuenta=act_111')
   assert.equal(res.status, 200)
   assert.deepEqual(res.body.paginas, [
-    { id: 'p1', nombre: 'Hoplon', foto: null, instagram: { id: 'ig1', usuario: 'hoplonclub' }, whatsapp: '34600000000' },
-    { id: 'p2', nombre: 'Otra', foto: null, instagram: { id: 'ig2', usuario: 'otra' }, whatsapp: null },
-    { id: 'p3', nombre: 'Sin Instagram', foto: null, instagram: null, whatsapp: null },
+    {
+      id: 'p1',
+      nombre: 'Hoplon',
+      foto: null,
+      instagrams: [
+        { id: 'ig1', usuario: 'hoplonclub' },
+        { id: 'ig5', usuario: null },
+        { id: 'ig4', usuario: 'hoplon.eventos' },
+      ],
+      whatsapp: '34600000000',
+    },
+    { id: 'p2', nombre: 'Otra', foto: null, instagrams: [{ id: 'ig2', usuario: 'otra' }], whatsapp: null },
+    { id: 'p3', nombre: 'Sin Instagram', foto: null, instagrams: [], whatsapp: null },
+    { id: 'p4', nombre: 'Del portfolio', foto: null, instagrams: [], whatsapp: null },
   ])
   const pageCall = calls.find((c) => c.path === 'p2/instagram_accounts' && c.params.access_token === 'token-p2')
   assert.ok(pageCall, 'pide las cuentas de Instagram con el token de la página')
@@ -625,6 +854,80 @@ test('crear: si algo falla a medias, se borra la campaña y se dice', async () =
   assert.match(stuck.body.mensaje ?? stuck.body.error, /Ha quedado la campaña/)
 })
 
+test('nuevo conjunto: en una campaña que ya existe, en pausa y con sus anuncios listos', async () => {
+  await connect()
+  launchRoutes()
+  // Otro conjunto de la campaña, con la misma página, manda los mensajes a un número concreto.
+  routes['GET 10'] = {
+    name: 'Puestos de trabajo',
+    account_id: '111',
+    objective: 'OUTCOME_ENGAGEMENT',
+    adsets: { data: [{ promoted_object: { page_id: '999' } }, { promoted_object: { page_id: '222', whats_app_business_phone_number_id: 'wa1' } }] },
+  }
+  const res = await request('POST', '/api/meta/conjuntos', { body: plan({ campana: '10', nombre: 'Comercial 2' }) })
+  assert.equal(res.status, 200, res.text)
+  assert.deepEqual(res.body.conjunto, { id: 's1', nombre: 'Comercial 2', campana: '10', anuncios: ['ad1'] })
+  const posts = calls.filter((c) => c.method === 'POST')
+  assert.ok(!posts.some((c) => c.path === 'act_111/campaigns'), 'no crea otra campaña')
+  const created = posts.find((c) => c.path === 'act_111/adsets').body
+  assert.equal(created.campaign_id, '10')
+  assert.equal(created.status, 'PAUSED')
+  assert.equal(created.daily_budget, '1050')
+  assert.deepEqual(created.promoted_object, { page_id: '222', whats_app_business_phone_number_id: 'wa1' })
+  // Los anuncios, activos: se encienden con el interruptor del conjunto.
+  assert.equal(posts.find((c) => c.path === 'act_111/ads').body.status, 'ACTIVE')
+  // Nada apuntado como campaña de Tablero.
+  assert.deepEqual((await request('GET', '/api/anuncios')).body.lanzamientos, [])
+
+  // Con el presupuesto en la campaña, el conjunto no lleva (y no hace falta indicarlo).
+  routes['GET 10'] = { ...routes['GET 10'], daily_budget: '3000', adsets: { data: [] } }
+  calls.length = 0
+  const shared = await request('POST', '/api/meta/conjuntos', { body: plan({ campana: '10', nombre: 'Otro', presupuesto: 0 }) })
+  assert.equal(shared.status, 200, shared.text)
+  const sharedBody = calls.find((c) => c.method === 'POST' && c.path === 'act_111/adsets').body
+  assert.equal(sharedBody.daily_budget, undefined)
+  assert.deepEqual(sharedBody.promoted_object, { page_id: '222' })
+})
+
+test('una página sin WhatsApp conectado: se explica qué hacer (y no queda nada creado)', async () => {
+  await connect()
+  launchRoutes()
+  routes['POST act_111/adsets'] = {
+    error: { code: 100, error_subcode: 2446886, error_user_title: 'Se necesita una página con cuenta de WhatsApp Business', error_user_msg: 'Tu página no está vinculada…' },
+  }
+  routes['DELETE c1'] = { success: true }
+  const res = await request('POST', '/api/meta/lanzar', { body: plan() })
+  assert.equal(res.status, 400)
+  assert.match(res.body.mensaje, /no tiene WhatsApp conectado.*Cuentas vinculadas › WhatsApp.*No se ha creado nada/)
+})
+
+test('nuevo conjunto: solo en campañas de la cuenta que admiten mensajes a WhatsApp; si falla, se borra', async () => {
+  await connect()
+  launchRoutes()
+  routes['GET 10'] = { name: 'Mensajes', account_id: '111', objective: 'OUTCOME_ENGAGEMENT', adsets: { data: [] } }
+  const message = (res) => res.body.mensaje ?? res.body.error
+  const post = (extra) => request('POST', '/api/meta/conjuntos', { body: plan({ campana: '10', nombre: 'Nuevo', ...extra }) })
+
+  assert.match(message(await post({ nombre: ' ' })), /nombre del conjunto/)
+  assert.equal((await post({ campana: '10/../x' })).status, 400)
+  routes['GET 10'] = { ...routes['GET 10'], objective: 'OUTCOME_TRAFFIC' }
+  assert.match(message(await post()), /no se le pueden añadir/)
+  routes['GET 10'] = { ...routes['GET 10'], objective: 'OUTCOME_SALES', account_id: '222' }
+  assert.match(message(await post()), /no es de esta cuenta/)
+  assert.ok(!calls.some((c) => c.method === 'POST' && c.path === 'act_111/adsets'), 'no crea nada sin poder')
+
+  routes['GET 10'] = { ...routes['GET 10'], account_id: '111' }
+  routes['POST act_111/ads'] = { error: { message: 'Invalid parameter', error_user_title: 'Imagen', error_user_msg: 'Demasiado pequeña', code: 100 } }
+  routes['DELETE s1'] = { success: true }
+  const res = await post()
+  assert.equal(res.status, 502)
+  assert.match(message(res), /Demasiado pequeña.*No se ha creado nada/)
+  assert.ok(calls.some((c) => c.method === 'DELETE' && c.path === 's1'))
+  assert.ok(!calls.some((c) => c.method === 'DELETE' && c.path === '10'), 'la campaña no se toca')
+  delete routes['DELETE s1']
+  assert.match(message(await post()), /Ha quedado el conjunto «Nuevo»/)
+})
+
 function campaignRoutes() {
   routes['GET act_111'] = { currency: 'EUR', business: { id: '888' } }
   routes['GET act_111/campaigns'] = {
@@ -633,9 +936,30 @@ function campaignRoutes() {
       campaign({ id: '20', name: 'Vieja', status: 'PAUSED', effective_status: 'PAUSED' }),
     ],
   }
-  routes['GET act_111/insights'] = {
-    data: [{ campaign_id: '10', spend: '12.5', actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '5' }] }],
+  const conversations = (value) => [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value }]
+  // Con level, una fila por campaña; sin level, el total de la cuenta (más que la suma: hay una archivada).
+  routes['GET act_111/insights'] = ({ url }) =>
+    url.searchParams.get('level') === 'campaign'
+      ? { data: [{ campaign_id: '10', spend: '12.5', impressions: '1000', reach: '800', actions: conversations('5') }] }
+      : { data: [{ spend: '15', impressions: '1200', reach: '900', actions: conversations('6') }] }
+  // Bajando a la campaña 10: sus conjuntos, y bajando al conjunto 30: sus anuncios.
+  routes['GET 10'] = campaign({ id: '10', name: 'Mensajes' })
+  routes['GET 10/adsets'] = {
+    data: [
+      { ...adSet({ id: '30', name: 'España', daily_budget: '500' }), ads: { data: [{ status: 'ACTIVE', effective_status: 'ACTIVE' }] } },
+      { ...adSet({ id: '31', name: 'Portugal', status: 'PAUSED', effective_status: 'PAUSED' }) },
+    ],
   }
+  routes['GET 10/insights'] = ({ url }) =>
+    url.searchParams.get('level') === 'adset'
+      ? { data: [{ adset_id: '30', spend: '12.5', actions: conversations('5') }] }
+      : { data: [{ spend: '12.5', actions: conversations('5') }] }
+  routes['GET 30'] = { ...adSet({ id: '30', name: 'España', daily_budget: '500' }), ads: { data: [] } }
+  routes['GET 30/ads'] = {
+    data: [{ id: '40', name: 'Vídeo', status: 'ACTIVE', effective_status: 'ACTIVE', creative: { thumbnail_url: 'https://scontent.example/40.jpg' } }],
+  }
+  routes['GET 30/insights'] = ({ url }) =>
+    url.searchParams.get('level') === 'ad' ? { data: [{ ad_id: '40', spend: '12.5' }] } : { data: [{ spend: '12.5' }] }
 }
 
 test('en marcha: las campañas con sus números del periodo, guardadas un minuto', async () => {
@@ -645,17 +969,27 @@ test('en marcha: las campañas con sus números del periodo, guardadas un minuto
   assert.equal(res.status, 200, res.text)
   assert.equal(res.body.moneda, 'EUR')
   assert.equal(res.body.periodo, 'hoy')
-  const [mensajes, vieja] = res.body.campanas
+  assert.equal(res.body.nivel, 'campana')
+  assert.equal(res.body.padre, null)
+  const [mensajes, vieja] = res.body.filas
   assert.deepEqual(
-    { nombre: mensajes.nombre, estado: mensajes.estado, gasto: mensajes.gasto, conversaciones: mensajes.conversaciones, coste: mensajes.coste },
-    { nombre: 'Mensajes', estado: 'activa', gasto: 12.5, conversaciones: 5, coste: 2.5 },
+    { nombre: mensajes.nombre, estado: mensajes.estado, gasto: mensajes.metricas.gasto, conversaciones: mensajes.metricas.conversaciones },
+    { nombre: 'Mensajes', estado: 'activa', gasto: 12.5, conversaciones: 5 },
   )
+  assert.equal(mensajes.metricas.coste, 2.5)
+  assert.equal(mensajes.metricas.cpm, 12.5)
   assert.deepEqual(mensajes.presupuesto, { cantidad: 4, tipo: 'dia' })
   assert.equal(vieja.estado, 'pausada')
+  // El total es el de Meta (el alcance no se suma), no la suma de las filas.
+  assert.deepEqual([res.body.totales.gasto, res.body.totales.alcance, res.body.totales.conversaciones], [15, 900, 6])
 
-  const insights = calls.find((c) => c.path === 'act_111/insights')
-  assert.equal(insights.params.date_preset, 'today')
-  assert.equal(insights.params.level, 'campaign')
+  // Las dos van a la vez (en cualquier orden): una por campaña y otra del total.
+  const insights = calls.filter((c) => c.path === 'act_111/insights')
+  const byCampaign = insights.find((c) => c.params.level === 'campaign')
+  const total = insights.find((c) => c.params.level === undefined)
+  assert.equal(insights.length, 2)
+  assert.deepEqual([byCampaign.params.date_preset, total.params.date_preset], ['today', 'today'])
+  assert.match(byCampaign.params.fields, /^campaign_id,spend,impressions,reach,inline_link_clicks,actions$/)
   const list = calls.find((c) => c.path === 'act_111/campaigns')
   assert.deepEqual(JSON.parse(list.params.effective_status), ['ACTIVE', 'PAUSED', 'IN_PROCESS', 'WITH_ISSUES'])
 
@@ -666,8 +1000,43 @@ test('en marcha: las campañas con sus números del periodo, guardadas un minuto
   await request('GET', '/api/meta/campanas?cuenta=act_111&periodo=hoy&actualizar=1')
   assert.ok(calls.length > before)
 
+  // Ayer, aparte (y a Meta como yesterday).
+  await request('GET', '/api/meta/campanas?cuenta=act_111&periodo=ayer')
+  assert.equal(calls.findLast((c) => c.path === 'act_111/insights').params.date_preset, 'yesterday')
+
   assert.equal((await request('GET', '/api/meta/campanas?cuenta=act_111&periodo=siempre')).status, 400)
   assert.equal((await request('GET', '/api/meta/campanas?cuenta=111')).status, 400)
+  assert.equal((await request('GET', '/api/meta/campanas?cuenta=act_111&campana=10/../x')).status, 400)
+})
+
+test('en marcha: de la campaña a sus conjuntos y de un conjunto a sus anuncios', async () => {
+  await connect()
+  campaignRoutes()
+  const sets = await request('GET', '/api/meta/campanas?cuenta=act_111&periodo=7d&campana=10')
+  assert.equal(sets.status, 200, sets.text)
+  assert.equal(sets.body.nivel, 'conjunto')
+  assert.deepEqual([sets.body.padre.nombre, sets.body.padre.entrega.texto], ['Mensajes', 'Activa'])
+  assert.deepEqual(
+    sets.body.filas.map((f) => [f.nombre, f.estado, f.entrega.texto, f.presupuesto?.cantidad ?? null, f.metricas.gasto]),
+    [
+      ['España', 'activa', 'Activo', 5, 12.5],
+      ['Portugal', 'pausada', 'En pausa', 4, 0],
+    ],
+  )
+  assert.match(sets.body.filas[0].enlace, /\/manage\/adsets\?.*selected_adset_ids=30/)
+  const list = calls.find((c) => c.path === '10/adsets')
+  assert.deepEqual(JSON.parse(list.params.effective_status), ['ACTIVE', 'PAUSED', 'CAMPAIGN_PAUSED', 'IN_PROCESS', 'WITH_ISSUES'])
+  assert.equal(calls.find((c) => c.path === '10/insights' && c.params.level).params.level, 'adset')
+
+  const adsList = await request('GET', '/api/meta/campanas?cuenta=act_111&periodo=7d&campana=10&conjunto=30')
+  assert.equal(adsList.status, 200, adsList.text)
+  assert.equal(adsList.body.nivel, 'anuncio')
+  assert.equal(adsList.body.padre.nombre, 'España')
+  const [ad] = adsList.body.filas
+  assert.deepEqual([ad.nombre, ad.entrega.texto, ad.presupuesto, ad.miniatura], ['Vídeo', 'Activo', null, 'https://scontent.example/40.jpg'])
+  assert.deepEqual(ad.automaticas, { mejoras: [], multianunciante: false })
+  assert.match(calls.find((c) => c.path === '30/ads').params.fields, /degrees_of_freedom_spec/)
+  assert.equal(ad.metricas.gasto, 12.5)
 })
 
 test('en marcha: pausar y activar cualquier campaña; lo guardado de la cuenta se olvida', async () => {
@@ -690,7 +1059,18 @@ test('en marcha: pausar y activar cualquier campaña; lo guardado de la cuenta s
   await request('GET', '/api/meta/campanas?cuenta=act_111&periodo=7d')
   assert.ok(calls.length > before)
 
-  for (const body of [{ id: '10', estado: 'borrada' }, { id: 'act_1/../x', estado: 'activa' }, { estado: 'activa' }]) {
+  // Un conjunto o un anuncio, igual (sin registro de Tablero).
+  routes['POST 30'] = { success: true }
+  const adSetOff = await request('POST', '/api/meta/campanas/estado', { body: { cuenta: 'act_111', nivel: 'conjunto', id: '30', estado: 'pausada' } })
+  assert.deepEqual(adSetOff.body, { id: '30', estado: 'pausada', lanzamiento: null })
+  assert.deepEqual([calls.at(-1).path, calls.at(-1).body], ['30', { status: 'PAUSED' }])
+
+  for (const body of [
+    { id: '10', estado: 'borrada' },
+    { id: 'act_1/../x', estado: 'activa' },
+    { estado: 'activa' },
+    { nivel: 'cuenta', id: '10', estado: 'activa' },
+  ]) {
     assert.equal((await request('POST', '/api/meta/campanas/estado', { body })).status, 400)
   }
 })
@@ -728,6 +1108,67 @@ test('en marcha: una creada desde Tablero se enciende entera la primera vez y lu
     [['901', 'ACTIVE']],
   )
   assert.equal((await request('GET', '/api/anuncios')).body.lanzamientos[0].estado, 'activa')
+})
+
+test('textos con Claude: imágenes, página y lo que ya hay; salida JSON con fallback; recortes', async () => {
+  claudeCalls.length = 0
+  claudeReply = {
+    stop_reason: 'end_turn',
+    parsed_output: {
+      texto: '¿Buscás plan para el finde? 🚌\nCity tour por Ciudad del Este. Escribinos y reservá.',
+      titular: 'City tour en Ciudad del Este',
+      descripcion: 'Reservá por WhatsApp',
+      bienvenida: '¡Hola! 👋 ¿En qué te ayudamos?',
+      saludo: 'Hola, quiero reservar el city tour',
+      preguntas: ['¿Qué días salen?', '¿Cuánto dura?', '¿Dónde es el punto de encuentro?', '¿Aceptan tarjeta?', 'x'.repeat(100)],
+    },
+  }
+  const body = {
+    imagenes: [{ media_type: 'image/jpeg', data: 'QUJD' }, { media_type: 'image/png', data: 'QUJD' }],
+    indicaciones: 'Salidas sábados y domingos',
+    pagina: 'City Tour Ciudad del Este',
+    instagram: 'cdecitytour',
+    lugares: ['Ciudad del Este, Alto Paraná, Paraguay'],
+    actuales: { texto: 'City tour', preguntas: ['¿Precio?'] },
+  }
+  const res = await request('POST', '/api/anuncios/textos', { body })
+  assert.equal(res.status, 200, res.text)
+  const { textos } = res.body
+  assert.equal(textos.titular, 'City tour en Ciudad del Este')
+  assert.equal(textos.preguntas.length, 4, 'como mucho 4 preguntas')
+  const [params] = claudeCalls
+  assert.equal(params.model, 'claude-opus-5-5')
+  assert.equal(params.fallbacks, 'default')
+  assert.deepEqual(params.betas, ['server-side-fallback-2026-07-01'])
+  assert.equal(params.output_config.format.type, 'json_schema')
+  const content = params.messages[0].content
+  assert.equal(content.filter((c) => c.type === 'image').length, 1, 'solo JPEG')
+  const prompt = content.at(-1).text
+  assert.match(prompt, /City Tour Ciudad del Este \(Instagram @cdecitytour\)/)
+  assert.match(prompt, /Ciudad del Este, Alto Paraná, Paraguay/)
+  assert.match(prompt, /Salidas sábados y domingos/)
+  assert.match(prompt, /preguntas: ¿Precio\?/)
+
+  // Sin nada de donde sacarlos, ni se llama.
+  claudeCalls.length = 0
+  assert.equal((await request('POST', '/api/anuncios/textos', { body: { actuales: {} } })).status, 400)
+  assert.equal(claudeCalls.length, 0)
+  // Si Claude se niega, se dice.
+  claudeReply = { stop_reason: 'refusal', parsed_output: null }
+  assert.equal((await request('POST', '/api/anuncios/textos', { body })).status, 422)
+})
+
+test('clave de Claude: se valida, se guarda solo en este Mac y nunca vuelve a la web', async () => {
+  assert.equal((await request('PUT', '/api/anuncios/claude', { body: { clave: 'hola' } })).status, 400)
+  const key = `sk-ant-api03-${'x'.repeat(40)}`
+  const saved = await request('PUT', '/api/anuncios/claude', { body: { clave: key } })
+  assert.equal(saved.status, 200)
+  assert.deepEqual(saved.body, { clave: true })
+  assert.ok(!saved.text.includes(key))
+  const file = path.join(process.env.TABLERO_DATA_DIR, 'claude.json')
+  assert.equal(JSON.parse(await readFile(file, 'utf8')).clave, key)
+  assert.equal((await stat(file)).mode & 0o777, 0o600)
+  assert.deepEqual((await request('GET', '/api/anuncios/claude')).body, { clave: true })
 })
 
 test('plantillas: se guardan limpias y con id', async () => {

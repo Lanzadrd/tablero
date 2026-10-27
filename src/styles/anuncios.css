@@ -28,7 +28,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  max-width: 1010px;
   margin-bottom: 18px;
   padding: 0 2px 0 4px;
 }
@@ -354,9 +353,14 @@
 
 .ads-layout {
   display: grid;
-  grid-template-columns: 250px minmax(0, 740px);
+  grid-template-columns: 250px minmax(0, 1fr);
   align-items: start;
   gap: 20px;
+}
+
+/* Con las cuentas ocultas, todo el ancho para «En marcha». */
+.ads-layout.is-full {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .ads-accounts {
@@ -467,12 +471,330 @@
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  /* Para que el formulario ponga la vista previa al lado solo si cabe. */
+  container: ads-main / inline-size;
+}
+
+/* El formulario y, con sitio, la vista previa a su derecha (quieta al bajar); sin sitio, debajo. */
+.ads-composer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+@container ads-main (min-width: 960px) {
+  .ads-composer-layout {
+    grid-template-columns: minmax(0, 740px) minmax(280px, 360px);
+    align-items: start;
+  }
+
+  .ads-preview-column {
+    position: sticky;
+    top: 0;
+  }
+}
+
+.ads-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.ads-card-head h4 {
+  margin-right: auto;
+}
+
+.ads-claude-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.ads-claude {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.ads-claude h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.ads-claude .ads-note,
+.ads-claude .ads-error {
+  margin: 0;
 }
 
 .ads-composer {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-width: 740px;
+  min-width: 0;
+}
+
+/* ───────── Vista previa del anuncio ───────── */
+
+.ads-preview {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-col);
+}
+
+.ads-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ads-preview-head h4 {
+  margin: 0;
+  color: var(--ads-ok);
+}
+
+.ads-preview-head select.input {
+  min-width: 0;
+  max-width: 60%;
+}
+
+.ads-preview .segmented {
+  justify-self: start;
+}
+
+.ads-preview .ads-note {
+  margin: 0;
+}
+
+/* Un anuncio de mentira, siempre en claro como en el móvil. */
+.ads-mock {
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  background: #fff;
+  color: #1c1e21;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.ads-mock-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 8px;
+}
+
+.ads-mock-header .ads-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+.ads-mock-header div {
+  display: grid;
+  min-width: 0;
+}
+
+.ads-mock-header strong {
+  overflow: hidden;
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ads-mock-header span {
+  font-size: 11px;
+  color: #65676b;
+}
+
+.ads-mock-text {
+  margin: 0;
+  padding: 0 10px 8px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.ads-mock-text.is-clamped,
+.ads-mock-text.is-clamped-2 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+
+.ads-mock-text.is-clamped {
+  -webkit-line-clamp: 3;
+}
+
+.ads-mock-text.is-clamped-2 {
+  -webkit-line-clamp: 2;
+}
+
+.ads-mock-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #e4e6eb;
+  color: #65676b;
+  font-size: 12px;
+}
+
+.ads-mock-media img,
+.ads-mock-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ads-mock-media .is-backdrop {
+  position: absolute;
+  inset: 0;
+  filter: blur(18px) brightness(0.7);
+  transform: scale(1.15);
+}
+
+.ads-mock-media .is-contained {
+  position: relative;
+  height: auto;
+  object-fit: contain;
+}
+
+.ads-mock-cta-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #f0f2f5;
+}
+
+.ads-mock-cta-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.ads-mock-cta-text strong,
+.ads-mock-cta-text span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ads-mock-cta-text span {
+  color: #65676b;
+  font-size: 11.5px;
+}
+
+.ads-mock-domain {
+  font-size: 10.5px;
+  text-transform: uppercase;
+}
+
+.ads-mock-button {
+  flex: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #e4e6eb;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ads-mock-button.is-wide {
+  display: block;
+  text-align: center;
+  background: #fff;
+  color: #1c1e21;
+}
+
+.ads-mock-ig-cta {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 10px;
+  border-bottom: 1px solid #dbdbdb;
+  color: #0095f6;
+  font-weight: 600;
+}
+
+.ads-mock-ig-cta + .ads-mock-text {
+  padding-top: 8px;
+}
+
+/* Stories y Reels: la imagen ocupa todo; el nombre arriba y el texto y el botón abajo, encima. */
+.ads-mock-story {
+  position: relative;
+  justify-self: center;
+  width: min(100%, 270px);
+  border: 0;
+  background: #000;
+  color: #fff;
+}
+
+.ads-mock-story-top,
+.ads-mock-story-bottom {
+  position: absolute;
+  inset-inline: 0;
+}
+
+.ads-mock-story-top {
+  top: 0;
+  background: linear-gradient(rgba(0, 0, 0, 0.45), transparent);
+}
+
+.ads-mock-story-top .ads-mock-header span {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.ads-mock-story-bottom {
+  bottom: 0;
+  display: grid;
+  gap: 8px;
+  padding: 24px 10px 12px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+}
+
+.ads-mock-story-bottom .ads-mock-text {
+  padding: 0;
+}
+
+.ads-mock-chat {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.ads-mock-chat span {
+  display: block;
+  font-weight: 600;
+}
+
+/* Un conjunto nuevo en una campaña: de qué campaña es y cómo salir. */
+.ads-composer-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 0 4px;
+}
+
+.ads-composer-head h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+}
+
+.ads-composer-head h3:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .ads-account-title {
@@ -483,8 +805,9 @@
   padding: 0 4px 4px;
 }
 
+/* Con poco ancho, el selector de sección baja a otra línea en vez de aplastar el nombre. */
 .ads-account-title-text {
-  flex: 1;
+  flex: 1 1 200px;
   min-width: 0;
 }
 
@@ -612,6 +935,72 @@
 
 .ads-template-actions:empty {
   display: none;
+}
+
+/* ───────── Mejoras automáticas de Meta ───────── */
+
+.ads-enhancements {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
+  gap: 6px 16px;
+}
+
+.ads-enhancement-group {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ads-enhancement-group legend {
+  padding: 0 10px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* En «En marcha»: lo que Meta tiene activado en un anuncio. */
+.ads .ads-auto-badge {
+  padding: 1px 7px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ads-warning) 14%, transparent);
+  color: var(--ads-warning);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.ads .ads-auto-badge:hover {
+  background: color-mix(in srgb, var(--ads-warning) 22%, transparent);
+}
+
+.ads-auto-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  font-size: 13px;
+}
+
+.ads-auto-list p {
+  margin: 0;
+}
+
+.ads-auto-list ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ads-auto-list small {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-2);
 }
 
 /* ───────── Lugares ───────── */
@@ -784,8 +1173,148 @@
   height: 11px;
 }
 
+.ads .ads-creative {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.ads-creative-media {
+  display: flex;
+  gap: 4px;
+}
+
+.ads-creative-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 3px;
+}
+
+.ads-creative-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.ads-creative-note .link-btn {
+  font-size: 12px;
+}
+
+.ads-creative-note select.input {
+  height: 26px;
+  font-size: 12px;
+}
+
+/* El formato, en la esquina de la miniatura. */
+.ads-thumb-ratio {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
 .input.ads-creative-name {
   width: 100%;
+}
+
+/* ───────── Chat de WhatsApp ───────── */
+
+.input.ads-textarea.is-short {
+  min-height: 52px;
+}
+
+.ads-chat {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.ads-chat > .ads-fields {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.ads-questions {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  width: 100%;
+}
+
+.ads-question {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+/* Un chat de WhatsApp de mentira: la burbuja de la empresa y, abajo, lo que puede enviar la persona. */
+.ads-chat-preview {
+  flex: 0 1 240px;
+  display: grid;
+  gap: 8px;
+  min-width: 200px;
+  padding: 10px 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, #25d366 8%, var(--fill));
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.ads-chat-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ads-bubble {
+  justify-self: start;
+  max-width: 92%;
+  margin: 0;
+  padding: 6px 9px;
+  border-radius: 2px 10px 10px 10px;
+  background: var(--surface);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ads-chat-input {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.ads-chat-questions {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.ads-chat-questions span {
+  max-width: 92%;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, #25d366 45%, transparent);
+  border-radius: 999px;
+  background: var(--surface);
+  color: color-mix(in srgb, #128c7e 80%, var(--text));
+  overflow-wrap: anywhere;
 }
 
 /* ───────── Crear ───────── */
@@ -877,6 +1406,10 @@
   color: var(--text);
 }
 
+.ads-confirm p.ads-confirm-note {
+  color: var(--ads-warning);
+}
+
 /* ───────── Creadas desde Tablero ───────── */
 
 .ads-recent {
@@ -945,7 +1478,7 @@
   color: var(--ads-ok);
 }
 
-/* ───────── En marcha: totales y campañas ───────── */
+/* ───────── En marcha: totales y campañas, conjuntos o anuncios ───────── */
 
 .ads-running {
   display: flex;
@@ -971,18 +1504,185 @@
   padding: 0 4px;
 }
 
-.ads-updated {
+.ads-updated,
+.ads-running-bar .ads-reload-alone {
   margin-left: auto;
   font-size: 12px;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
 
+.ads-metrics-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ads-metrics-picker {
+  display: grid;
+  margin: 0;
+  padding: 6px 6px 2px;
+  border: 0;
+}
+
+.ads-metrics-picker legend {
+  padding: 6px 10px 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ads-metric-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.ads-metric-option:hover {
+  background: var(--hover);
+}
+
+.ads-metric-option input {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+
+.ads-metric-option small {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.ads-metric-option:has(input:disabled) {
+  cursor: default;
+}
+
+.ads-metrics-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 10px 10px;
+}
+
+.ads-metrics-foot .link-btn:disabled {
+  color: var(--text-3);
+  background: none;
+}
+
+/* Dónde se está: Campañas › campaña › conjunto, y cómo va lo de arriba */
+.ads-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 0 4px;
+}
+
+.ads-crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.ads-crumbs li {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.ads-crumbs li + li::before {
+  content: '›';
+  padding: 0 4px;
+  color: var(--text-3);
+}
+
+.ads-crumbs .link-btn {
+  font-size: 13px;
+}
+
+.ads-crumbs [aria-current] {
+  padding: 0 6px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+}
+
+.ads-crumbs [aria-current]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ads-crumbs .ads-new-adset {
+  margin-left: auto;
+}
+
+.ads-new-adset svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ads-created {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 0 4px;
+  font-size: 12.5px;
+  color: var(--ads-ok);
+  text-wrap: pretty;
+}
+
+.ads-created svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+}
+
+.ads-crumbs-info {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Filas iguales: hasta 6 cifras por fila con mucho ancho, 4 con menos y 2 con poco (--cols-6/4/2). */
+.ads-stats-box {
+  container-type: inline-size;
+}
+
 .ads-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--cols-4, 4), minmax(0, 1fr));
   gap: 10px;
   margin: 0;
+}
+
+@container (min-width: 960px) {
+  .ads-stats {
+    grid-template-columns: repeat(var(--cols-6, 6), minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 600px) {
+  .ads-stats {
+    grid-template-columns: repeat(var(--cols-2, 2), minmax(0, 1fr));
+  }
 }
 
 .ads-stat {
@@ -995,6 +1695,9 @@
 .ads-stat dt {
   font-size: 12px;
   color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ads-stat dd {
@@ -1050,8 +1753,7 @@
 }
 
 .ads-table tr > :last-child {
-  width: 1%;
-  padding-right: 14px;
+  padding-right: 16px;
 }
 
 .ads-table tbody tr {
@@ -1059,10 +1761,58 @@
 }
 
 .ads-table tbody th {
-  min-width: 170px;
-  max-width: 280px;
+  min-width: 230px;
+  max-width: 340px;
   font-weight: 500;
   white-space: normal;
+}
+
+/* La primera columna se queda quieta al desplazar la tabla de lado. */
+.ads-table tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.ads-table thead tr > :first-child {
+  box-shadow: inset -0.5px 0 0 var(--separator);
+}
+
+.ads-table tbody tr > :first-child {
+  box-shadow:
+    inset 0 0.5px 0 var(--separator),
+    inset -0.5px 0 0 var(--separator);
+}
+
+.ads-row-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ads-row-name .switch {
+  flex: none;
+}
+
+.ads-nowrap {
+  white-space: nowrap;
+}
+
+.ads-thumb {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+  object-fit: cover;
+  background: var(--fill);
+}
+
+.ads-row-text {
+  display: grid;
+  justify-items: start;
+  gap: 1px;
+  min-width: 0;
 }
 
 .ads .ads-campaign-name {
@@ -1072,7 +1822,58 @@
   text-decoration: none;
 }
 
-.ads .ads-campaign-name:hover {
+.ads .ads-campaign-name.is-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ads .ads-campaign-name.is-button svg {
+  width: 12px;
+  height: 12px;
+  margin-left: 3px;
+  vertical-align: -1px;
+  color: var(--text-3);
+}
+
+.ads .ads-campaign-name.is-button:hover,
+.ads .ads-campaign-name.is-button:hover svg {
+  color: var(--accent);
+}
+
+.ads .ads-campaign-name.is-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.ads-row-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* El enlace al Administrador de anuncios: pequeño a la vista, con 24 px para pulsar. */
+.ads .ads-row-link {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -4px 0;
+  border-radius: 6px;
+  color: var(--text-3);
+}
+
+.ads .ads-row-link svg {
+  width: 13px;
+  height: 13px;
+}
+
+.ads .ads-row-link:hover {
+  background: var(--hover);
   color: var(--accent);
 }
 
@@ -1101,7 +1902,7 @@
   color: var(--ads-warning);
 }
 
-.ads-table tr.is-paused td:not(.ads-toggle),
+.ads-table tr.is-paused td,
 .ads-table tr.is-paused .ads-campaign-name {
   color: var(--text-2);
 }
@@ -1192,5 +1993,11 @@
   .ads-stat dd {
     margin: 0;
     font-size: 17px;
+  }
+
+  /* Que se vea algo de las cifras junto al nombre fijo */
+  .ads-table tbody th {
+    min-width: 190px;
+    max-width: 220px;
   }
 }

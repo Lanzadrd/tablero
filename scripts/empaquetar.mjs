@@ -116,12 +116,24 @@ if (process.argv.includes('--solo-avisos')) {
   process.exit(0)
 }
 
+/** Un paquete de node_modules (y, por orden, sus dependencias) en el node_modules del paquete. */
+function copyPackage(name, seen = new Set()) {
+  const dir = path.join(ROOT, 'node_modules', name)
+  if (seen.has(name) || !existsSync(dir)) return
+  seen.add(name)
+  cpSync(dir, path.join(APP, 'node_modules', name), { recursive: true, dereference: true })
+  const { dependencies = {} } = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))
+  for (const dependency of Object.keys(dependencies)) copyPackage(dependency, seen)
+}
+
 run('npm', ['run', 'build'])
 
 rmSync(PAQUETE, { recursive: true, force: true })
 mkdirSync(path.join(APP, 'bin'), { recursive: true })
 
 cpSync(path.join(ROOT, 'server'), path.join(APP, 'server'), { recursive: true })
+// El servidor no lleva más dependencias que el SDK de Anthropic (los textos con Claude) y lo que este necesita.
+copyPackage('@anthropic-ai/sdk')
 const { version } = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
 writeFileSync(path.join(APP, 'version.json'), `${JSON.stringify({ version }, null, 2)}\n`)
 cpSync(path.join(ROOT, 'dist'), path.join(APP, 'dist'), { recursive: true })

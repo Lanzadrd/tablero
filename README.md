@@ -114,17 +114,50 @@ todos tus portfolios y lanza campañas de mensajes a WhatsApp en Meta con tus op
   puerto 5173). Tablero pide su identificador y su clave secreta y abre la ventana de Meta; si la app usa
   «Inicio de sesión con Facebook para empresas», también el identificador de una configuración con token de
   usuario. La conexión dura unos 60 días (avisa una semana antes); «Volver a conectar» la renueva.
-- **En marcha**: las campañas activas de la cuenta con su presupuesto y, para hoy, 7 o 30 días, el gasto, las
-  conversaciones de WhatsApp empezadas y el coste por conversación (y los totales). Debajo de «Activa» sale
-  lo que pasa de verdad (conjuntos en pausa, terminada, en revisión…). El interruptor pausa enseguida o activa
-  (pide confirmación); las que están en pausa sin gasto en el periodo van plegadas. Las creadas desde Tablero
-  se encienden enteras la primera vez y luego solo la campaña, para no reactivar lo que se pausara en Meta.
+- **En marcha**: las campañas activas de la cuenta con su presupuesto y sus métricas de hoy, ayer, 7 o 30
+  días, y los totales. «Métricas» elige cuáles se ven: gasto, conversaciones de WhatsApp, coste por
+  conversación, contactos nuevos, alcance, impresiones, frecuencia, CPM, clics, CTR, CPC y bloqueos. Al pulsar
+  una campaña se ven sus conjuntos, y al pulsar un conjunto, sus anuncios (con miniatura); las migas llevan de
+  vuelta. Debajo de cada nombre sale lo que pasa de verdad (conjuntos en pausa, terminada, rechazado…). El
+  interruptor pausa enseguida o activa (pide confirmación) campañas, conjuntos y anuncios; lo que está en pausa
+  sin gasto en el periodo va plegado. Las campañas creadas desde Tablero se encienden enteras la primera vez y
+  luego solo la campaña, para no reactivar lo que se pausara en Meta. Ocupa todo el ancho; el botón junto al
+  nombre de la cuenta oculta la lista de cuentas para que quepan más columnas.
+- **Nuevo conjunto**: dentro de una campaña (de interacción, clientes potenciales o ventas), el mismo formulario
+  que una campaña nueva crea un conjunto de mensajes a WhatsApp con sus anuncios. Usa la página de los demás
+  conjuntos y, si mandan los mensajes a un número concreto, ese número; si la campaña reparte su presupuesto,
+  el conjunto no lleva. Se crea en pausa con los anuncios listos: se enciende con su interruptor.
 - **Nueva campaña**: eliges la cuenta (agrupadas por portfolio), una **plantilla** (página, Instagram,
-  presupuesto diario, lugares, edad, sexo, Advantage+, ubicaciones y textos, con el mensaje que aparece ya
-  escrito en WhatsApp) y arrastras imágenes o vídeos: cada uno es un anuncio del mismo conjunto. «Crear en
-  pausa» sube todo y crea campaña, conjunto y anuncios **en pausa**; si algo falla a medias, borra lo creado.
-  Luego, «Revisar en Meta» (Administrador de anuncios) o «Activar» (pide confirmación: desde ahí gasta).
+  presupuesto diario, lugares, edad, sexo, Advantage+, ubicaciones, textos, chat de WhatsApp y mejoras de Meta)
+  y arrastras imágenes o vídeos: cada uno es un anuncio del mismo conjunto. «Crear en pausa» sube todo y crea
+  campaña, conjunto y anuncios **en pausa**; si algo falla a medias, borra lo creado. Luego, «Revisar en Meta»
+  (Administrador de anuncios) o «Activar» (pide confirmación: desde ahí gasta).
+- **Orden del formulario**: nombre de la campaña (o del conjunto) arriba del todo; luego plantilla, quién
+  anuncia, presupuesto, público (sin plantilla, **Ciudad del Este**), imágenes y vídeos, texto, chat y mejoras.
+  Con sitio, a la derecha va la **vista previa** del anuncio en el feed de Facebook, el de Instagram y Stories
+  y Reels (con la versión que toca en cada uno); sin sitio, debajo.
+- **Texto**: texto principal, título y descripción (los dos últimos, opcionales). **Escribir con Claude** los
+  escribe todos, y el chat de WhatsApp, con la API de Claude (Claude Opus 5.5): ve las imágenes, la página, el
+  público, lo ya escrito y unas indicaciones opcionales; no inventa precios ni fechas, y se puede deshacer. La
+  primera vez pide la clave de la API (console.anthropic.com), que se guarda en `datos/claude.json` (solo en este
+  Mac, permisos 600; nunca vuelve a la web). Sin ella, usa `ANTHROPIC_API_KEY` si está.
+- **Chat de WhatsApp**: vuestro mensaje (lo primero que ve la persona) y, para que empiece, su mensaje ya escrito
+  o hasta 4 preguntas frecuentes que toca para enviarlas; con vista previa.
+- **Formatos**: Tablero mide cada imagen o vídeo (9:16, 4:5, 1:1…). La versión vertical y la del feed de una
+  pieza (mismo nombre sin el formato, como «2_9_16» y «2_4_5», o si solo hay esas dos) se juntan en **un solo
+  anuncio**: la del feed en las ubicaciones de feed y la vertical en Stories, Reels, Estados de WhatsApp y el
+  resto, como hace el Administrador de anuncios. Se pueden separar o juntar a mano.
 - Con Advantage+ activado, Meta solo admite la edad mínima (hasta 25) y decide el resto.
+- **Mejoras automáticas de Meta** (Advantage+ creative: retoques, superposiciones, mejoras de texto,
+  comentarios relevantes, traducción, stickers…) y **anuncios multianunciante**: sin decir nada, Meta activa
+  algunas por su cuenta. Tablero las manda todas, desactivadas salvo las que se marquen en el formulario (se
+  guardan en la plantilla); las de catálogo y web, siempre desactivadas. En «En marcha», los anuncios que tienen
+  alguna activada lo enseñan («2 automáticas») con la lista.
+- **Páginas e Instagram**: las páginas son las que ya usa la cuenta y todas las de su portfolio. La app de
+  anuncios no tiene el permiso `instagram_basic`, así que Meta solo le enseña la cuenta de Instagram vinculada a
+  la página; Tablero ofrece también las que ya usan los anuncios de esa página (en esa cuenta o, si no, en las
+  demás; el nombre sale de su publicación en Instagram), que son las que se eligen en el Administrador de
+  anuncios.
 - La app de Meta y el token se guardan en `datos/meta.json` (solo en este Mac, permisos 600) y nunca llegan a
   la web; las plantillas y las campañas creadas, en `datos/anuncios.json`. Versión de la API: v26.0
   (`TABLERO_META_VERSION` la cambia).

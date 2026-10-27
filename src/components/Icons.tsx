@@ -284,3 +284,11 @@ export const Reload = () => (
     <path d="M11.75 1.75v2.9h-2.9" />
   </svg>
 )
+
+/** Destellos: lo que escribe Claude. */
+export const Sparkles = () => (
+  <svg {...stroke}>
+    <path d="M6.5 2.75 7.6 5.9l3.15 1.1-3.15 1.1L6.5 11.25 5.4 8.1 2.25 7l3.15-1.1z" />
+    <path d="M12 9.75l.55 1.45 1.45.55-1.45.55L12 13.75l-.55-1.45L10 11.75l1.45-.55z" />
+  </svg>
+)

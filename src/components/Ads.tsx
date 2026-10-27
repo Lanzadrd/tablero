@@ -10,6 +10,8 @@ import { Segmented } from './Segmented'
 import '../styles/anuncios.css'
 
 const DEVELOPERS = 'https://developers.facebook.com/apps/'
+/** La lista de cuentas (se puede ocultar para que «En marcha» tenga todo el ancho). */
+const ACCOUNTS_ID = 'anuncios-cuentas'
 /** Con menos días que estos, la conexión avisa de que va a caducar. */
 const EXPIRY_WARNING = 7
 
@@ -395,6 +397,7 @@ function Workspace({ status, onStatus }: { status: MetaStatus; onStatus: (status
   const [launches, setLaunches] = useState<Launch[]>([])
   const [accountId, setAccountId] = useStoredState<string | null>('tablero.anuncios.cuenta', null)
   const [section, setSection] = useStoredState<Section>('tablero.anuncios.seccion', 'marcha')
+  const [accountsHidden, setAccountsHidden] = useStoredState('tablero.anuncios.sinCuentas', false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -466,14 +469,16 @@ function Workspace({ status, onStatus }: { status: MetaStatus; onStatus: (status
   }
 
   return (
-    <div className="ads-layout">
-      <AccountList
-        portfolios={portfolios}
-        selected={selected?.account.id ?? null}
-        loading={loading}
-        onSelect={setAccountId}
-        onRefresh={() => loadAccounts(true)}
-      />
+    <div className={cx('ads-layout', accountsHidden && 'is-full')}>
+      {!accountsHidden && (
+        <AccountList
+          portfolios={portfolios}
+          selected={selected?.account.id ?? null}
+          loading={loading}
+          onSelect={setAccountId}
+          onRefresh={() => loadAccounts(true)}
+        />
+      )}
       <div className="ads-main">
         {error && (
           <p className="ads-error" role="alert">
@@ -483,6 +488,17 @@ function Workspace({ status, onStatus }: { status: MetaStatus; onStatus: (status
         {selected ? (
           <>
             <div className="ads-account-title">
+              <button
+                type="button"
+                className="icon-btn"
+                aria-pressed={!accountsHidden}
+                aria-controls={accountsHidden ? undefined : ACCOUNTS_ID}
+                aria-label="Lista de cuentas"
+                title={accountsHidden ? 'Mostrar las cuentas' : 'Ocultar las cuentas para ver más columnas'}
+                onClick={() => setAccountsHidden(!accountsHidden)}
+              >
+                <Icon.SidebarLeft />
+              </button>
               <Avatar name={selected.portfolio.nombre} src={selected.portfolio.foto} />
               <div className="ads-account-title-text">
                 <h3>{selected.account.nombre}</h3>
@@ -497,6 +513,8 @@ function Workspace({ status, onStatus }: { status: MetaStatus; onStatus: (status
               <RunningCampaigns
                 key={selected.account.id}
                 account={selected.account}
+                templates={templates}
+                onTemplates={saveTemplates}
                 onLaunch={updateLaunch}
                 onCreate={() => setSection('nueva')}
               />
@@ -538,7 +556,7 @@ function AccountList({
   onRefresh: () => void
 }) {
   return (
-    <nav className="ads-accounts" aria-label="Cuentas publicitarias">
+    <nav id={ACCOUNTS_ID} className="ads-accounts" aria-label="Cuentas publicitarias">
       <div className="ads-accounts-head">
         <h3>Portfolios</h3>
         <button type="button" className="icon-btn" aria-label="Actualizar las cuentas" title="Actualizar las cuentas" disabled={loading} onClick={onRefresh}>

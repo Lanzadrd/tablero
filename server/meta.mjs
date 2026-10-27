@@ -1,6 +1,6 @@
 // Conexión con Meta (Marketing API) para la vista Anuncios: la cuenta, las cuentas publicitarias de cada
-// portfolio, las páginas, las campañas en marcha con sus números, la subida de imágenes y vídeos, y crear o
-// activar campañas (anuncios.mjs arma lo que se manda y lee lo que llega).
+// portfolio, las páginas, las campañas, conjuntos y anuncios en marcha con sus métricas, la subida de imágenes
+// y vídeos, y crear o activar campañas (anuncios.mjs arma lo que se manda y lee lo que llega).
 //
 // La app de Meta (identificador y clave secreta) y el token del usuario se guardan en datos/meta.json, solo
 // en este Mac (permisos 600; fuera de board.json, de sus copias y del repositorio). Nunca salen hacia la web:
@@ -9,7 +9,7 @@ import { createHmac, randomBytes } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { DATA_DIR, HttpError } from './almacen.mjs'
-import { campaignRows } from './anuncios.mjs'
+import { INSIGHT_FIELDS, metricsOf, rowOf, rowsOf } from './anuncios.mjs'
 
 /** Versión de la API de Meta. Cada una dura unos dos años; TABLERO_META_VERSION la cambia sin tocar el código. */
 export const META_VERSION = process.env.TABLERO_META_VERSION || 'v26.0'
@@ -32,12 +32,46 @@ const CACHE_TTL = 10 * 60_000
 const METRICS_TTL = 60_000
 
 /** Los periodos de «En marcha», con su nombre en Meta (en la zona horaria de la cuenta). */
-export const PERIODS = { hoy: 'today', '7d': 'last_7d', '30d': 'last_30d' }
-/** Las campañas que se enseñan: activas o en pausa (las archivadas y borradas, no). */
-const CAMPAIGN_STATES = ['ACTIVE', 'PAUSED', 'IN_PROCESS', 'WITH_ISSUES']
-const CAMPAIGN_FIELDS =
-  'id,name,status,effective_status,daily_budget,lifetime_budget,stop_time,updated_time,' +
-  'adsets.limit(100){status,effective_status,daily_budget,lifetime_budget,start_time,end_time}'
+export const PERIODS = { hoy: 'today', ayer: 'yesterday', '7d': 'last_7d', '30d': 'last_30d' }
+/**
+ * Lo que se enseña en cada nivel de «En marcha»: lo que está activo o en pausa (lo archivado y lo borrado,
+ * no), con lo que hace falta para saber si de verdad se entrega.
+ */
+const LEVELS = {
+  campana: {
+    edge: 'campaigns',
+    insights: 'campaign',
+    states: ['ACTIVE', 'PAUSED', 'IN_PROCESS', 'WITH_ISSUES'],
+    fields:
+      'id,name,status,effective_status,daily_budget,lifetime_budget,stop_time,updated_time,' +
+      'adsets.limit(100){status,effective_status,daily_budget,lifetime_budget,start_time,end_time}',
+  },
+  conjunto: {
+    edge: 'adsets',
+    insights: 'adset',
+    states: ['ACTIVE', 'PAUSED', 'CAMPAIGN_PAUSED', 'IN_PROCESS', 'WITH_ISSUES'],
+    fields:
+      'id,name,status,effective_status,daily_budget,lifetime_budget,start_time,end_time,updated_time,promoted_object,' +
+      'ads.limit(100){status,effective_status}',
+  },
+  anuncio: {
+    edge: 'ads',
+    insights: 'ad',
+    states: [
+      'ACTIVE',
+      'PAUSED',
+      'CAMPAIGN_PAUSED',
+      'ADSET_PAUSED',
+      'IN_PROCESS',
+      'WITH_ISSUES',
+      'PENDING_REVIEW',
+      'PREAPPROVED',
+      'DISAPPROVED',
+      'PENDING_BILLING_INFO',
+    ],
+    fields: 'id,name,status,effective_status,updated_time,creative{thumbnail_url,degrees_of_freedom_spec,contextual_multi_ads}',
+  },
+}
 
 const ACCOUNT_STATUS = {
   1: 'activa',
@@ -77,6 +111,14 @@ export function metaError(error, status) {
   }
   if ([4, 17, 32, 613, 80000, 80004].includes(error?.code)) {
     return new HttpError(429, 'Meta pide esperar un poco: demasiadas peticiones seguidas. Prueba en unos minutos.', 'meta-limite')
+  }
+  // La página no tiene WhatsApp conectado: Meta no deja anunciar a WhatsApp con ella (ni con el número del portfolio).
+  if (error?.error_subcode === 2446886) {
+    return new HttpError(
+      400,
+      'La página elegida no tiene WhatsApp conectado, y Meta no deja anunciar a WhatsApp con ella. Conéctalo en Facebook, desde la página: Configuración › Cuentas vinculadas › WhatsApp (o en la app WhatsApp Business: Herramientas para la empresa › Facebook e Instagram). O elige otra página.',
+      'meta-sin-whatsapp',
+    )
   }
   const title = error?.error_user_title
   const message = error?.error_user_msg || error?.message || `Meta ha respondido con un error (${status})`
@@ -319,31 +361,103 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
   }
 
   /**
-   * Las páginas con las que se puede anunciar la cuenta, con su Instagram y su número de WhatsApp si Meta los
-   * enseña (cada uno se pide aparte: si falta un permiso, la página sale igual, sin ese dato).
+   * Las cuentas de Instagram con las que ya se han anunciado las páginas de la cuenta (página → [{id, username}],
+   * la más usada primero). Meta solo le enseña a Tablero el Instagram vinculado a la página: los que se conectan
+   * de otra forma (como los ve el Administrador de anuncios) piden el permiso instagram_basic, que no está en el
+   * caso de uso de anuncios. Pero cada anuncio dice con qué Instagram sale, y su publicación, de quién es.
+   */
+  async function instagramsInAds(account) {
+    const fields = 'creative{instagram_user_id,effective_instagram_media_id,effective_object_story_id,object_story_spec{page_id,instagram_user_id}}'
+    const ads = await maybe(all(`${account}/ads`, { fields }, 200), [])
+    const byPage = new Map()
+    const media = new Map()
+    for (const { creative } of ads) {
+      const igId = creative?.instagram_user_id ?? creative?.object_story_spec?.instagram_user_id
+      const pageId = creative?.object_story_spec?.page_id ?? creative?.effective_object_story_id?.split('_')[0]
+      if (!igId || !pageId) continue
+      const counts = byPage.get(pageId) ?? new Map()
+      counts.set(igId, (counts.get(igId) ?? 0) + 1)
+      byPage.set(pageId, counts)
+      if (!media.get(igId)) media.set(igId, creative.effective_instagram_media_id ?? null)
+    }
+    const names = new Map(
+      await Promise.all(
+        [...media].map(async ([igId, mediaId]) => {
+          const post = mediaId ? await maybe(graph(mediaId, { params: { fields: 'username' } }), {}) : {}
+          return [igId, post.username ?? null]
+        }),
+      ),
+    )
+    return new Map(
+      [...byPage].map(([pageId, counts]) => [
+        pageId,
+        [...counts].sort((a, b) => b[1] - a[1]).map(([igId]) => ({ id: igId, username: names.get(igId) })),
+      ]),
+    )
+  }
+
+  /**
+   * Las páginas con las que se anuncia la cuenta y, después, las demás de su portfolio (Meta, en promote_pages,
+   * solo da las que la cuenta ya ha usado; el Administrador de anuncios deja elegir cualquiera del portfolio).
+   */
+  async function accountPages(account) {
+    const fields = 'id,name,picture{url}'
+    const [promoted, { business }] = await Promise.all([all(`${account}/promote_pages`, { fields }, 100), maybe(graph(account, { params: { fields: 'business{id}' } }), {})])
+    const portfolio = business
+      ? await Promise.all(['owned_pages', 'client_pages'].map((edge) => maybe(all(`${business.id}/${edge}`, { fields }, 100), [])))
+      : []
+    const seen = new Set()
+    return [...promoted, ...portfolio.flat()].filter((page) => !seen.has(page.id) && seen.add(page.id))
+  }
+
+  /** Los Instagram de los anuncios de una cuenta, guardados un rato (también sirven para otras cuentas). */
+  const adInstagrams = (account, fresh) => cached(`instagram:${account}`, fresh, () => instagramsInAds(account))
+
+  /**
+   * Las páginas con las que se puede anunciar la cuenta, con sus cuentas de Instagram (la vinculada a la página y
+   * las que ya usan sus anuncios, en esta cuenta o en otras) y su número de WhatsApp si Meta lo enseña (cada dato
+   * se pide aparte: si falta un permiso, la página sale igual, sin ese dato).
    */
   function pages(account, fresh = false) {
     if (!/^act_\d+$/.test(account ?? '')) throw new HttpError(400, 'Cuenta publicitaria no válida')
     return cached(`pages:${account}`, fresh, async () => {
-      const list = await all(`${account}/promote_pages`, { fields: 'id,name,picture{url}' }, 100)
-      return Promise.all(
+      const [list, used] = await Promise.all([accountPages(account), adInstagrams(account, fresh)])
+      const found = await Promise.all(
         list.map(async (page) => {
           const [ig, wa] = await Promise.all([
             maybe(graph(page.id, { params: { fields: 'instagram_business_account{id,username}' } }), {}),
             maybe(graph(page.id, { params: { fields: 'whatsapp_number' } }), {}),
           ])
-          let instagram = ig.instagram_business_account ?? null
-          if (!instagram) {
+          return { page, wa, instagrams: [ig.instagram_business_account, ...(used.get(page.id) ?? [])].filter(Boolean) }
+        }),
+      )
+      // Una página del portfolio que esta cuenta no ha usado: su Instagram, de los anuncios de las demás cuentas.
+      const lacking = found.filter((f) => !f.instagrams.length)
+      if (lacking.length) {
+        const groups = await maybe(portfolios(), [])
+        const others = groups.flatMap((g) => g.cuentas.map((c) => c.id)).filter((id) => id !== account)
+        const elsewhere = await Promise.all(others.map((id) => maybe(adInstagrams(id, fresh), new Map())))
+        for (const f of lacking) f.instagrams = elsewhere.flatMap((byPage) => byPage.get(f.page.id) ?? [])
+      }
+      return Promise.all(
+        found.map(async ({ page, wa, instagrams: entries }) => {
+          if (!entries.length) {
             // Las cuentas de Instagram de la página solo se leen con el token de la propia página.
             const { access_token: token } = await maybe(graph(page.id, { params: { fields: 'access_token' } }), {})
             const backed = token ? await maybe(graph(`${page.id}/instagram_accounts`, { params: { fields: 'id,username' }, token }), {}) : {}
-            instagram = backed.data?.[0] ?? null
+            entries = backed.data?.slice(0, 1) ?? []
+          }
+          const instagrams = []
+          for (const entry of entries) {
+            const known = instagrams.find((i) => i.id === String(entry.id))
+            if (known) known.usuario ??= entry.username ?? null
+            else instagrams.push({ id: String(entry.id), usuario: entry.username ?? null })
           }
           return {
             id: page.id,
             nombre: page.name,
             foto: page.picture?.data?.url ?? null,
-            instagram: instagram ? { id: String(instagram.id), usuario: instagram.username ?? String(instagram.id) } : null,
+            instagrams,
             whatsapp: wa.whatsapp_number ?? null,
           }
         }),
@@ -352,33 +466,48 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
   }
 
   /**
-   * Las campañas de la cuenta, activas y en pausa, con lo que han gastado y las conversaciones que han traído
-   * en el periodo (hoy, 7 o 30 días).
+   * «En marcha»: las campañas de la cuenta (o los conjuntos de `campaign`, o los anuncios de `adSet`), activas
+   * y en pausa, con sus métricas del periodo, y el total (de Meta: el alcance no se puede sumar). Al bajar de
+   * nivel, también la campaña o el conjunto de arriba (`padre`), para saber si está entregando.
    */
-  function campaigns(account, period = '7d', fresh = false) {
+  function performance(account, { period = '7d', campaign = null, adSet = null, fresh = false } = {}) {
     if (!/^act_\d+$/.test(account ?? '')) throw new HttpError(400, 'Cuenta publicitaria no válida')
     if (!Object.hasOwn(PERIODS, period)) throw new HttpError(400, 'Periodo no válido')
+    for (const objectId of [campaign, adSet]) {
+      if (objectId !== null && !/^\d{1,32}$/.test(objectId)) throw new HttpError(400, 'Campaña o conjunto no válido')
+    }
+    const level = adSet ? 'anuncio' : campaign ? 'conjunto' : 'campana'
+    const parentLevel = adSet ? 'conjunto' : campaign ? 'campana' : null
+    const parent = adSet ?? campaign ?? account
+    const { edge, insights: insightsLevel, states, fields } = LEVELS[level]
+    const datePreset = PERIODS[period]
     return cached(
-      `campanas:${account}:${period}`,
+      `campanas:${account}:${period}:${parent}`,
       fresh,
       async () => {
-        const [info, list, insights] = await Promise.all([
+        const [info, list, insights, totals, parentObject] = await Promise.all([
           graph(account, { params: { fields: 'currency,business{id}' } }),
-          all(`${account}/campaigns`, { fields: CAMPAIGN_FIELDS, effective_status: CAMPAIGN_STATES, limit: 50 }, 300),
-          all(`${account}/insights`, { level: 'campaign', date_preset: PERIODS[period], fields: 'campaign_id,spend,actions' }, 1000),
+          all(`${parent}/${edge}`, { fields, effective_status: states, limit: 50 }, 300),
+          all(`${parent}/insights`, { level: insightsLevel, date_preset: datePreset, fields: `${insightsLevel}_id,${INSIGHT_FIELDS}` }, 1000),
+          graph(`${parent}/insights`, { params: { date_preset: datePreset, fields: INSIGHT_FIELDS } }),
+          parentLevel ? graph(parent, { params: { fields: LEVELS[parentLevel].fields } }) : null,
         ])
+        const options = { account, currency: info.currency, businessId: info.business?.id, now: now() }
         return {
           moneda: info.currency,
           periodo: period,
+          nivel: level,
           actualizado: new Date(now()).toISOString(),
-          campanas: campaignRows(list, insights, { account, currency: info.currency, businessId: info.business?.id, now: now() }),
+          padre: parentObject ? rowOf(parentObject, { ...options, level: parentLevel }) : null,
+          totales: metricsOf(totals.data?.[0]),
+          filas: rowsOf(list, insights, { ...options, level }),
         }
       },
       METRICS_TTL,
     )
   }
 
-  /** Olvida las campañas guardadas de una cuenta (tras crear, activar o pausar algo en ella). */
+  /** Olvida lo guardado de «En marcha» de una cuenta (tras crear, activar o pausar algo en ella). */
   function forget(account) {
     for (const key of cache.keys()) if (key.startsWith(`campanas:${account}:`)) cache.delete(key)
   }
@@ -401,5 +530,5 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
       }))
   }
 
-  return { graph, status, saveApp, saveToken, connectUrl, finishConnect, disconnect, portfolios, pages, places, campaigns, forget }
+  return { graph, status, saveApp, saveToken, connectUrl, finishConnect, disconnect, portfolios, pages, places, performance, forget }
 }

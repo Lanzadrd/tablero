@@ -85,7 +85,11 @@ export function targetingOf(plan) {
   return targeting
 }
 
-export function adSetBody(plan, { campaignId, currency, today = localDay() }) {
+/**
+ * El conjunto: mensajes a WhatsApp, con su presupuesto diario (salvo `sharedBudget`: el de la campaña) y, en
+ * `promoted`, el número al que llegan si no es el de la página.
+ */
+export function adSetBody(plan, { campaignId, currency, today = localDay(), sharedBudget = false, promoted = {} }) {
   const body = {
     name: plan.nombre,
     campaign_id: campaignId,
@@ -93,9 +97,8 @@ export function adSetBody(plan, { campaignId, currency, today = localDay() }) {
     destination_type: 'WHATSAPP',
     optimization_goal: 'CONVERSATIONS',
     billing_event: 'IMPRESSIONS',
-    bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-    daily_budget: minorUnits(plan.presupuesto, currency),
-    promoted_object: { page_id: plan.pagina },
+    ...(sharedBudget ? {} : { bid_strategy: 'LOWEST_COST_WITHOUT_CAP', daily_budget: minorUnits(plan.presupuesto, currency) }),
+    promoted_object: { page_id: plan.pagina, ...promoted },
     targeting: targetingOf(plan),
   }
   // Sin inicio (o hoy), empieza en cuanto se active.
@@ -107,73 +110,256 @@ export function adSetBody(plan, { campaignId, currency, today = localDay() }) {
   return body
 }
 
-/** Lo que aparece ya escrito en WhatsApp para que la persona lo envíe (Meta lo pide como JSON en texto). */
-export function welcomeMessage(autofill) {
-  return JSON.stringify({
-    type: 'VISUAL_EDITOR',
-    version: 2,
-    landing_screen_type: 'welcome_message',
-    media_type: 'text',
-    text_format: {
-      customer_action_type: 'autofill_message',
-      message: { text: GREETING, autofill_message: { content: autofill } },
-    },
-  })
+/** Como mucho, tantas preguntas frecuentes en el chat. */
+export const MAX_QUESTIONS = 4
+
+/**
+ * Lo que se ve al abrir WhatsApp: vuestro mensaje y, para que la persona empiece, su mensaje ya escrito o unas
+ * preguntas que puede tocar. Meta lo pide como JSON en texto. Sin mensaje ni preguntas, null (el de Meta).
+ */
+export function welcomeMessage(plan) {
+  const text = plan.bienvenida?.trim() || GREETING
+  const questions = (plan.preguntas ?? []).map((q) => q.trim()).filter(Boolean)
+  const format =
+    plan.tipoMensaje === 'preguntas'
+      ? questions.length && { customer_action_type: 'ice_breakers', message: { text, ice_breakers: questions.map((title) => ({ title })) } }
+      : plan.saludo?.trim() && { customer_action_type: 'autofill_message', message: { text, autofill_message: { content: plan.saludo.trim() } } }
+  if (!format) return null
+  return JSON.stringify({ type: 'VISUAL_EDITOR', version: 2, landing_screen_type: 'welcome_message', media_type: 'text', text_format: format })
 }
 
-/** Un anuncio: con imagen (link_data) o con vídeo (video_data, con su miniatura subida como imagen). */
-export function creativeBody(plan, ad, { thumbnailHash } = {}) {
-  const greeting = plan.saludo?.trim() ? { page_welcome_message: welcomeMessage(plan.saludo.trim()) } : {}
+/**
+ * Las mejoras automáticas de Meta (Advantage+ creative) que se eligen en Tablero, cada una con sus nombres en
+ * la API (algunas son dos: la de imagen y la de vídeo).
+ */
+export const ENHANCEMENTS = {
+  retoques: ['image_touchups', 'video_auto_crop', 'adapt_to_placement'],
+  ampliar: ['image_uncrop', 'video_uncrop'],
+  brillo: ['image_brightness_and_contrast'],
+  superposiciones: ['image_templates'],
+  animacion: ['image_animation'],
+  flexibles: ['pac_relaxation'],
+  filtros: ['video_filtering'],
+  subtitulos: ['ig_video_native_subtitle'],
+  stickers: ['creative_stickers'],
+  texto: ['text_optimizations'],
+  traduccion: ['text_translation', 'image_text_translation'],
+  boton: ['enhance_cta'],
+  comentarios: ['inline_comment'],
+  detalles: ['reveal_details_over_time'],
+  destino: ['show_destination_blurbs'],
+  resumen: ['show_summary'],
+}
+
+/** Las de catálogo, web y las que Meta no explica: en un anuncio a WhatsApp, siempre desactivadas. */
+const NEVER = [
+  'site_extensions',
+  'product_extensions',
+  'product_browsing',
+  'description_automation',
+  'ads_with_benefits',
+  'cv_transformation',
+  'pac_recomposition',
+  'advantage_plus_creative',
+]
+
+/** El paquete de antes (hasta la v22) que incluía varias: en los anuncios viejos, cuenta como esas activadas. */
+const STANDARD_BUNDLE = ['retoques', 'superposiciones', 'texto', 'comentarios']
+
+/**
+ * Todas las mejoras, activadas solo las elegidas. Se mandan todas porque, sin decir nada, Meta activa algunas
+ * por su cuenta (adaptar a cada ubicación, por ejemplo).
+ */
+export function featuresSpec(chosen = []) {
+  const spec = {}
+  for (const [key, features] of Object.entries(ENHANCEMENTS)) {
+    for (const feature of features) spec[feature] = { enroll_status: chosen.includes(key) ? 'OPT_IN' : 'OPT_OUT' }
+  }
+  for (const feature of NEVER) spec[feature] = { enroll_status: 'OPT_OUT' }
+  return spec
+}
+
+/** Las mejoras automáticas activas de un anuncio que ya existe, y si puede salir junto a los de otros. */
+export function automaticOf(creative) {
+  const spec = creative?.degrees_of_freedom_spec?.creative_features_spec ?? {}
+  const on = (feature) => spec[feature]?.enroll_status === 'OPT_IN'
+  const bundle = on('standard_enhancements')
+  return {
+    mejoras: Object.keys(ENHANCEMENTS).filter((key) => ENHANCEMENTS[key].some(on) || (bundle && STANDARD_BUNDLE.includes(key))),
+    multianunciante: creative?.contextual_multi_ads?.enroll_status === 'OPT_IN',
+  }
+}
+
+/** Las ubicaciones de feed, donde va la versión del feed; en las demás (Stories, Reels, Estados…), la vertical. */
+const FEED_PLACEMENTS = {
+  imagen: {
+    publisher_platforms: ['facebook', 'instagram'],
+    facebook_positions: ['feed', 'profile_feed', 'marketplace', 'notification', 'search'],
+    instagram_positions: ['stream', 'explore', 'explore_home', 'profile_feed'],
+  },
+  video: {
+    publisher_platforms: ['facebook', 'instagram'],
+    facebook_positions: ['feed', 'profile_feed', 'marketplace', 'instream_video', 'search'],
+    instagram_positions: ['stream', 'explore', 'explore_home', 'profile_feed'],
+  },
+}
+/** Como en el Administrador de anuncios: cada regla lleva la edad entera (la de «todo lo demás», solo eso). */
+const ALL_AGES = { age_min: 13, age_max: 65 }
+
+/**
+ * Un anuncio con su versión del feed y su vertical, cada una en sus ubicaciones (asset_feed_spec con reglas por
+ * ubicación, como lo hace el Administrador de anuncios). Las etiquetas unen cada regla con lo que enseña.
+ */
+function placementAssets(plan, ad, { thumbs, tag }) {
+  const video = ad.medio.tipo === 'video'
+  const feed = `tablero_feed_${tag}`
+  const vertical = `tablero_vertical_${tag}`
+  const both = [{ name: feed }, { name: vertical }]
+  const asset = (medio, label) => {
+    if (!video) return { hash: medio.hash, adlabels: [{ name: label }] }
+    if (!thumbs.get(medio.id)) throw new HttpError(500, 'Falta la miniatura del vídeo')
+    return { video_id: medio.id, thumbnail_hash: thumbs.get(medio.id), adlabels: [{ name: label }] }
+  }
+  const titular = plan.titular?.trim()
+  const descripcion = plan.descripcion?.trim()
+  const rule = (label, spec, priority) => ({
+    customization_spec: { ...ALL_AGES, ...spec },
+    [video ? 'video_label' : 'image_label']: { name: label },
+    body_label: { name: label },
+    link_url_label: { name: label },
+    ...(titular ? { title_label: { name: label } } : {}),
+    ...(descripcion ? { description_label: { name: label } } : {}),
+    priority,
+  })
+  const welcome = welcomeMessage(plan)
+  return {
+    [video ? 'videos' : 'images']: [asset(ad.medio, feed), asset(ad.vertical, vertical)],
+    bodies: [{ text: plan.texto, adlabels: both }],
+    ...(titular ? { titles: [{ text: titular, adlabels: both }] } : {}),
+    ...(descripcion ? { descriptions: [{ text: descripcion, adlabels: both }] } : {}),
+    link_urls: [{ website_url: WHATSAPP_LINK, adlabels: both }],
+    call_to_action_types: [CTA_TYPE],
+    call_to_actions: [{ type: CTA_TYPE, value: { app_destination: 'WHATSAPP' } }],
+    ad_formats: [video ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE'],
+    optimization_type: 'PLACEMENT',
+    asset_customization_rules: [rule(feed, FEED_PLACEMENTS[ad.medio.tipo], 1), rule(vertical, {}, 2)],
+    ...(welcome ? { additional_data: { page_welcome_message: welcome } } : {}),
+  }
+}
+
+/**
+ * Un anuncio: con imagen (link_data) o con vídeo (video_data, con su miniatura subida como imagen); con versión
+ * vertical, las dos, cada una en sus ubicaciones. `thumbs`: la miniatura (subida) de cada vídeo.
+ */
+export function creativeBody(plan, ad, { thumbs = new Map(), tag = randomUUID().slice(0, 8) } = {}) {
   const spec = { page_id: plan.pagina }
   if (plan.instagram) spec.instagram_user_id = plan.instagram
+  const common = {
+    name: ad.nombre,
+    object_story_spec: spec,
+    degrees_of_freedom_spec: { creative_features_spec: featuresSpec(plan.mejoras) },
+    // Si puede salir junto a anuncios de otras empresas (anuncios multianunciante).
+    contextual_multi_ads: { enroll_status: plan.multianunciante ? 'OPT_IN' : 'OPT_OUT' },
+  }
+  // Con versión vertical, todo va en asset_feed_spec; en object_story_spec, solo quién anuncia.
+  if (ad.vertical) return { ...common, asset_feed_spec: placementAssets(plan, ad, { thumbs, tag }) }
+
+  const welcome = welcomeMessage(plan)
+  const greeting = welcome ? { page_welcome_message: welcome } : {}
+  const titular = plan.titular?.trim()
+  const descripcion = plan.descripcion?.trim()
   if (ad.medio.tipo === 'imagen') {
     spec.link_data = {
       image_hash: ad.medio.hash,
       link: WHATSAPP_LINK,
       message: plan.texto,
-      ...(plan.titular?.trim() ? { name: plan.titular.trim() } : {}),
+      ...(titular ? { name: titular } : {}),
+      ...(descripcion ? { description: descripcion } : {}),
       call_to_action: { type: CTA_TYPE, value: { app_destination: 'WHATSAPP' } },
       ...greeting,
     }
   } else {
+    const thumbnailHash = thumbs.get(ad.medio.id)
     if (!thumbnailHash) throw new HttpError(500, 'Falta la miniatura del vídeo')
     spec.video_data = {
       video_id: ad.medio.id,
       image_hash: thumbnailHash,
       message: plan.texto,
-      ...(plan.titular?.trim() ? { title: plan.titular.trim() } : {}),
+      ...(titular ? { title: titular } : {}),
+      ...(descripcion ? { link_description: descripcion } : {}),
       call_to_action: { type: CTA_TYPE, value: { app_destination: 'WHATSAPP', link: WHATSAPP_LINK } },
       ...greeting,
     }
   }
-  return {
-    name: ad.nombre,
-    object_story_spec: spec,
-    // Que no salga junto a anuncios de otros (anuncios multianunciante).
-    contextual_multi_ads: { enroll_status: 'OPT_OUT' },
-  }
+  return common
 }
 
-export const adBody = (ad, { adSetId, creativeId }) => ({
+export const adBody = (ad, { adSetId, creativeId, status = 'PAUSED' }) => ({
   name: ad.nombre,
   adset_id: adSetId,
   creative: { creative_id: creativeId },
-  status: 'PAUSED',
+  status,
 })
 
-/** La campaña en el Administrador de anuncios. */
-export function adsManagerLink(account, campaignId, businessId) {
-  const url = new URL('https://adsmanager.facebook.com/adsmanager/manage/campaigns')
+/** Cada nivel en el Administrador de anuncios: su pestaña y cómo se selecciona. */
+const ADS_MANAGER = {
+  campana: ['campaigns', 'selected_campaign_ids'],
+  conjunto: ['adsets', 'selected_adset_ids'],
+  anuncio: ['ads', 'selected_ad_ids'],
+}
+
+/** La campaña (o el conjunto o el anuncio) en el Administrador de anuncios. */
+export function adsManagerLink(account, objectId, businessId, level = 'campana') {
+  const [tab, param] = ADS_MANAGER[level]
+  const url = new URL(`https://adsmanager.facebook.com/adsmanager/manage/${tab}`)
   url.searchParams.set('act', account.replace(/^act_/, ''))
   if (businessId) url.searchParams.set('business_id', businessId)
-  url.searchParams.set('selected_campaign_ids', campaignId)
+  url.searchParams.set(param, objectId)
   return url.href
 }
 
-// ── Lo que llega de Meta: las campañas en marcha ──
+// ── Lo que llega de Meta: campañas, conjuntos y anuncios en marcha ──
 
-/** Las conversaciones de WhatsApp (y de Messenger o Instagram) que ha empezado alguien desde el anuncio. */
-const CONVERSATIONS = 'onsite_conversion.messaging_conversation_started_7d'
+/** Lo que se pide a Meta de cada fila (y del total) para sacar las métricas de `metricsOf`. */
+export const INSIGHT_FIELDS = 'spend,impressions,reach,inline_link_clicks,actions'
+
+/** Las acciones de mensajes que se cuentan (de WhatsApp, y también de Messenger o Instagram). */
+const MESSAGING = {
+  /** Conversaciones que ha empezado alguien desde el anuncio. */
+  conversaciones: 'onsite_conversion.messaging_conversation_started_7d',
+  /** Personas que escriben por primera vez. */
+  contactos: 'onsite_conversion.messaging_first_reply',
+  bloqueos: 'onsite_conversion.messaging_block',
+}
+
+/**
+ * Las métricas de una fila de insights. Las que son un cociente (coste por conversación, CPM, CTR…) se
+ * calculan aquí, igual en las filas que en el total, y son null cuando no hay de qué (no 0 ni infinito).
+ */
+export function metricsOf(row) {
+  const n = (value) => Number(value) || 0
+  const action = (type) => n(row?.actions?.find((a) => a.action_type === type)?.value)
+  const per = (a, b, scale = 1) => (b ? (a / b) * scale : null)
+  const gasto = n(row?.spend)
+  const impresiones = n(row?.impressions)
+  const alcance = n(row?.reach)
+  const clics = n(row?.inline_link_clicks)
+  const conversaciones = action(MESSAGING.conversaciones)
+  return {
+    gasto,
+    conversaciones,
+    coste: per(gasto, conversaciones),
+    contactos: action(MESSAGING.contactos),
+    alcance,
+    impresiones,
+    frecuencia: per(impresiones, alcance),
+    cpm: per(gasto, impresiones, 1000),
+    clics,
+    ctr: per(clics, impresiones, 100),
+    cpc: per(gasto, clics),
+    bloqueos: action(MESSAGING.bloqueos),
+  }
+}
 
 const past = (time, now) => Boolean(time) && Date.parse(time) < now
 const future = (time, now) => Boolean(time) && Date.parse(time) > now
@@ -181,64 +367,109 @@ const future = (time, now) => Boolean(time) && Date.parse(time) > now
 /** Los conjuntos que gastarían con la campaña activa: activos y sin terminar. */
 const liveAdSets = (campaign, now) => (campaign.adsets?.data ?? []).filter((s) => s.status === 'ACTIVE' && !past(s.end_time, now))
 
-/** Lo que pasa de verdad con la campaña (aunque esté activa, puede no estar gastando), en pocas palabras. */
-export function deliveryOf(campaign, now = Date.now()) {
-  if (campaign.effective_status === 'PAUSED') return { texto: 'En pausa', tono: 'off' }
-  if (campaign.effective_status === 'IN_PROCESS') return { texto: 'Procesando', tono: 'off' }
-  if (campaign.effective_status === 'WITH_ISSUES') return { texto: 'Con problemas', tono: 'warning' }
-  const adSets = campaign.adsets?.data ?? []
-  if (past(campaign.stop_time, now) || (adSets.length && adSets.every((s) => past(s.end_time, now)))) {
-    return { texto: 'Terminada', tono: 'off' }
-  }
-  const live = liveAdSets(campaign, now)
-  if (adSets.length && !live.length) return { texto: 'Conjuntos en pausa', tono: 'warning' }
-  if (live.some((s) => ['WITH_ISSUES', 'DISAPPROVED'].includes(s.effective_status))) return { texto: 'Con problemas', tono: 'warning' }
-  if (live.length && live.every((s) => future(s.start_time, now))) return { texto: 'Programada', tono: 'off' }
-  if (live.length && live.every((s) => ['PENDING_REVIEW', 'IN_PROCESS', 'PREAPPROVED'].includes(s.effective_status))) {
-    return { texto: 'En revisión', tono: 'off' }
-  }
-  return { texto: 'Activa', tono: 'ok' }
+/** Cómo se dice en cada nivel (la campaña; el conjunto y el anuncio). */
+const DELIVERY_WORDS = {
+  campana: { activo: 'Activa', terminado: 'Terminada', programado: 'Programada', hijos: 'Conjuntos en pausa' },
+  conjunto: { activo: 'Activo', terminado: 'Terminado', programado: 'Programado', hijos: 'Anuncios en pausa' },
+  anuncio: { activo: 'Activo' },
 }
 
-/** El presupuesto de la campaña o, si va en los conjuntos, la suma de los que gastarían. */
-export function budgetOf(campaign, currency, now = Date.now()) {
+/** Lo que Meta dice de por qué algo activo no se entrega. */
+const DELIVERY_STATES = {
+  PAUSED: { texto: 'En pausa', tono: 'off' },
+  CAMPAIGN_PAUSED: { texto: 'Campaña en pausa', tono: 'off' },
+  ADSET_PAUSED: { texto: 'Conjunto en pausa', tono: 'off' },
+  IN_PROCESS: { texto: 'Procesando', tono: 'off' },
+  WITH_ISSUES: { texto: 'Con problemas', tono: 'warning' },
+  DISAPPROVED: { texto: 'Rechazado', tono: 'warning' },
+  PENDING_BILLING_INFO: { texto: 'Pago pendiente', tono: 'warning' },
+  PENDING_REVIEW: { texto: 'En revisión', tono: 'off' },
+  PREAPPROVED: { texto: 'En revisión', tono: 'off' },
+}
+
+const REVIEWING = ['PENDING_REVIEW', 'IN_PROCESS', 'PREAPPROVED']
+
+/**
+ * Lo que pasa de verdad con la campaña, el conjunto o el anuncio (aunque esté activo, puede no estar
+ * gastando), en pocas palabras. De la campaña se miran sus conjuntos; del conjunto, sus anuncios.
+ */
+export function deliveryOf(object, now = Date.now(), level = 'campana') {
+  const words = DELIVERY_WORDS[level]
+  const state = DELIVERY_STATES[object.effective_status]
+  if (state) return state
+  if (level === 'anuncio') return { texto: words.activo, tono: 'ok' }
+  if (level === 'conjunto') {
+    if (past(object.end_time, now)) return { texto: words.terminado, tono: 'off' }
+    const ads = object.ads?.data ?? []
+    const live = ads.filter((a) => a.status === 'ACTIVE')
+    if (ads.length && !live.length) return { texto: words.hijos, tono: 'warning' }
+    if (live.some((a) => ['WITH_ISSUES', 'DISAPPROVED'].includes(a.effective_status))) return { texto: 'Con problemas', tono: 'warning' }
+    if (future(object.start_time, now)) return { texto: words.programado, tono: 'off' }
+    if (live.length && live.every((a) => REVIEWING.includes(a.effective_status))) return { texto: 'En revisión', tono: 'off' }
+    return { texto: words.activo, tono: 'ok' }
+  }
+  const adSets = object.adsets?.data ?? []
+  if (past(object.stop_time, now) || (adSets.length && adSets.every((s) => past(s.end_time, now)))) {
+    return { texto: words.terminado, tono: 'off' }
+  }
+  const live = liveAdSets(object, now)
+  if (adSets.length && !live.length) return { texto: words.hijos, tono: 'warning' }
+  if (live.some((s) => ['WITH_ISSUES', 'DISAPPROVED'].includes(s.effective_status))) return { texto: 'Con problemas', tono: 'warning' }
+  if (live.length && live.every((s) => future(s.start_time, now))) return { texto: words.programado, tono: 'off' }
+  if (live.length && live.every((s) => REVIEWING.includes(s.effective_status))) return { texto: 'En revisión', tono: 'off' }
+  return { texto: words.activo, tono: 'ok' }
+}
+
+/**
+ * El presupuesto de la campaña (`reparte`: Meta lo reparte entre sus conjuntos) o, si va en los conjuntos, la
+ * suma de los que gastarían. El de un conjunto, el suyo (null si va en la campaña). Los anuncios no tienen.
+ */
+export function budgetOf(object, currency, now = Date.now(), level = 'campana') {
   const amount = (value) => Number(value) || 0
-  if (amount(campaign.daily_budget)) return { cantidad: majorUnits(campaign.daily_budget, currency), tipo: 'dia' }
-  if (amount(campaign.lifetime_budget)) return { cantidad: majorUnits(campaign.lifetime_budget, currency), tipo: 'total' }
-  const live = liveAdSets(campaign, now)
+  if (level === 'anuncio') return null
+  const shared = level === 'campana' ? { reparte: true } : {}
+  if (amount(object.daily_budget)) return { cantidad: majorUnits(object.daily_budget, currency), tipo: 'dia', ...shared }
+  if (amount(object.lifetime_budget)) return { cantidad: majorUnits(object.lifetime_budget, currency), tipo: 'total', ...shared }
+  if (level === 'conjunto') return null
+  const live = liveAdSets(object, now)
   const daily = live.reduce((sum, s) => sum + amount(s.daily_budget), 0)
   if (daily) return { cantidad: majorUnits(daily, currency), tipo: 'dia' }
   const total = live.reduce((sum, s) => sum + amount(s.lifetime_budget), 0)
   return total ? { cantidad: majorUnits(total, currency), tipo: 'total' } : null
 }
 
+/** El campo de las filas de insights que dice de qué campaña, conjunto o anuncio son. */
+const INSIGHT_KEY = { campana: 'campaign_id', conjunto: 'adset_id', anuncio: 'ad_id' }
+
+/** Una campaña, un conjunto o un anuncio como lo enseña «En marcha» (sin métricas: van aparte). */
+export function rowOf(object, { level = 'campana', account, currency, businessId = null, now = Date.now() }) {
+  const id = String(object.id)
+  return {
+    id,
+    nombre: object.name ?? id,
+    estado: object.status === 'ACTIVE' ? 'activa' : 'pausada',
+    entrega: deliveryOf(object, now, level),
+    presupuesto: budgetOf(object, currency, now, level),
+    enlace: adsManagerLink(account, id, businessId, level),
+    miniatura: level === 'anuncio' ? (object.creative?.thumbnail_url ?? null) : null,
+    automaticas: level === 'anuncio' ? automaticOf(object.creative) : null,
+    pagina: level === 'conjunto' ? (object.promoted_object?.page_id ?? null) : null,
+    actualizada: object.updated_time ? new Date(Date.parse(object.updated_time)).toISOString() : null,
+  }
+}
+
 /**
- * Cada campaña con lo que ha gastado y las conversaciones que ha traído en el periodo (de `insights`, por
- * campaña). Primero las activas, de más a menos gasto; luego las que están en pausa, las más recientes antes.
+ * Cada campaña (o conjunto, o anuncio) con sus métricas del periodo, de `insights` (una fila por cada una).
+ * Primero las activas, de más a menos gasto; luego las que están en pausa, las más recientes antes.
  */
-export function campaignRows(campaigns, insights, { account, currency, businessId = null, now = Date.now() }) {
-  const stats = new Map(insights.map((row) => [String(row.campaign_id), row]))
-  const rows = campaigns.map((campaign) => {
-    const row = stats.get(String(campaign.id))
-    const gasto = Number(row?.spend) || 0
-    const conversaciones = Number(row?.actions?.find((a) => a.action_type === CONVERSATIONS)?.value) || 0
-    return {
-      id: String(campaign.id),
-      nombre: campaign.name ?? String(campaign.id),
-      estado: campaign.status === 'ACTIVE' ? 'activa' : 'pausada',
-      entrega: deliveryOf(campaign, now),
-      presupuesto: budgetOf(campaign, currency, now),
-      gasto,
-      conversaciones,
-      coste: conversaciones ? gasto / conversaciones : null,
-      enlace: adsManagerLink(account, String(campaign.id), businessId),
-      actualizada: campaign.updated_time ? new Date(Date.parse(campaign.updated_time)).toISOString() : null,
-    }
-  })
+export function rowsOf(objects, insights, options) {
+  const level = options.level ?? 'campana'
+  const stats = new Map(insights.map((row) => [String(row[INSIGHT_KEY[level]]), row]))
+  const rows = objects.map((object) => ({ ...rowOf(object, options), metricas: metricsOf(stats.get(String(object.id))) }))
   return rows.sort(
     (a, b) =>
       (a.estado === 'pausada') - (b.estado === 'pausada') ||
-      (a.estado === 'activa' ? b.gasto - a.gasto : 0) ||
+      (a.estado === 'activa' ? b.metricas.gasto - a.metricas.gasto : 0) ||
       (b.actualizada ?? '').localeCompare(a.actualizada ?? ''),
   )
 }
@@ -270,10 +501,26 @@ export function cleanSettings(raw) {
     genero: ['todos', 'hombres', 'mujeres'].includes(raw?.genero) ? raw.genero : 'todos',
     advantage: raw?.advantage !== false,
     ubicaciones: ['auto', 'facebook', 'instagram'].includes(raw?.ubicaciones) ? raw.ubicaciones : 'auto',
+    mejoras: Array.isArray(raw?.mejoras) ? Object.keys(ENHANCEMENTS).filter((key) => raw.mejoras.includes(key)) : [],
+    multianunciante: raw?.multianunciante === true,
     texto: text(raw?.texto, 3000),
     titular: text(raw?.titular, 255),
+    descripcion: text(raw?.descripcion, 255),
+    bienvenida: text(raw?.bienvenida, 500),
+    tipoMensaje: raw?.tipoMensaje === 'preguntas' ? 'preguntas' : 'escrito',
     saludo: text(raw?.saludo, 500),
+    preguntas: (Array.isArray(raw?.preguntas) ? raw.preguntas : [])
+      .map((q) => text(q, 80))
+      .filter(Boolean)
+      .slice(0, MAX_QUESTIONS),
   }
+}
+
+/** Una imagen ya subida (su hash) o un vídeo (su id); null si no es nada de eso. */
+function cleanMedia(medio) {
+  if (medio?.tipo === 'imagen' && /^[a-f0-9]{8,64}$/i.test(medio.hash ?? '')) return { tipo: 'imagen', hash: medio.hash }
+  if (medio?.tipo === 'video' && id(medio.id)) return { tipo: 'video', id: medio.id }
+  return null
 }
 
 export function cleanPlan(raw) {
@@ -284,15 +531,13 @@ export function cleanPlan(raw) {
     inicio: DAY.test(raw?.inicio ?? '') ? raw.inicio : null,
     fin: DAY.test(raw?.fin ?? '') ? raw.fin : null,
     anuncios: (Array.isArray(raw?.anuncios) ? raw.anuncios : []).slice(0, 50).map((ad, i) => {
-      const medio = ad?.medio
-      const clean =
-        medio?.tipo === 'imagen' && /^[a-f0-9]{8,64}$/i.test(medio.hash ?? '')
-          ? { tipo: 'imagen', hash: medio.hash }
-          : medio?.tipo === 'video' && id(medio.id)
-            ? { tipo: 'video', id: medio.id }
-            : null
-      if (!clean) throw new HttpError(400, `Al anuncio ${i + 1} le falta la imagen o el vídeo.`)
-      return { nombre: text(ad.nombre, 200) || `Anuncio ${i + 1}`, medio: clean }
+      const medio = cleanMedia(ad?.medio)
+      if (!medio) throw new HttpError(400, `Al anuncio ${i + 1} le falta la imagen o el vídeo.`)
+      if (!ad.vertical) return { nombre: text(ad.nombre, 200) || `Anuncio ${i + 1}`, medio }
+      // Con versión vertical: las dos imágenes o los dos vídeos.
+      const vertical = cleanMedia(ad.vertical)
+      if (vertical?.tipo !== medio.tipo) throw new HttpError(400, `En el anuncio ${i + 1}, la vertical y la del feed tienen que ser las dos imágenes o los dos vídeos.`)
+      return { nombre: text(ad.nombre, 200) || `Anuncio ${i + 1}`, medio, vertical }
     }),
   }
   if (!plan.cuenta?.startsWith('act_')) throw new HttpError(400, 'Falta la cuenta publicitaria.')
@@ -404,6 +649,43 @@ async function videoThumbnail(meta, account, videoId, { wait = VIDEO_WAIT, poll 
   return image.hash
 }
 
+/** La miniatura de cada vídeo del plan (Meta la pide aparte, como imagen). */
+async function thumbnailsOf(meta, plan, options) {
+  const thumbs = new Map()
+  for (const medio of plan.anuncios.flatMap((ad) => [ad.medio, ad.vertical].filter(Boolean))) {
+    if (medio.tipo === 'video' && !thumbs.has(medio.id)) {
+      thumbs.set(medio.id, await videoThumbnail(meta, plan.cuenta, medio.id, options))
+    }
+  }
+  return thumbs
+}
+
+/** Un anuncio por imagen o vídeo en el conjunto; sus identificadores. */
+async function createAds(meta, plan, adSetId, thumbs, status) {
+  const ads = []
+  for (const ad of plan.anuncios) {
+    const creative = await meta.graph(`${plan.cuenta}/adcreatives`, {
+      method: 'POST',
+      body: creativeBody(plan, ad, { thumbs }),
+    })
+    const created = await meta.graph(`${plan.cuenta}/ads`, { method: 'POST', body: adBody(ad, { adSetId, creativeId: creative.id, status }) })
+    ads.push(String(created.id))
+  }
+  return ads
+}
+
+/** El error de algo que ha fallado a medias: si se ha podido borrar lo creado, o qué ha quedado. */
+function halfDone(err, removed, leftover) {
+  const why = err?.message ?? String(err)
+  return new HttpError(err?.status ?? 502, removed ? `${why} (No se ha creado nada.)` : `${why} (${leftover})`, err?.code)
+}
+
+const removeObject = (meta, objectId) =>
+  meta.graph(String(objectId), { method: 'DELETE' }).then(
+    () => true,
+    () => false,
+  )
+
 /**
  * Crea la campaña, el conjunto y un anuncio por imagen o vídeo, todo en pausa, y lo apunta. Si algo falla a
  * medias, borra la campaña recién creada (con lo que cuelga de ella) para no dejar nada a medio hacer.
@@ -411,12 +693,7 @@ async function videoThumbnail(meta, account, videoId, { wait = VIDEO_WAIT, poll 
 export async function launch(meta, raw, options = {}) {
   const plan = cleanPlan(raw)
   const account = await meta.graph(plan.cuenta, { params: { fields: 'name,currency,business{id}' } })
-  const thumbs = new Map()
-  for (const ad of plan.anuncios) {
-    if (ad.medio.tipo === 'video' && !thumbs.has(ad.medio.id)) {
-      thumbs.set(ad.medio.id, await videoThumbnail(meta, plan.cuenta, ad.medio.id, options))
-    }
-  }
+  const thumbs = await thumbnailsOf(meta, plan, options)
 
   const campaign = await meta.graph(`${plan.cuenta}/campaigns`, { method: 'POST', body: campaignBody(plan) })
   try {
@@ -424,15 +701,7 @@ export async function launch(meta, raw, options = {}) {
       method: 'POST',
       body: adSetBody(plan, { campaignId: campaign.id, currency: account.currency }),
     })
-    const ads = []
-    for (const ad of plan.anuncios) {
-      const creative = await meta.graph(`${plan.cuenta}/adcreatives`, {
-        method: 'POST',
-        body: creativeBody(plan, ad, { thumbnailHash: thumbs.get(ad.medio.id) }),
-      })
-      const created = await meta.graph(`${plan.cuenta}/ads`, { method: 'POST', body: adBody(ad, { adSetId: adSet.id, creativeId: creative.id }) })
-      ads.push(String(created.id))
-    }
+    const ads = await createAds(meta, plan, adSet.id, thumbs, 'PAUSED')
     const record = {
       id: randomUUID(),
       creadoEn: new Date().toISOString(),
@@ -453,18 +722,52 @@ export async function launch(meta, raw, options = {}) {
     })
     return record
   } catch (err) {
-    const removed = await meta.graph(String(campaign.id), { method: 'DELETE' }).then(
-      () => true,
-      () => false,
-    )
-    const why = err?.message ?? String(err)
-    throw new HttpError(
-      err?.status ?? 502,
-      removed
-        ? `${why} (No se ha creado nada.)`
-        : `${why} (Ha quedado la campaña «${plan.nombre}» en pausa y a medias: bórrala en el Administrador de anuncios.)`,
-      err?.code,
-    )
+    const removed = await removeObject(meta, campaign.id)
+    throw halfDone(err, removed, `Ha quedado la campaña «${plan.nombre}» en pausa y a medias: bórrala en el Administrador de anuncios.`)
+  }
+}
+
+/** Los objetivos de campaña que admiten conjuntos de mensajes a WhatsApp como los de Tablero. */
+const WHATSAPP_OBJECTIVES = new Set(['OUTCOME_ENGAGEMENT', 'OUTCOME_LEADS', 'OUTCOME_SALES'])
+/** Lo de un conjunto que dice a qué número de WhatsApp llegan los mensajes (sin él, al de la página). */
+const WHATSAPP_NUMBER = ['whats_app_business_phone_number_id', 'whatsapp_phone_number']
+
+/**
+ * Un conjunto nuevo, con un anuncio por imagen o vídeo, en una campaña que ya existe. El conjunto se crea en
+ * pausa y sus anuncios no: se encienden todos con el interruptor del conjunto (y, mientras, Meta los revisa).
+ * Si la campaña reparte su presupuesto, el conjunto no lleva; si otro conjunto de la campaña, con la misma
+ * página, manda los mensajes a un número concreto, este también. Si algo falla a medias, se borra el conjunto.
+ */
+export async function addAdSet(meta, raw, options = {}) {
+  const campaignId = typeof raw?.campana === 'string' && /^\d{1,32}$/.test(raw.campana) ? raw.campana : null
+  if (!campaignId) throw new HttpError(400, 'Campaña no válida')
+  if (!text(raw?.nombre, 200)) throw new HttpError(400, 'Falta el nombre del conjunto.')
+  const plan = cleanPlan(raw)
+  const [account, campaign] = await Promise.all([
+    meta.graph(plan.cuenta, { params: { fields: 'currency' } }),
+    meta.graph(campaignId, { params: { fields: 'name,account_id,objective,daily_budget,lifetime_budget,adsets.limit(100){promoted_object}' } }),
+  ])
+  if (`act_${campaign.account_id}` !== plan.cuenta) throw new HttpError(400, 'Esa campaña no es de esta cuenta publicitaria.')
+  if (!WHATSAPP_OBJECTIVES.has(campaign.objective)) {
+    throw new HttpError(400, `A «${campaign.name}» no se le pueden añadir conjuntos de mensajes a WhatsApp: su objetivo no es interacción, clientes potenciales ni ventas.`)
+  }
+  const sibling = (campaign.adsets?.data ?? [])
+    .map((s) => s.promoted_object ?? {})
+    .find((p) => p.page_id === plan.pagina && WHATSAPP_NUMBER.some((key) => p[key]))
+  const promoted = Object.fromEntries(WHATSAPP_NUMBER.filter((key) => sibling?.[key]).map((key) => [key, sibling[key]]))
+  const sharedBudget = Number(campaign.daily_budget) > 0 || Number(campaign.lifetime_budget) > 0
+  const thumbs = await thumbnailsOf(meta, plan, options)
+
+  const adSet = await meta.graph(`${plan.cuenta}/adsets`, {
+    method: 'POST',
+    body: adSetBody(plan, { campaignId, currency: account.currency, sharedBudget, promoted }),
+  })
+  try {
+    const ads = await createAds(meta, plan, adSet.id, thumbs, 'ACTIVE')
+    return { id: String(adSet.id), nombre: plan.nombre, campana: campaignId, anuncios: ads }
+  } catch (err) {
+    const removed = await removeObject(meta, adSet.id)
+    throw halfDone(err, removed, `Ha quedado el conjunto «${plan.nombre}» en pausa y a medias: bórralo en el Administrador de anuncios.`)
   }
 }
 
@@ -492,22 +795,24 @@ export async function activate(meta, launchId) {
 }
 
 /**
- * Pausa o activa cualquier campaña de la cuenta (el interruptor de «En marcha»). Si se creó desde Tablero, se
- * apunta también en su registro.
+ * Pausa o activa cualquier campaña, conjunto o anuncio de la cuenta (el interruptor de «En marcha»). Si es una
+ * campaña creada desde Tablero, se apunta también en su registro.
  */
-export async function setCampaignStatus(meta, raw) {
-  const campaignId = typeof raw?.id === 'string' && /^\d{1,32}$/.test(raw.id) ? raw.id : null
-  if (!campaignId) throw new HttpError(400, 'Campaña no válida')
+export async function setStatus(meta, raw) {
+  const level = raw?.nivel ?? 'campana'
+  if (!Object.hasOwn(INSIGHT_KEY, level)) throw new HttpError(400, 'Nivel no válido')
+  const objectId = typeof raw?.id === 'string' && /^\d{1,32}$/.test(raw.id) ? raw.id : null
+  if (!objectId) throw new HttpError(400, { campana: 'Campaña no válida', conjunto: 'Conjunto no válido', anuncio: 'Anuncio no válido' }[level])
   if (!['activa', 'pausada'].includes(raw?.estado)) throw new HttpError(400, 'Estado no válido')
-  const record = (await readAds()).lanzamientos.find((l) => l.campana === campaignId) ?? null
-  if (record && raw.estado === 'activa') return { id: campaignId, estado: 'activa', lanzamiento: await activate(meta, record.id) }
-  await meta.graph(campaignId, { method: 'POST', body: { status: raw.estado === 'activa' ? 'ACTIVE' : 'PAUSED' } })
-  if (!record) return { id: campaignId, estado: raw.estado, lanzamiento: null }
+  const record = level === 'campana' ? ((await readAds()).lanzamientos.find((l) => l.campana === objectId) ?? null) : null
+  if (record && raw.estado === 'activa') return { id: objectId, estado: 'activa', lanzamiento: await activate(meta, record.id) }
+  await meta.graph(objectId, { method: 'POST', body: { status: raw.estado === 'activa' ? 'ACTIVE' : 'PAUSED' } })
+  if (!record) return { id: objectId, estado: raw.estado, lanzamiento: null }
   const lanzamiento = await changeAds((data) => {
     const found = data.lanzamientos.find((l) => l.id === record.id) ?? { ...record }
     found.estado = 'pausada'
     found.activada = everActivated(found)
     return found
   })
-  return { id: campaignId, estado: 'pausada', lanzamiento }
+  return { id: objectId, estado: 'pausada', lanzamiento }
 }

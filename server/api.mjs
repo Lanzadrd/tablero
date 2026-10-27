@@ -7,7 +7,8 @@ import { mkdir, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { activate, launch, readAds, saveTemplates, setCampaignStatus, uploadFile } from './anuncios.mjs'
+import { activate, addAdSet, launch, readAds, saveTemplates, setStatus, uploadFile } from './anuncios.mjs'
+import { claudeStatus, saveClaudeKey, writeCopy } from './textos.mjs'
 import { capture, interpret } from './captura.mjs'
 import { DATA_DIR, exclusive, HttpError, localDay, localTime, readArchive, readStore, writeArchive, writeStore } from './almacen.mjs'
 import { createMeta } from './meta.mjs'
@@ -223,17 +224,24 @@ async function metaRoute(req, res, url, meta, options) {
     case UPLOAD_PATH:
       only(req, 'POST')
       return send(res, 200, { medio: await uploadToMeta(req, url, meta) })
-    case '/api/meta/campanas':
+    case '/api/meta/campanas': {
       only(req, 'GET')
+      const query = url.searchParams
       return send(
         res,
         200,
-        await meta.campaigns(url.searchParams.get('cuenta'), url.searchParams.get('periodo') ?? '7d', url.searchParams.has('actualizar')),
+        await meta.performance(query.get('cuenta'), {
+          period: query.get('periodo') ?? '7d',
+          campaign: query.get('campana'),
+          adSet: query.get('conjunto'),
+          fresh: query.has('actualizar'),
+        }),
       )
+    }
     case '/api/meta/campanas/estado': {
       only(req, 'POST')
       const body = await readJson(req)
-      const result = await setCampaignStatus(meta, body)
+      const result = await setStatus(meta, body)
       meta.forget(result.lanzamiento?.cuenta ?? body?.cuenta)
       return send(res, 200, result)
     }
@@ -242,6 +250,13 @@ async function metaRoute(req, res, url, meta, options) {
       const lanzamiento = await launch(meta, await readJson(req), options)
       meta.forget(lanzamiento.cuenta)
       return send(res, 200, { lanzamiento })
+    }
+    case '/api/meta/conjuntos': {
+      only(req, 'POST')
+      const body = await readJson(req)
+      const conjunto = await addAdSet(meta, body, options)
+      meta.forget(body.cuenta)
+      return send(res, 200, { conjunto })
     }
     case '/api/meta/activar': {
       only(req, 'POST')
@@ -257,6 +272,14 @@ async function metaRoute(req, res, url, meta, options) {
     case '/api/anuncios/plantillas':
       only(req, 'PUT')
       return send(res, 200, { plantillas: await saveTemplates((await readJson(req))?.plantillas) })
+    // Los textos del anuncio, escritos por Claude; y su clave (que nunca vuelve a la web).
+    case '/api/anuncios/textos':
+      only(req, 'POST')
+      return send(res, 200, { textos: await writeCopy(await readJson(req), options) })
+    case '/api/anuncios/claude':
+      if (req.method === 'GET') return send(res, 200, await claudeStatus())
+      only(req, 'PUT')
+      return send(res, 200, await saveClaudeKey((await readJson(req))?.clave))
     default:
       throw new HttpError(404, 'No encontrado')
   }
