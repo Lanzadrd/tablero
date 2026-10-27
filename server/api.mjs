@@ -2,8 +2,15 @@
 // la app, del ayudante de Recordatorios y del MCP de Claude Code.
 // La usan tanto el servidor de producción (server/index.mjs) como Vite en desarrollo.
 import { randomUUID } from 'node:crypto'
+import { createWriteStream } from 'node:fs'
+import { mkdir, rm } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { pipeline } from 'node:stream/promises'
+import { activate, launch, readAds, saveTemplates, setCampaignStatus, uploadFile } from './anuncios.mjs'
 import { capture, interpret } from './captura.mjs'
 import { DATA_DIR, exclusive, HttpError, localDay, localTime, readArchive, readStore, writeArchive, writeStore } from './almacen.mjs'
+import { createMeta } from './meta.mjs'
 import { applyOperations } from './operaciones.mjs'
 import { claudeUrl, openOnMac, projectFolder, taskPrompt } from './proyectos.mjs'
 import { applyReminders } from './suscripciones.mjs'
@@ -12,6 +19,10 @@ import { pageTitle, TitleError } from './titulo.mjs'
 export { DATA_DIR }
 
 const MAX_BODY = 10 * 1024 * 1024
+/** Lo que admite Meta: imágenes de hasta 30 MB y vídeos de hasta 1 GB (subida simple). */
+const MAX_UPLOAD = { image: 30 * 1024 * 1024, video: 1024 * 1024 * 1024 }
+/** Única ruta que acepta algo que no es JSON: la subida de imágenes y vídeos, con su cabecera propia. */
+const UPLOAD_PATH = '/api/meta/medios'
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
 const TITLE_STATUS = {
   'url-no-valida': 400,
@@ -176,6 +187,81 @@ function findTaskWithColumn(board, taskId) {
   throw new HttpError(404, 'Esa tarea no existe', 'tarea-no-existe')
 }
 
+/** Anuncios en Meta (meta.mjs, anuncios.mjs). */
+async function metaRoute(req, res, url, meta, options) {
+  const { pathname } = url
+  switch (pathname) {
+    case '/api/meta/estado':
+      only(req, 'GET')
+      return send(res, 200, await meta.status())
+    case '/api/meta/app':
+      only(req, 'PUT')
+      return send(res, 200, await meta.saveApp(await readJson(req)))
+    case '/api/meta/conectar': {
+      only(req, 'GET')
+      res.writeHead(302, { location: await meta.connectUrl(req.headers.host), 'cache-control': 'no-store' })
+      return res.end()
+    }
+    case '/api/meta/token': {
+      only(req, 'POST')
+      const token = (await readJson(req))?.token
+      if (typeof token !== 'string' || token.trim().length < 20) throw new HttpError(400, 'Ese token no parece válido')
+      return send(res, 200, await meta.saveToken(token.trim()))
+    }
+    case '/api/meta/desconectar':
+      only(req, 'POST')
+      return send(res, 200, await meta.disconnect())
+    case '/api/meta/cuentas':
+      only(req, 'GET')
+      return send(res, 200, { portfolios: await meta.portfolios(url.searchParams.has('actualizar')) })
+    case '/api/meta/paginas':
+      only(req, 'GET')
+      return send(res, 200, { paginas: await meta.pages(url.searchParams.get('cuenta'), url.searchParams.has('actualizar')) })
+    case '/api/meta/lugares':
+      only(req, 'GET')
+      return send(res, 200, { lugares: await meta.places(url.searchParams.get('q')) })
+    case UPLOAD_PATH:
+      only(req, 'POST')
+      return send(res, 200, { medio: await uploadToMeta(req, url, meta) })
+    case '/api/meta/campanas':
+      only(req, 'GET')
+      return send(
+        res,
+        200,
+        await meta.campaigns(url.searchParams.get('cuenta'), url.searchParams.get('periodo') ?? '7d', url.searchParams.has('actualizar')),
+      )
+    case '/api/meta/campanas/estado': {
+      only(req, 'POST')
+      const body = await readJson(req)
+      const result = await setCampaignStatus(meta, body)
+      meta.forget(result.lanzamiento?.cuenta ?? body?.cuenta)
+      return send(res, 200, result)
+    }
+    case '/api/meta/lanzar': {
+      only(req, 'POST')
+      const lanzamiento = await launch(meta, await readJson(req), options)
+      meta.forget(lanzamiento.cuenta)
+      return send(res, 200, { lanzamiento })
+    }
+    case '/api/meta/activar': {
+      only(req, 'POST')
+      const id = (await readJson(req))?.id
+      if (typeof id !== 'string') throw new HttpError(400, 'Falta id')
+      const lanzamiento = await activate(meta, id)
+      meta.forget(lanzamiento.cuenta)
+      return send(res, 200, { lanzamiento })
+    }
+    case '/api/anuncios':
+      only(req, 'GET')
+      return send(res, 200, await readAds())
+    case '/api/anuncios/plantillas':
+      only(req, 'PUT')
+      return send(res, 200, { plantillas: await saveTemplates((await readJson(req))?.plantillas) })
+    default:
+      throw new HttpError(404, 'No encontrado')
+  }
+}
+
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   res.end(JSON.stringify(body))
@@ -206,9 +292,85 @@ function checkCaller(req) {
     } catch {}
     if (host !== req.headers.host) throw new HttpError(403, 'Solo desde Tablero')
   }
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !/^application\/json\b/i.test(req.headers['content-type'] ?? '')) {
+  // Una subida va tal cual, con la cabecera x-tablero-subida: otra web tampoco puede mandarla sin el permiso
+  // previo (preflight) que aquí nunca se concede.
+  const upload = new URL(req.url ?? '/', 'http://localhost').pathname === UPLOAD_PATH && req.headers['x-tablero-subida'] === '1'
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !upload && !/^application\/json\b/i.test(req.headers['content-type'] ?? '')) {
     throw new HttpError(415, 'Se espera JSON')
   }
+}
+
+/** Guarda el cuerpo de una subida en un archivo temporal (sin pasar de `max`). */
+async function receiveFile(req, max) {
+  const declared = Number(req.headers['content-length'])
+  if (declared > max) throw new HttpError(413, 'Demasiado grande')
+  const dir = path.join(os.tmpdir(), 'tablero-subidas')
+  await mkdir(dir, { recursive: true })
+  const file = path.join(dir, randomUUID())
+  let size = 0
+  try {
+    await pipeline(
+      req,
+      async function* (source) {
+        for await (const chunk of source) {
+          size += chunk.length
+          if (size > max) throw new HttpError(413, 'Demasiado grande')
+          yield chunk
+        }
+      },
+      createWriteStream(file),
+    )
+  } catch (err) {
+    await rm(file, { force: true })
+    throw err
+  }
+  return file
+}
+
+/** Sube a Meta lo que llega (una imagen o un vídeo) y devuelve su referencia para el anuncio. */
+async function uploadToMeta(req, url, meta) {
+  const account = url.searchParams.get('cuenta') ?? ''
+  if (!/^act_\d+$/.test(account)) throw new HttpError(400, 'Cuenta publicitaria no válida')
+  const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase()
+  const kind = type.startsWith('image/') ? 'image' : type.startsWith('video/') ? 'video' : null
+  if (!kind) throw new HttpError(415, 'Solo imágenes o vídeos')
+  const name = (url.searchParams.get('nombre') ?? '').replace(/[\\/\0]/g, '').slice(0, 200) || (kind === 'image' ? 'imagen' : 'video')
+  let file
+  try {
+    file = await receiveFile(req, MAX_UPLOAD[kind])
+  } catch (err) {
+    if (err instanceof HttpError && err.status === 413) {
+      throw new HttpError(413, kind === 'image' ? 'Las imágenes, de hasta 30 MB.' : 'Los vídeos, de hasta 1 GB.')
+    }
+    throw err
+  }
+  try {
+    return await uploadFile(meta, account, { file, type, name })
+  } finally {
+    await rm(file, { force: true })
+  }
+}
+
+const escapeHtml = (value) =>
+  String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+
+/**
+ * La página a la que vuelve el diálogo de Meta (en la ventana que se abrió para conectar): dice cómo ha ido y
+ * se cierra; si se conectó en la ventana de Tablero, vuelve a Anuncios.
+ */
+function connectPage(res, port, { ok, message }) {
+  const back = `http://127.0.0.1${port ? `:${port}` : ''}/?vista=anuncios`
+  res.writeHead(ok ? 200 : 400, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+  res.end(`<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark"><title>Tablero · Meta</title>
+<style>body{margin:0;display:grid;place-items:center;min-height:100vh;font:15px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:#f5f5f7;color:#1d1d1f}
+@media (prefers-color-scheme:dark){body{background:#111113;color:#f5f5f7}}main{max-width:360px;padding:24px;text-align:center}
+h1{font-size:19px;margin:0 0 6px}p{margin:0 0 16px;color:#6e6e73}a{color:#0066cc}</style></head>
+<body><main><h1>${ok ? 'Tablero ya está conectado con Meta' : 'No se ha podido conectar'}</h1><p>${escapeHtml(message)}</p>
+<a href="${back}">Volver a Tablero</a></main>
+<script>${ok ? `if (window.opener) setTimeout(() => window.close(), 900); else location.replace(${JSON.stringify(back)})` : ''}</script>
+</body></html>`)
 }
 
 /**
@@ -218,12 +380,33 @@ function checkCaller(req) {
  * `guardado()` se llama cada vez que una ventana guarda el tablero (p. ej. para crear ya el aviso de
  * una suscripción recién configurada).
  */
-export function createApi({ version = 'dev', appVersion = 'dev', abrir = openOnMac, titulo = {}, guardado = () => {} } = {}) {
+export function createApi({
+  version = 'dev',
+  appVersion = 'dev',
+  abrir = openOnMac,
+  titulo = {},
+  guardado = () => {},
+  meta = createMeta(),
+  anuncios = {},
+} = {}) {
   return async function tableroApi(req, res, next) {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const { pathname } = url
     if (!pathname.startsWith('/api/')) return next()
+    const port = /:(\d+)$/.exec(req.headers.host ?? '')?.[1] ?? null
     try {
+      // La vuelta del diálogo de Meta llega desde facebook.com (otra web): solo vale con el «state» que generó
+      // Tablero al empezar (meta.mjs), de un solo uso.
+      if (pathname === '/api/meta/volver') {
+        if (!isLocalHost(req)) throw new HttpError(403, 'Solo accesible desde este ordenador')
+        only(req, 'GET')
+        try {
+          const status = await meta.finishConnect(Object.fromEntries(url.searchParams))
+          return connectPage(res, port, { ok: true, message: `Como ${status.usuario?.nombre ?? 'tu cuenta'}. Puedes cerrar esta ventana.` })
+        } catch (err) {
+          return connectPage(res, port, { ok: false, message: err?.message ?? String(err) })
+        }
+      }
       checkCaller(req)
       if (pathname === '/api/health') return send(res, 200, { app: 'tablero', ok: true, version, appVersion })
       if (pathname === '/api/eventos') return await openEvents(req, res, url.searchParams.get('cliente'), version)
@@ -301,6 +484,10 @@ export function createApi({ version = 'dev', appVersion = 'dev', abrir = openOnM
           return send(res, 200, { titulo: parsed.title, resumen, columna: columnName })
         }
         return send(res, 200, await updateBoard((board) => capture(board, body, { today: localDay(), time: localTime() })))
+      }
+
+      if (pathname.startsWith('/api/meta/') || pathname === '/api/anuncios' || pathname.startsWith('/api/anuncios/')) {
+        return await metaRoute(req, res, url, meta, anuncios)
       }
 
       if (pathname !== '/api/board') throw new HttpError(404, 'No encontrado')

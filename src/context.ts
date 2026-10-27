@@ -3,7 +3,7 @@ import type { Board } from './model'
 import type { Actions } from './state'
 import type { AvisosStatus } from './sync'
 
-export type View = 'today' | 'board' | 'calendar' | 'subscriptions'
+export type View = 'today' | 'board' | 'calendar' | 'subscriptions' | 'ads'
 
 /**
  * Lo que la vista Suscripciones abre en cuanto está en pantalla: la ficha de una, «Nueva suscripción» o
@@ -16,6 +16,9 @@ export interface UI {
   avisos: AvisosStatus | null
   view: View
   setView: (view: View) => void
+  /** Menú lateral con las vistas (⌃⌘S lo muestra u oculta). */
+  sidebarOpen: boolean
+  toggleSidebar: () => void
   renamingColumnId: string | null
   setRenaming: (columnId: string | null) => void
   openTaskId: string | null

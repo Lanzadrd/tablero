@@ -21,6 +21,9 @@ export const splitLines = (text: string) =>
     )
     .filter(Boolean)
 
+/** Ancho del menú lateral en pantalla (--side-w; 0 si está oculto). */
+export const sideWidth = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--side-w')) || 0
+
 export const tint = (color: ColorKey) => ({ '--tint': `var(--c-${color})` }) as CSSProperties
 
 /** Preferencia de interfaz guardada en este navegador (vista, modo del calendario…). */

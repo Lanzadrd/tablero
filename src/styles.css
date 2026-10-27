@@ -5,6 +5,8 @@
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
   --bar-h: 52px;
   --col-w: 296px;
+  /* Ancho del menú lateral (src/styles/lateral.css): 0 si está oculto. Todas las vistas lo dejan libre. */
+  --side-w: 0px;
 
   --bg: #f5f5f7;
   --surface: #ffffff;
@@ -111,6 +113,8 @@ html {
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  /* Lo que se enseña con el teclado no se queda debajo del menú lateral. */
+  scroll-padding-left: var(--side-w);
   background: var(--bg);
 }
 
@@ -259,12 +263,11 @@ code {
   position: fixed;
   z-index: 20;
   top: env(titlebar-area-y, 0);
-  left: env(titlebar-area-x, 0);
-  width: env(titlebar-area-width, 100%);
+  /* Desde el menú lateral (o desde los botones de la ventana, si llegan más lejos) hasta la derecha. */
+  left: max(env(titlebar-area-x, 0px), var(--side-w));
+  width: calc(env(titlebar-area-x, 0px) + env(titlebar-area-width, 100%) - max(env(titlebar-area-x, 0px), var(--side-w)));
   height: env(titlebar-area-height, var(--bar-h));
-  display: grid;
-  /* Los botones nunca menos anchos que ellos mismos: con poco sitio se encoge el título, no se montan. */
-  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+  display: flex;
   align-items: center;
   gap: 12px;
   padding: 0 16px 0 26px;
@@ -274,6 +277,8 @@ code {
 }
 
 .topbar-title {
+  /* Los botones nunca menos anchos que ellos mismos: con poco sitio se encoge el título, no se montan. */
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   display: flex;
@@ -297,7 +302,7 @@ code {
 }
 
 .topbar-actions {
-  justify-self: end;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -313,7 +318,7 @@ code {
   width: max-content;
   min-width: 100%;
   height: 100dvh;
-  padding: calc(env(titlebar-area-height, var(--bar-h)) + 6px) 26px 20px;
+  padding: calc(env(titlebar-area-height, var(--bar-h)) + 6px) 26px 20px calc(var(--side-w) + 26px);
 }
 
 .board.is-dragging-task .task:hover {
@@ -1117,7 +1122,7 @@ select.input {
 .status-pill {
   position: fixed;
   z-index: 150;
-  left: 20px;
+  left: calc(var(--side-w) + 20px);
   bottom: 20px;
   padding: 7px 12px;
   border-radius: 999px;
@@ -1269,9 +1274,9 @@ select.input {
   flex-direction: column;
   gap: 12px;
   width: 100vw;
-  min-width: 640px;
+  min-width: calc(640px + var(--side-w));
   height: 100dvh;
-  padding: calc(env(titlebar-area-height, var(--bar-h)) + 2px) 26px 20px;
+  padding: calc(env(titlebar-area-height, var(--bar-h)) + 2px) 26px 20px calc(var(--side-w) + 26px);
 }
 
 .cal-header {

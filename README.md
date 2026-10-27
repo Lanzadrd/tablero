@@ -103,11 +103,38 @@ cobro. Las dadas de baja quedan plegadas al final y se pueden reactivar.
   entre ventanas incluidos). Claude Code las ve con la herramienta `tablero_suscripciones` del MCP,
   con su columna, los totales por columna y, si se pide, solo las de una (`columna`) o una tarjeta.
 
+## Anuncios
+
+La vista **Anuncios** (`P`, en el menú lateral) enseña cómo van las campañas de las cuentas publicitarias de
+todos tus portfolios y lanza campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
+
+- **Conectar (una vez)**: hace falta una app de Meta propia (developers.facebook.com, caso de uso «Crear y
+  gestionar anuncios con la API de marketing»; sin publicar ni revisión). En su inicio de sesión con Facebook,
+  añade `http://localhost:4747/api/meta/volver` a las URI de redireccionamiento (en desarrollo, también la del
+  puerto 5173). Tablero pide su identificador y su clave secreta y abre la ventana de Meta; si la app usa
+  «Inicio de sesión con Facebook para empresas», también el identificador de una configuración con token de
+  usuario. La conexión dura unos 60 días (avisa una semana antes); «Volver a conectar» la renueva.
+- **En marcha**: las campañas activas de la cuenta con su presupuesto y, para hoy, 7 o 30 días, el gasto, las
+  conversaciones de WhatsApp empezadas y el coste por conversación (y los totales). Debajo de «Activa» sale
+  lo que pasa de verdad (conjuntos en pausa, terminada, en revisión…). El interruptor pausa enseguida o activa
+  (pide confirmación); las que están en pausa sin gasto en el periodo van plegadas. Las creadas desde Tablero
+  se encienden enteras la primera vez y luego solo la campaña, para no reactivar lo que se pausara en Meta.
+- **Nueva campaña**: eliges la cuenta (agrupadas por portfolio), una **plantilla** (página, Instagram,
+  presupuesto diario, lugares, edad, sexo, Advantage+, ubicaciones y textos, con el mensaje que aparece ya
+  escrito en WhatsApp) y arrastras imágenes o vídeos: cada uno es un anuncio del mismo conjunto. «Crear en
+  pausa» sube todo y crea campaña, conjunto y anuncios **en pausa**; si algo falla a medias, borra lo creado.
+  Luego, «Revisar en Meta» (Administrador de anuncios) o «Activar» (pide confirmación: desde ahí gasta).
+- Con Advantage+ activado, Meta solo admite la edad mínima (hasta 25) y decide el resto.
+- La app de Meta y el token se guardan en `datos/meta.json` (solo en este Mac, permisos 600) y nunca llegan a
+  la web; las plantillas y las campañas creadas, en `datos/anuncios.json`. Versión de la API: v26.0
+  (`TABLERO_META_VERSION` la cambia).
+
 ## Atajos
 
 | Tecla | Acción |
 | --- | --- |
-| `D` / `T` / `C` / `U` | Hoy / Tablero / Calendario / Suscripciones |
+| `D` / `T` / `C` / `U` / `P` | Hoy / Tablero / Calendario / Suscripciones / Anuncios |
+| `⌃⌘S` | Mostrar u ocultar el menú lateral |
 | `N` · `1`–`9` · `⇧N` | Nueva tarea (en Suscripciones, nueva suscripción) · en esa columna · nueva columna |
 | `⌘K` o `/` | Buscar (también completadas y archivadas) |
 | `↑↓` `←→` (o `J`/`K`) | Moverse entre tareas (o suscripciones) y columnas |
@@ -163,7 +190,8 @@ npm run build  # comprueba tipos y compila a dist/
   Las cuentas de las suscripciones (cobros, importes, avisos) están en `server/suscripciones.mjs`,
   compartidas por la app, el servidor y el MCP.
 - `server/` — servidor sin dependencias: web, API `/api/board`, eventos en vivo `/api/eventos`
-  y actualizaciones automáticas (`actualizador.mjs`).
+  y actualizaciones automáticas (`actualizador.mjs`). Anuncios: la conexión con Meta en `meta.mjs` y lo
+  que se manda para crear campañas en `anuncios.mjs` (probado con una Meta de mentira, sin internet).
 - `avisos/` — el ayudante de Recordatorios (Swift + EventKit): `Modelo.swift` (fusión, sin
   EventKit) y `Avisos.swift`. Pruebas: `swiftc -parse-as-library avisos/Modelo.swift
   avisos/Pruebas.swift -o /tmp/pruebas && /tmp/pruebas`. Solo se recompila si cambia,

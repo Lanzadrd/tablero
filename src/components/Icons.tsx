@@ -243,3 +243,44 @@ export const External = () => (
     <path d="M11.75 9.5v2.25c0 .83-.67 1.5-1.5 1.5h-6c-.83 0-1.5-.67-1.5-1.5v-6c0-.83.67-1.5 1.5-1.5H6.5" />
   </svg>
 )
+
+/** Menú lateral (a la izquierda) */
+export const SidebarLeft = () => (
+  <svg {...stroke}>
+    <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2.25" />
+    <path d="M6 2.75v10.5M3.6 5.5h0.9M3.6 7.75h0.9" />
+  </svg>
+)
+
+/** Megáfono (anuncios) */
+export const Megaphone = () => (
+  <svg {...stroke}>
+    <path d="M2.25 6.6c0-.6.45-1.1 1.05-1.1H5.5l6.25-3v11L5.5 10.5H3.3c-.6 0-1.05-.5-1.05-1.1V6.6Z" />
+    <path d="M5.5 10.5 6.6 14h1.6l-.9-3.5" />
+  </svg>
+)
+
+/** Imagen (creatividad) */
+export const Image = () => (
+  <svg {...stroke}>
+    <rect x="2" y="2.75" width="12" height="10.5" rx="2" />
+    <circle cx="5.75" cy="6.25" r="1.1" />
+    <path d="m2.5 12 3.75-3.5 2.5 2.25 2-1.75 2.75 2.5" />
+  </svg>
+)
+
+/** Vídeo (creatividad) */
+export const Video = () => (
+  <svg {...stroke}>
+    <rect x="1.75" y="3.75" width="9" height="8.5" rx="2" />
+    <path d="m10.75 7 3.5-2v6l-3.5-2" />
+  </svg>
+)
+
+/** Recargar (↻ sin repetición: volver a pedir los datos) */
+export const Reload = () => (
+  <svg {...stroke}>
+    <path d="M13 8a5 5 0 1 1-1.6-3.67" />
+    <path d="M11.75 1.75v2.9h-2.9" />
+  </svg>
+)

@@ -11,18 +11,18 @@
   width: max-content;
   min-width: 100%;
   height: 100dvh;
-  padding: calc(env(titlebar-area-height, var(--bar-h)) + 14px) 26px 20px;
+  padding: calc(env(titlebar-area-height, var(--bar-h)) + 14px) 26px 20px calc(var(--side-w) + 26px);
 }
 
 /* Título, tarjetas y resumen: quietos aunque las columnas se desplacen a los lados. */
 .subs-top {
   position: sticky;
-  left: 26px;
+  left: calc(var(--side-w) + 26px);
   flex: none;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: min(calc(100vw - 52px), 940px);
+  width: min(calc(100vw - var(--side-w) - 52px), 940px);
 }
 
 /* «+ Suscripción» junto al título: la página es tan ancha como sus columnas, y así no flota en medio. */
@@ -930,13 +930,13 @@
 
 @media (max-width: 820px) {
   .subs {
-    padding-left: 16px;
+    padding-left: calc(var(--side-w) + 16px);
     padding-right: 16px;
   }
 
   .subs-top {
-    left: 16px;
-    width: calc(100vw - 32px);
+    left: calc(var(--side-w) + 16px);
+    width: calc(100vw - var(--side-w) - 32px);
   }
 }
 

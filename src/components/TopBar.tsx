@@ -6,7 +6,6 @@ import type { AvisosStatus } from '../sync'
 import { cx } from '../util'
 import * as Icon from './Icons'
 import { Popover } from './Popover'
-import { Segmented } from './Segmented'
 import '../styles/teclado.css'
 
 /** Evento de Chrome cuando la web se puede instalar como app. */
@@ -140,21 +139,20 @@ export function TopBar() {
 
   return (
     <header className="topbar">
+      {/* Con el menú oculto (o reducido a iconos por falta de ancho), se abre y se cierra desde aquí. */}
+      <button
+        type="button"
+        className={cx('icon-btn', 'topbar-sidebar-btn', ui.sidebarOpen && 'is-sidebar-open')}
+        aria-label={ui.sidebarOpen ? 'Ocultar el menú lateral' : 'Mostrar el menú lateral'}
+        title={`${ui.sidebarOpen ? 'Ocultar' : 'Mostrar'} el menú lateral (⌃⌘S)`}
+        onClick={ui.toggleSidebar}
+      >
+        <Icon.SidebarLeft />
+      </button>
       <div className="topbar-title">
         <h1>Tablero</h1>
         <span className="topbar-date">{formatToday(now)}</span>
       </div>
-      <Segmented
-        label="Vista"
-        value={ui.view}
-        onChange={ui.setView}
-        options={[
-          { value: 'today', label: 'Hoy', hint: 'D' },
-          { value: 'board', label: 'Tablero', hint: 'T' },
-          { value: 'calendar', label: 'Calendario', hint: 'C' },
-          { value: 'subscriptions', label: 'Suscripciones', hint: 'U' },
-        ]}
-      />
       <div className="topbar-actions">
         {install && (
           <button type="button" className="btn is-accent" onClick={install} title="Instalar Tablero como app, con su icono en el Dock">

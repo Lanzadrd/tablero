@@ -44,7 +44,7 @@ import {
   type Totals,
   type UpcomingSubscription,
 } from '../subscriptions'
-import { cx, isTyping, tint, useStoredState } from '../util'
+import { cx, isTyping, sideWidth, tint, useStoredState } from '../util'
 import * as Icon from './Icons'
 import { CardEditor, displayName, onDay, SubscriptionSheet } from './SubscriptionSheet'
 import '../styles/suscripciones.css'
@@ -514,10 +514,12 @@ function showNextColumn(container: HTMLElement | null, id: string, step: 1 | -1)
   const here = columns[at].getBoundingClientRect()
   const there = next?.getBoundingClientRect()
   const width = document.documentElement.clientWidth
+  // Lo que queda debajo del menú lateral no se ve.
+  const start = sideWidth() + GUTTER
   const dx =
     step > 0
-      ? Math.min(Math.max(here.right + GUTTER - width, there ? there.right + GUTTER - width : 0), here.left - GUTTER)
-      : Math.max(Math.min(here.left - GUTTER, there ? there.left - GUTTER : 0), here.right + GUTTER - width)
+      ? Math.min(Math.max(here.right + GUTTER - width, there ? there.right + GUTTER - width : 0), here.left - start)
+      : Math.max(Math.min(here.left - start, there ? there.left - start : 0), here.right + GUTTER - width)
   if (step > 0 ? dx > 0 : dx < 0) window.scrollBy({ left: dx, behavior: 'instant' })
 }
 

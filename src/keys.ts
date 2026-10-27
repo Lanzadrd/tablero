@@ -36,6 +36,8 @@ export const SHORTCUTS: ShortcutSection[] = [
       { keys: [['T']], label: 'Tablero' },
       { keys: [['C']], label: 'Calendario' },
       { keys: [['U']], label: 'Suscripciones' },
+      { keys: [['P']], label: 'Anuncios' },
+      { keys: [['⌃', '⌘', 'S']], label: 'Mostrar u ocultar el menú lateral' },
       { keys: [['N']], label: 'Nueva tarea' },
       { keys: [['1', '…', '9']], label: 'Nueva tarea en esa columna' },
       { keys: [['⇧', 'N']], label: 'Nueva columna' },
@@ -263,6 +265,7 @@ export interface KeyContext {
   /** La paleta de búsqueda está abierta: las teclas son suyas. */
   blocked: () => boolean
   setView: (view: View) => void
+  toggleSidebar: () => void
   /** N en la vista abierta (el calendario atiende la suya; en Suscripciones, «Nueva suscripción»). */
   newTask: () => void
   newColumn: () => void
@@ -273,7 +276,7 @@ export interface KeyContext {
   openTask: (id: string, anchor: HTMLElement) => void
 }
 
-const VIEW_KEYS: Record<string, View> = { d: 'today', t: 'board', c: 'calendar', u: 'subscriptions' }
+const VIEW_KEYS: Record<string, View> = { d: 'today', t: 'board', c: 'calendar', u: 'subscriptions', p: 'ads' }
 const NAV_KEYS: Record<string, Direction> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', k: 'up', j: 'down' }
 const WHEN_KEYS: Record<string, When> = { h: 'today', m: 'tomorrow', l: 'nextWeek' }
 
@@ -302,6 +305,8 @@ function onKey(e: KeyboardEvent, c: KeyContext) {
 
   if (cmd) {
     if (e.altKey || e.shiftKey) return
+    // ⌃⌘S, como en Finder y Notas.
+    if (e.metaKey && e.ctrlKey) return key === 's' ? run(c.toggleSidebar) : undefined
     if (key === 'k') return run(c.openSearch)
     if (key === 'd') {
       // En Chrome, ⌘D es «añadir a marcadores»: solo se le quita si hay tarea que duplicar.

@@ -20,7 +20,7 @@
   height: 100dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: calc(env(titlebar-area-height, var(--bar-h)) + 14px) 26px 64px;
+  padding: calc(env(titlebar-area-height, var(--bar-h)) + 14px) 26px 64px calc(var(--side-w) + 26px);
 }
 
 .today .splash {

@@ -3,8 +3,10 @@ import { collapsed } from './collapsed'
 import { createTaskCommands } from './commands'
 import { BoardView } from './components/Board'
 import { CalendarView } from './components/Calendar'
+import { AdsView } from './components/Ads'
 import { Palette, type CommandId } from './components/Palette'
 import { SelectionBar } from './components/SelectionBar'
+import { Sidebar } from './components/Sidebar'
 import { SubscriptionsView } from './components/Subscriptions'
 import { TaskSheet } from './components/TaskSheet'
 import { TODAY_ADD, TodayView } from './components/Today'
@@ -75,6 +77,7 @@ export default function App() {
   const now = useClock()
   const [status, setStatus] = useState<SyncStatus>('loading')
   const [view, setView] = useStoredState<View>('tablero.vista', 'board')
+  const [sidebarOpen, setSidebarOpen] = useStoredState('tablero.lateral', true)
   const [toast, setToast] = useState<Toast | null>(null)
   const [avisos, setAvisos] = useState<AvisosStatus | null>(null)
   const [updateReady, setUpdateReady] = useState(false)
@@ -138,6 +141,12 @@ export default function App() {
   }, [state.seq, toast])
 
   // ── Interfaz ──
+  // El ancho del menú (--side-w) desplaza todas las vistas: va en <html>, que es lo que se desplaza.
+  useEffect(() => {
+    document.documentElement.classList.toggle('has-sidebar', sidebarOpen)
+  }, [sidebarOpen])
+  const toggleSidebar = useCallback(() => setSidebarOpen(!sidebarOpen), [sidebarOpen, setSidebarOpen])
+
   const focusQuickAdd = useCallback((columnId?: string) => {
     const columns = boardRef.current ? activeColumns(boardRef.current) : []
     const last = columns.some((c) => c.id === lastColumn.current) ? lastColumn.current : null
@@ -262,6 +271,8 @@ export default function App() {
       avisos,
       view,
       setView,
+      sidebarOpen,
+      toggleSidebar,
       renamingColumnId,
       setRenaming,
       openTaskId: openTask?.id ?? null,
@@ -287,6 +298,8 @@ export default function App() {
       avisos,
       view,
       setView,
+      sidebarOpen,
+      toggleSidebar,
       renamingColumnId,
       openTask?.id,
       showTask,
@@ -318,6 +331,7 @@ export default function App() {
     commands,
     blocked: () => paletteRef.current,
     setView,
+    toggleSidebar,
     newTask: () => {
       // En el calendario, N la atiende el propio calendario (nueva tarea para hoy).
       if (view === 'today') focusQuickAdd(TODAY_ADD)
@@ -339,13 +353,13 @@ export default function App() {
     if (board) selection.retain((id) => findTask(board, id) !== null)
   }, [state.board])
 
-  // «Nueva tarea» (búsqueda, Dock) es N en la vista abierta; en Suscripciones N es otra cosa: va al tablero.
+  // «Nueva tarea» (búsqueda, Dock) es N en la vista abierta; en Suscripciones y Anuncios no hay tareas: va al tablero.
   // La vista se lee de viewRef: el Dock puede haberla cambiado en esa misma llamada (a «Hoy», la primera
   // vez del día), antes de que se pinte.
   const viewRef = useRef(view)
   viewRef.current = view
   const newTaskHere = () => {
-    if (viewRef.current === 'subscriptions') setView('board')
+    if (viewRef.current === 'subscriptions' || viewRef.current === 'ads') setView('board')
     setNewTaskPending(true)
   }
 
@@ -354,6 +368,7 @@ export default function App() {
     else if (id === 'new-column') newColumn()
     else if (id === 'new-subscription') newSubscription()
     else if (id === 'shortcuts') setShortcutsOpen(true)
+    else if (id === 'sidebar') toggleSidebar()
     else setView(id)
   }
 
@@ -399,12 +414,15 @@ export default function App() {
         <UIContext.Provider value={ui}>
           <NowContext.Provider value={now}>
             <TopBar />
+            {sidebarOpen && <Sidebar />}
             {view === 'today' ? (
               <TodayView />
             ) : view === 'board' ? (
               <BoardView />
             ) : view === 'calendar' ? (
               <CalendarView />
+            ) : view === 'ads' ? (
+              <AdsView />
             ) : (
               <SubscriptionsView />
             )}
