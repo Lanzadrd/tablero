@@ -49,11 +49,13 @@ Chrome). Los atajos se cambian en `datos/ajustes.json` (`{"atajoCaptura": "optio
 "atajoCapturaPagina": "option+shift+space"}`; `""` desactiva uno).
 
 Que los avisos salgan como globo y con sonido depende de los ajustes de notificaciones de
-Recordatorios en cada dispositivo (la campana de Tablero lleva a ellos). El estado de la
+Recordatorios en cada dispositivo («Avisos en el iPhone», en la búsqueda, lleva a ellos). El estado de la
 sincronización se guarda en `datos/sincronizacion.json` y su registro en `datos/avisos.log`.
 
 ## Día a día
 
+- **Apariencia**: abajo del menú lateral, *Como el sistema*, *Claro* u *Oscuro* (cada clic pasa a la siguiente;
+  también «Modo claro» y «Modo oscuro» en la búsqueda). Se recuerda en el navegador.
 - **Hoy** (D): lo que vence hoy o está atrasado, de todas las columnas. «Lo primero» arriba
   (F), «Pasar todas a hoy», y la siguiente tarea de cada proyecto sin nada para hoy. El
   icono del Dock muestra cuántas quedan; la primera vez que se abre cada día, arranca aquí.
@@ -105,25 +107,47 @@ cobro. Las dadas de baja quedan plegadas al final y se pueden reactivar.
 
 ## Anuncios
 
-La vista **Anuncios** (`P`, en el menú lateral) enseña cómo van las campañas de las cuentas publicitarias de
-todos tus portfolios y lanza campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
+En el menú lateral, bajo Marketing, están **Meta Ads** (`P`) y **Google Ads** (`G`), cada una con sus cuentas
+publicitarias debajo (la flecha las pliega; las cerradas o con un pago pendiente, más apagadas); con el menú
+oculto o en iconos, el nombre de la cuenta abre la lista para cambiar.
+
+### Meta Ads
+
+La vista **Meta Ads** enseña cómo van las campañas de las cuentas publicitarias de todos tus portfolios y lanza
+campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
 
 - **Conectar (una vez)**: hace falta una app de Meta propia (developers.facebook.com, caso de uso «Crear y
   gestionar anuncios con la API de marketing»; sin revisión, pero publicada: en modo desarrollo Meta no deja
   crear anuncios, y para publicarla pide una URL de política de privacidad: sirve [PRIVACIDAD.md](PRIVACIDAD.md)).
   En su inicio de sesión con Facebook, añade `http://localhost:4747/api/meta/volver` a las URI de
-  redireccionamiento (en desarrollo, también la del puerto 5173). Tablero pide su identificador y su clave secreta y abre la ventana de Meta; si la app usa
-  «Inicio de sesión con Facebook para empresas», también el identificador de una configuración con token de
-  usuario. La conexión dura unos 60 días (avisa una semana antes); «Volver a conectar» la renueva.
+  redireccionamiento (en desarrollo, también la del puerto 5173). Tablero pide su identificador y su clave
+  secreta y abre la ventana de Meta; si la app usa «Inicio de sesión con Facebook para empresas», también el
+  identificador de una configuración con token de usuario. La conexión dura unos 60 días (avisa una semana antes); «Volver a conectar» la renueva.
 - **En marcha**: las campañas activas de la cuenta con su presupuesto y sus métricas de hoy, ayer, 7 o 30
-  días, y los totales. «Métricas» elige cuáles se ven: gasto, conversaciones de WhatsApp, coste por
-  conversación, contactos nuevos, alcance, impresiones, frecuencia, CPM, clics, CTR, CPC y bloqueos. Al pulsar
-  una campaña se ven sus conjuntos, y al pulsar un conjunto, sus anuncios (con miniatura); las migas llevan de
-  vuelta. Debajo de cada nombre sale lo que pasa de verdad (conjuntos en pausa, terminada, rechazado…). El
+  días, y los totales. «Métricas» elige cuáles se ven arriba, en grande, y cuáles en las columnas de la tabla
+  (cada sitio las suyas): gasto, conversaciones de WhatsApp, coste por conversación, contactos nuevos, alcance,
+  impresiones, frecuencia, CPM, clics, CTR, CPC y bloqueos. Al pulsar
+  una campaña se ven sus conjuntos, y al pulsar un conjunto, sus anuncios (con miniatura); las pestañas llevan de
+  vuelta. Las pestañas **Campañas · Conjuntos · Anuncios**, como carpetas sobre la tabla, cambian de nivel como
+  en el Administrador de anuncios: sin filtro, todos los de la cuenta, con su campaña o conjunto al lado; con una
+  campaña o un conjunto elegido, su pestaña dice «1 seleccionada ×» (la cruz quita el filtro) y las de al lado,
+  «Conjuntos de 1 campaña», «Anuncios de 1 conjunto». Debajo de
+  cada nombre sale lo que pasa de verdad (conjuntos en pausa, terminada, rechazado…). El
   interruptor pausa enseguida o activa (pide confirmación) campañas, conjuntos y anuncios; lo que está en pausa
   sin gasto en el periodo va plegado. Las campañas creadas desde Tablero se encienden enteras la primera vez y
-  luego solo la campaña, para no reactivar lo que se pausara en Meta. Ocupa todo el ancho; el botón junto al
-  nombre de la cuenta oculta la lista de cuentas para que quepan más columnas.
+  luego solo la campaña, para no reactivar lo que se pausara en Meta. Ocupa todo el ancho de la ventana.
+- **Editar lo publicado** (el menú «…» de cada fila), sin pasar por el Administrador de anuncios:
+  - *Campaña*: nombre, presupuesto (si lo reparte entre sus conjuntos), estrategia de puja y límite de gasto.
+  - *Conjunto*: nombre, presupuesto, fechas (el inicio, si aún no ha empezado; el fin, o sin fin), puja (volumen
+    máximo, objetivo de coste o límite de puja, con su importe) y público: lugares, Advantage+, edad, sexo y
+    ubicaciones. Lo que Tablero no enseña del público (intereses, públicos personalizados…) se queda como está.
+  - *Anuncio*: imagen o vídeo y su vertical, texto principal, título y descripción (con sus otras opciones de
+    texto, como en el Administrador), Instagram, chat de WhatsApp y mejoras automáticas. Meta no deja cambiar el
+    contenido de un anuncio publicado: Tablero crea uno nuevo con los cambios y se lo pone al mismo anuncio, que
+    conserva sus métricas (Meta lo vuelve a revisar). Los que usan una publicación existente, los carruseles y los
+    que no llevan a WhatsApp solo cambian de nombre.
+  - **Duplicar** (en pausa, con todo lo que cuelga), **archivar** y **borrar** (pide confirmación; borrar no se
+    puede deshacer). Y **Nuevo anuncio** dentro de un conjunto, empezando con los textos de uno de sus anuncios.
 - **Nuevo conjunto**: dentro de una campaña (de interacción, clientes potenciales o ventas), el mismo formulario
   que una campaña nueva crea un conjunto de mensajes a WhatsApp con sus anuncios. Usa la página de los demás
   conjuntos y, si mandan los mensajes a un número concreto, ese número; si la campaña reparte su presupuesto,
@@ -163,11 +187,34 @@ todos tus portfolios y lanza campañas de mensajes a WhatsApp en Meta con tus op
   la web; las plantillas y las campañas creadas, en `datos/anuncios.json`. Versión de la API: v26.0
   (`TABLERO_META_VERSION` la cambia).
 
+### Google Ads
+
+La vista **Google Ads** enseña tus cuentas de Google Ads (también las de una cuenta de administrador, entrando
+por ella) y, como en Meta Ads, «En marcha»: las campañas activas y en pausa con su presupuesto y sus métricas de
+hoy, ayer, 7 o 30 días (coste, conversiones, coste por conversión, tasa de conversión, valor, ROAS, impresiones,
+clics, CTR, CPC medio y CPM), los totales, y al pulsar una campaña sus grupos de anuncios y luego sus anuncios.
+Debajo de cada nombre sale lo que dice Google (limitada por presupuesto, aprendiendo, rechazado…) y el tipo de
+campaña; las de Máximo rendimiento y las inteligentes no se abren (no tienen grupos de anuncios propios). El
+interruptor pausa enseguida o activa (pide confirmación). Los botones **Campañas · Grupos · Anuncios** cambian de
+nivel, y el menú «…» de cada fila edita el nombre y el presupuesto diario de una campaña, el nombre y el CPC
+máximo de un grupo, y los títulos, descripciones, URL final y rutas de un anuncio de búsqueda adaptable; o la
+quita (no se puede deshacer).
+
+- **Conectar (una vez)**: desde septiembre de 2026 no hace falta token de desarrollador ni cuenta de
+  administrador; el nivel de acceso es el del proyecto de Google Cloud. En console.cloud.google.com, un proyecto
+  con la **Google Ads API** activada y el **acceso Explorer** solicitado en su página (sin él solo se ven cuentas
+  de prueba; da 2.880 operaciones al día, de sobra). En Google Auth Platform: «Publicar app» en Público (en
+  «Prueba» la conexión se corta cada 7 días) y, en Clientes, uno de tipo «Aplicación web» con
+  `http://localhost:4747/api/google/volver` en las URI de redireccionamiento (en desarrollo, también la del
+  puerto 5173). Tablero pide su ID y su secreto y abre la ventana de Google.
+- El cliente OAuth y el token de refresco se guardan en `datos/google.json` (solo en este Mac, permisos 600) y
+  nunca llegan a la web. Versión de la API: v26 (`TABLERO_GOOGLE_VERSION` la cambia).
+
 ## Atajos
 
 | Tecla | Acción |
 | --- | --- |
-| `D` / `T` / `C` / `U` / `P` | Hoy / Tablero / Calendario / Suscripciones / Anuncios |
+| `D` / `T` / `C` / `U` / `P` / `G` | Hoy / Tablero / Calendario / Suscripciones / Meta Ads / Google Ads |
 | `⌃⌘S` | Mostrar u ocultar el menú lateral |
 | `N` · `1`–`9` · `⇧N` | Nueva tarea (en Suscripciones, nueva suscripción) · en esa columna · nueva columna |
 | `⌘K` o `/` | Buscar (también completadas y archivadas) |
@@ -225,7 +272,8 @@ npm run build  # comprueba tipos y compila a dist/
   compartidas por la app, el servidor y el MCP.
 - `server/` — servidor sin dependencias: web, API `/api/board`, eventos en vivo `/api/eventos`
   y actualizaciones automáticas (`actualizador.mjs`). Anuncios: la conexión con Meta en `meta.mjs` y lo
-  que se manda para crear campañas en `anuncios.mjs` (probado con una Meta de mentira, sin internet).
+  que se manda para crear campañas en `anuncios.mjs`; la de Google Ads en `google.mjs` (probados con una Meta y
+  un Google de mentira, sin internet).
 - `avisos/` — el ayudante de Recordatorios (Swift + EventKit): `Modelo.swift` (fusión, sin
   EventKit) y `Avisos.swift`. Pruebas: `swiftc -parse-as-library avisos/Modelo.swift
   avisos/Pruebas.swift -o /tmp/pruebas && /tmp/pruebas`. Solo se recompila si cambia,

@@ -4,6 +4,7 @@ import { createTaskCommands } from './commands'
 import { BoardView } from './components/Board'
 import { CalendarView } from './components/Calendar'
 import { AdsView } from './components/Ads'
+import { GoogleAdsView } from './components/Google'
 import { Palette, type CommandId } from './components/Palette'
 import { SelectionBar } from './components/SelectionBar'
 import { Sidebar } from './components/Sidebar'
@@ -20,6 +21,7 @@ import { needsInbox } from './projects'
 import type { ArchivedTask } from './search'
 import { selection, setRevealed } from './selection'
 import { createActions, initialState, reducer } from './state'
+import { setTheme } from './theme'
 import { Sync, type AvisosStatus, type SyncStatus } from './sync'
 import { activeColumns } from './today'
 import { useStoredState } from './util'
@@ -84,6 +86,7 @@ export default function App() {
   const [renamingColumnId, setRenaming] = useState<string | null>(null)
   const [openTask, setOpenTask] = useState<{ id: string; anchor: DOMRect } | null>(null)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [avisosOpen, setAvisosOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [pending, setPending] = useState<Pending | null>(null)
   const [linkedTask, setLinkedTask] = useState<string | null>(null)
@@ -284,6 +287,8 @@ export default function App() {
       toast: showToast,
       shortcutsOpen,
       setShortcutsOpen,
+      avisosOpen,
+      setAvisosOpen,
       openSearch,
       revealTask,
       saveNow,
@@ -309,6 +314,7 @@ export default function App() {
       newColumn,
       showToast,
       shortcutsOpen,
+      avisosOpen,
       openSearch,
       revealTask,
       saveNow,
@@ -353,13 +359,13 @@ export default function App() {
     if (board) selection.retain((id) => findTask(board, id) !== null)
   }, [state.board])
 
-  // «Nueva tarea» (búsqueda, Dock) es N en la vista abierta; en Suscripciones y Anuncios no hay tareas: va al tablero.
+  // «Nueva tarea» (búsqueda, Dock) es N en la vista abierta; en Suscripciones y en los anuncios no hay tareas: va al tablero.
   // La vista se lee de viewRef: el Dock puede haberla cambiado en esa misma llamada (a «Hoy», la primera
   // vez del día), antes de que se pinte.
   const viewRef = useRef(view)
   viewRef.current = view
   const newTaskHere = () => {
-    if (viewRef.current === 'subscriptions' || viewRef.current === 'ads') setView('board')
+    if (viewRef.current === 'subscriptions' || viewRef.current === 'ads' || viewRef.current === 'google') setView('board')
     setNewTaskPending(true)
   }
 
@@ -368,6 +374,10 @@ export default function App() {
     else if (id === 'new-column') newColumn()
     else if (id === 'new-subscription') newSubscription()
     else if (id === 'shortcuts') setShortcutsOpen(true)
+    else if (id === 'avisos') setAvisosOpen(true)
+    else if (id === 'theme-light') setTheme('light')
+    else if (id === 'theme-dark') setTheme('dark')
+    else if (id === 'theme-system') setTheme('system')
     else if (id === 'sidebar') toggleSidebar()
     else setView(id)
   }
@@ -423,6 +433,8 @@ export default function App() {
               <CalendarView />
             ) : view === 'ads' ? (
               <AdsView />
+            ) : view === 'google' ? (
+              <GoogleAdsView />
             ) : (
               <SubscriptionsView />
             )}

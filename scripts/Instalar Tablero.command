@@ -154,8 +154,8 @@ echo
 if [ "${TABLERO_SIN_ABRIR:-}" != "1" ]; then
   if [ -d "/Applications/Google Chrome.app" ] || [ -d "$HOME/Applications/Google Chrome.app" ]; then
     open -a "Google Chrome" "$URL"
-    echo "Se ha abierto en Chrome. Para tenerlo en el Dock, pulsa «Instalar» en la barra de Tablero"
-    echo "(o el icono de instalar que aparece a la derecha de la barra de direcciones)."
+    echo "Se ha abierto en Chrome. Para tenerlo en el Dock, pulsa el icono de instalar que aparece"
+    echo "a la derecha de la barra de direcciones."
   else
     open "$URL"
     echo "Tablero funciona mejor con Google Chrome: https://www.google.com/chrome/"

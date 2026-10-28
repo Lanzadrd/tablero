@@ -9,12 +9,19 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --selected: color-mix(in srgb, var(--accent) 22%, transparent);
     --selected-hover: color-mix(in srgb, var(--accent) 30%, transparent);
     --backdrop: rgba(0, 0, 0, 0.32);
     --found: color-mix(in srgb, var(--c-yellow) 30%, transparent);
   }
+}
+
+:root[data-theme='dark'] {
+  --selected: color-mix(in srgb, var(--accent) 22%, transparent);
+  --selected-hover: color-mix(in srgb, var(--accent) 30%, transparent);
+  --backdrop: rgba(0, 0, 0, 0.32);
+  --found: color-mix(in srgb, var(--c-yellow) 30%, transparent);
 }
 
 /* ───────── Tareas seleccionadas (el foco lleva su anillo de siempre) ───────── */

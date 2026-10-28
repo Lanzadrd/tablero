@@ -1,5 +1,5 @@
-// Anuncios en Meta: lo que la vista pide al servidor (server/meta.mjs y server/anuncios.mjs) y las cuentas
-// del formulario. El token de Meta nunca llega aquí: solo si hay conexión, de quién y hasta cuándo.
+// Anuncios en Meta y Google Ads: lo que las vistas piden al servidor (server/meta.mjs, server/anuncios.mjs y
+// server/google.mjs) y las cuentas del formulario. Los tokens nunca llegan aquí: solo si hay conexión y de quién.
 
 export interface MetaStatus {
   /** ¿Están el identificador y la clave secreta de la app de Meta? */
@@ -23,6 +23,8 @@ export interface AdAccount {
   estado: string
   activa: boolean
   zona: string | null
+  /** Una cuenta de prueba de Google Ads (no gasta ni se muestra). */
+  prueba?: boolean
 }
 
 export interface Portfolio {
@@ -154,7 +156,7 @@ export type Period = 'hoy' | 'ayer' | '7d' | '30d'
 export type Level = 'campana' | 'conjunto' | 'anuncio'
 
 /** Las métricas del periodo. Los cocientes son null cuando no hay de qué (sin impresiones, sin clics…). */
-export interface Metrics {
+export type Metrics = {
   gasto: number
   /** Conversaciones de WhatsApp (o Messenger, Instagram) empezadas desde los anuncios. */
   conversaciones: number
@@ -175,6 +177,9 @@ export interface Metrics {
 
 export type MetricKey = keyof Metrics
 
+/** Las métricas de cualquier sitio (Meta, Google Ads), por su nombre. */
+export type MetricValues = Record<string, number | null>
+
 /** Una campaña, un conjunto o un anuncio, activo o en pausa, con sus métricas del periodo. */
 export interface AdRow {
   id: string
@@ -188,7 +193,8 @@ export interface AdRow {
    * es el de la campaña, que Meta reparte entre sus conjuntos (los conjuntos nuevos no llevan).
    */
   presupuesto: { cantidad: number; tipo: 'dia' | 'total'; reparte?: true } | null
-  enlace: string
+  /** Dónde se abre en el sitio de anuncios (null si no hay un enlace que funcione). */
+  enlace: string | null
   /** De los anuncios: la imagen o el fotograma, pequeño. */
   miniatura: string | null
   /** De los anuncios: las mejoras automáticas de Meta que tienen activadas y si salen con los de otros. */
@@ -196,19 +202,152 @@ export interface AdRow {
   /** De los conjuntos: la página con la que se anuncian. */
   pagina: string | null
   actualizada: string | null
+  /** De las campañas de Google Ads: su tipo (Búsqueda, Display…). */
+  tipo?: string | null
+  /** No tiene nivel de debajo que ver (las campañas de Máximo rendimiento de Google Ads). */
+  sinHijos?: boolean
+  /** De qué campaña (y conjunto) es: para bajar a él desde la lista de toda la cuenta. */
+  padres?: { campana?: { id: string; nombre: string } | null; conjunto?: { id: string; nombre: string } | null } | null
 }
+
+// ── Editar lo publicado ──
+
+/** Las estrategias de puja que se eligen en Tablero; «otra», una que solo se cambia en Meta. */
+export type Bid = 'volumen' | 'coste' | 'puja' | 'otra'
+
+export interface Budget {
+  cantidad: number
+  tipo: 'dia' | 'total'
+}
+
+/** El público de un conjunto publicado (`extras`: lo que Tablero no enseña y se conserva tal cual). */
+export interface Audience {
+  lugares: Place[]
+  edadMin: number
+  edadMax: number
+  genero: Gender
+  advantage: boolean
+  /** «manual»: elegidas a mano en Meta (se quedan como están si no se cambian). */
+  ubicaciones: Placements | 'manual'
+  extras: string[]
+}
+
+/** Las otras opciones de texto (las del Administrador de anuncios), además de la principal. */
+export interface Variants {
+  textos: string[]
+  titulos: string[]
+  descripciones: string[]
+}
+
+export type AdContent = Pick<
+  AdSettings,
+  'pagina' | 'instagram' | 'texto' | 'titular' | 'descripcion' | 'bienvenida' | 'tipoMensaje' | 'saludo' | 'preguntas' | 'mejoras' | 'multianunciante'
+> & { variantes: Variants }
+
+/** Una imagen o un vídeo de un anuncio publicado, con dónde verlo. */
+export type MediaPreview = ({ tipo: 'imagen'; hash: string } | { tipo: 'video'; id: string }) & { url: string | null; ratio: number | null }
+
+/** Cómo está una campaña, un conjunto o un anuncio de Meta, para editarlo. */
+export interface EditDetails {
+  nivel: Level
+  id: string
+  nombre: string
+  estado: 'activa' | 'pausada' | 'archivada'
+  moneda: string
+  campana?: { objetivo: string | null; presupuesto: Budget | null; puja: Bid; limiteGasto: number | null }
+  conjunto?: {
+    presupuesto: Budget | null
+    presupuestoCampana: Budget | null
+    inicio: string | null
+    empezado: boolean
+    fin: string | null
+    puja: Bid
+    pujaEnCampana: boolean
+    importePuja: number | null
+    publico: Audience
+    pagina: string | null
+    whatsapp: string | null
+    optimizacion: string | null
+    destino: string | null
+  }
+  anuncio?: {
+    conjunto: string
+    editable: boolean
+    motivo: string | null
+    contenido: AdContent | null
+    medio: MediaPreview | null
+    vertical: MediaPreview | null
+  }
+}
+
+/** Lo que se cambia (solo lo que se ha tocado). `medio`/`vertical`: los nuevos; `vertical: null`, quitarla. */
+export interface EditChanges {
+  nombre?: string
+  presupuesto?: number
+  puja?: Exclude<Bid, 'otra'>
+  limiteGasto?: number | null
+  inicio?: string | null
+  fin?: string | null
+  importePuja?: number
+  publico?: Audience
+  contenido?: AdContent
+  medio?: Media
+  vertical?: Media | null
+}
+
+/** Un texto de un anuncio de búsqueda adaptable de Google Ads (`fijado`: en qué posición va siempre). */
+export interface SearchAsset {
+  texto: string
+  fijado: string | null
+}
+
+/** Cómo está una campaña, un grupo o un anuncio de Google Ads, para editarlo. */
+export interface GoogleEditDetails {
+  nivel: Level
+  id: string
+  nombre: string
+  moneda: string
+  campana?: { presupuesto: number | null; compartido: boolean }
+  conjunto?: { cpc: number | null }
+  anuncio?: { editable: boolean; motivo: string | null; titulos: SearchAsset[]; descripciones: SearchAsset[]; url: string; ruta1: string; ruta2: string }
+}
+
+export interface GoogleEditChanges {
+  nombre?: string
+  presupuesto?: number
+  cpc?: number
+  anuncio?: { titulos: SearchAsset[]; descripciones: SearchAsset[]; url: string; ruta1: string; ruta2: string }
+}
+
+/** La consulta de «En marcha»: periodo, nivel y filtro. */
+function rowsQuery(account: string, period: Period, path: AdPath, fresh: boolean) {
+  const query = new URLSearchParams({ cuenta: account, periodo: period })
+  if (path.campana) query.set('campana', path.campana.id)
+  if (path.conjunto) query.set('conjunto', path.conjunto.id)
+  if (path.nivel) query.set('nivel', path.nivel)
+  if (fresh) query.set('actualizar', '1')
+  return query
+}
+
+const editQuery = (account: string, level: Level, id: string) => new URLSearchParams({ cuenta: account, nivel: level, id })
 
 export interface AdRowWithMetrics extends AdRow {
   metricas: Metrics
 }
 
-export interface AdRows {
+/** Lo que enseña «En marcha» de un nivel, venga de donde venga. */
+export interface RunningRows {
   moneda: string
   periodo: Period
   nivel: Level
   actualizado: string
   /** La campaña o el conjunto de arriba (null en las campañas de la cuenta). */
   padre: AdRow | null
+  totales: MetricValues
+  filas: Array<AdRow & { metricas: MetricValues }>
+}
+
+export interface AdRows extends RunningRows {
   /** De Meta, no la suma de las filas: el alcance no se puede sumar. */
   totales: Metrics
   filas: AdRowWithMetrics[]
@@ -235,10 +374,14 @@ export interface NewAdSet {
   anuncios: string[]
 }
 
-/** Dónde se está: la campaña (y el conjunto) de los que se ven los conjuntos (o los anuncios). */
+/**
+ * Dónde se está: qué se ve (`nivel`: campañas, conjuntos o anuncios; sin él, el de debajo del filtro) y de qué
+ * campaña (y conjunto). Los conjuntos y los anuncios, sin filtro, son los de toda la cuenta.
+ */
 export interface AdPath {
   campana?: { id: string; nombre: string }
   conjunto?: { id: string; nombre: string }
+  nivel?: Level
 }
 
 export interface LaunchPlan extends AdSettings {
@@ -384,6 +527,36 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
   return data as T
 }
 
+/** La conexión con Google Ads (el cliente OAuth del proyecto de Google Cloud y la cuenta de Google). */
+export interface GoogleStatus {
+  /** ¿Están el identificador y la clave secreta del cliente OAuth? */
+  cliente: boolean
+  clienteId: string | null
+  conectada: boolean
+  usuario: { email: string | null } | null
+  conectadaEn: string | null
+  version: string
+}
+
+/** La dirección a la que vuelve Google al conectar (va en las URI de redireccionamiento del cliente OAuth). */
+export const googleRedirectUri = () => `http://localhost${location.port ? `:${location.port}` : ''}/api/google/volver`
+
+export const googleApi = {
+  status: () => call<GoogleStatus>('GET', '/api/google/estado'),
+  saveClient: (id: string, secreto: string) => call<GoogleStatus>('PUT', '/api/google/cliente', { id, secreto }),
+  disconnect: () => call<GoogleStatus>('POST', '/api/google/desconectar', {}),
+  accounts: (fresh = false) =>
+    call<{ portfolios: Portfolio[] }>('GET', `/api/google/cuentas${fresh ? '?actualizar=1' : ''}`).then((r) => r.portfolios),
+  rows: (account: string, period: Period, path: AdPath, fresh = false) =>
+    call<RunningRows>('GET', `/api/google/campanas?${rowsQuery(account, period, path, fresh)}`),
+  setStatus: (account: string, level: Level, id: string, estado: AdRow['estado']) =>
+    call<{ id: string; estado: AdRow['estado'] }>('POST', '/api/google/campanas/estado', { cuenta: account, nivel: level, id, estado }),
+  details: (account: string, level: Level, id: string) => call<GoogleEditDetails>('GET', `/api/google/editar?${editQuery(account, level, id)}`),
+  update: (account: string, level: Level, id: string, cambios: GoogleEditChanges) =>
+    call<GoogleEditDetails>('POST', '/api/google/editar', { cuenta: account, nivel: level, id, cambios }),
+  remove: (account: string, level: Level, id: string) => call<{ id: string }>('POST', '/api/google/quitar', { cuenta: account, nivel: level, id }),
+}
+
 export const metaApi = {
   status: () => call<MetaStatus>('GET', '/api/meta/estado'),
   saveApp: (id: string, secreto: string, configuracion: string) => call<MetaStatus>('PUT', '/api/meta/app', { id, secreto, configuracion }),
@@ -401,13 +574,15 @@ export const metaApi = {
   addAdSet: (plan: LaunchPlan & { campana: string }) =>
     call<{ conjunto: NewAdSet }>('POST', '/api/meta/conjuntos', plan).then((r) => r.conjunto),
   activate: (id: string) => call<{ lanzamiento: Launch }>('POST', '/api/meta/activar', { id }).then((r) => r.lanzamiento),
-  rows: (account: string, period: Period, path: AdPath, fresh = false) => {
-    const query = new URLSearchParams({ cuenta: account, periodo: period })
-    if (path.campana) query.set('campana', path.campana.id)
-    if (path.conjunto) query.set('conjunto', path.conjunto.id)
-    if (fresh) query.set('actualizar', '1')
-    return call<AdRows>('GET', `/api/meta/campanas?${query}`)
-  },
+  rows: (account: string, period: Period, path: AdPath, fresh = false) => call<AdRows>('GET', `/api/meta/campanas?${rowsQuery(account, period, path, fresh)}`),
+  details: (account: string, level: Level, id: string) => call<EditDetails>('GET', `/api/meta/editar?${editQuery(account, level, id)}`),
+  update: (account: string, level: Level, id: string, cambios: EditChanges) =>
+    call<EditDetails>('POST', '/api/meta/editar', { cuenta: account, nivel: level, id, cambios }),
+  duplicate: (account: string, level: Level, id: string) => call<{ id: string }>('POST', '/api/meta/duplicar', { cuenta: account, nivel: level, id }),
+  remove: (account: string, level: Level, id: string, modo: 'archivar' | 'borrar') =>
+    call<{ id: string }>('POST', '/api/meta/quitar', { cuenta: account, nivel: level, id, modo }),
+  addAds: (plan: AdContent & { cuenta: string; conjunto: string; anuncios: Array<{ nombre: string; medio: Media; vertical?: Media }> }) =>
+    call<{ conjunto: string; anuncios: string[] }>('POST', '/api/meta/anuncios', plan),
   setStatus: (account: string, level: Level, id: string, estado: AdRow['estado']) =>
     call<{ id: string; estado: AdRow['estado']; lanzamiento: Launch | null }>('POST', '/api/meta/campanas/estado', {
       cuenta: account,

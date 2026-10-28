@@ -17,7 +17,7 @@ const MAX_TEMPLATES = 200
 const WHATSAPP_LINK = 'https://api.whatsapp.com/send'
 const CTA_TYPE = 'WHATSAPP_MESSAGE'
 /** Lo que contesta la empresa en WhatsApp al abrirse la conversación. */
-const GREETING = '¡Hola! ¿En qué podemos ayudarte?'
+export const GREETING = '¡Hola! ¿En qué podemos ayudarte?'
 
 /** Monedas que Meta cuenta en unidades (sin céntimos); el resto, en céntimos. */
 const WHOLE_UNITS = new Set(['CLP', 'COP', 'CRC', 'HUF', 'ISK', 'IDR', 'JPY', 'KRW', 'PYG', 'TWD', 'VND'])
@@ -268,13 +268,28 @@ export function creativeBody(plan, ad, { thumbs = new Map(), tag = randomUUID().
   const greeting = welcome ? { page_welcome_message: welcome } : {}
   const titular = plan.titular?.trim()
   const descripcion = plan.descripcion?.trim()
+  // Con varias opciones de texto (como en el Administrador de anuncios), los textos van todos en asset_feed_spec y
+  // Meta enseña la combinación que mejor funciona a cada persona.
+  const extra = plan.variantes ?? {}
+  const options = (main, more) => [main, ...(more ?? [])].map((t) => t?.trim()).filter(Boolean).map((t) => ({ text: t }))
+  if (['textos', 'titulos', 'descripciones'].some((key) => extra[key]?.length)) {
+    const titles = options(titular, extra.titulos)
+    const descriptions = options(descripcion, extra.descripciones)
+    common.asset_feed_spec = {
+      bodies: options(plan.texto, extra.textos),
+      ...(titles.length ? { titles } : {}),
+      ...(descriptions.length ? { descriptions } : {}),
+      optimization_type: 'DEGREES_OF_FREEDOM',
+    }
+  }
+  const texts = !common.asset_feed_spec
   if (ad.medio.tipo === 'imagen') {
     spec.link_data = {
       image_hash: ad.medio.hash,
       link: WHATSAPP_LINK,
-      message: plan.texto,
-      ...(titular ? { name: titular } : {}),
-      ...(descripcion ? { description: descripcion } : {}),
+      ...(texts ? { message: plan.texto } : {}),
+      ...(texts && titular ? { name: titular } : {}),
+      ...(texts && descripcion ? { description: descripcion } : {}),
       call_to_action: { type: CTA_TYPE, value: { app_destination: 'WHATSAPP' } },
       ...greeting,
     }
@@ -284,9 +299,9 @@ export function creativeBody(plan, ad, { thumbs = new Map(), tag = randomUUID().
     spec.video_data = {
       video_id: ad.medio.id,
       image_hash: thumbnailHash,
-      message: plan.texto,
-      ...(titular ? { title: titular } : {}),
-      ...(descripcion ? { link_description: descripcion } : {}),
+      ...(texts ? { message: plan.texto } : {}),
+      ...(texts && titular ? { title: titular } : {}),
+      ...(texts && descripcion ? { link_description: descripcion } : {}),
       call_to_action: { type: CTA_TYPE, value: { app_destination: 'WHATSAPP', link: WHATSAPP_LINK } },
       ...greeting,
     }
@@ -455,8 +470,17 @@ export function rowOf(object, { level = 'campana', account, currency, businessId
     automaticas: level === 'anuncio' ? automaticOf(object.creative) : null,
     pagina: level === 'conjunto' ? (object.promoted_object?.page_id ?? null) : null,
     actualizada: object.updated_time ? new Date(Date.parse(object.updated_time)).toISOString() : null,
+    // De qué campaña (y conjunto) es: para bajar a él desde la lista de toda la cuenta.
+    padres:
+      level === 'conjunto'
+        ? { campana: refOf(object.campaign) }
+        : level === 'anuncio'
+          ? { campana: refOf(object.campaign), conjunto: refOf(object.adset) }
+          : null,
   }
 }
+
+const refOf = (object) => (object?.id ? { id: String(object.id), nombre: object.name ?? String(object.id) } : null)
 
 /**
  * Cada campaña (o conjunto, o anuncio) con sus métricas del periodo, de `insights` (una fila por cada una).
@@ -476,7 +500,7 @@ export function rowsOf(objects, insights, options) {
 
 // ── Lo que llega de la app ──
 
-const text = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '')
+export const text = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '')
 const id = (value) => (typeof value === 'string' && /^[\w.-]{1,64}$/.test(value) ? value : null)
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
@@ -517,7 +541,7 @@ export function cleanSettings(raw) {
 }
 
 /** Una imagen ya subida (su hash) o un vídeo (su id); null si no es nada de eso. */
-function cleanMedia(medio) {
+export function cleanMedia(medio) {
   if (medio?.tipo === 'imagen' && /^[a-f0-9]{8,64}$/i.test(medio.hash ?? '')) return { tipo: 'imagen', hash: medio.hash }
   if (medio?.tipo === 'video' && id(medio.id)) return { tipo: 'video', id: medio.id }
   return null
@@ -650,7 +674,7 @@ async function videoThumbnail(meta, account, videoId, { wait = VIDEO_WAIT, poll 
 }
 
 /** La miniatura de cada vídeo del plan (Meta la pide aparte, como imagen). */
-async function thumbnailsOf(meta, plan, options) {
+export async function thumbnailsOf(meta, plan, options) {
   const thumbs = new Map()
   for (const medio of plan.anuncios.flatMap((ad) => [ad.medio, ad.vertical].filter(Boolean))) {
     if (medio.tipo === 'video' && !thumbs.has(medio.id)) {
@@ -661,7 +685,7 @@ async function thumbnailsOf(meta, plan, options) {
 }
 
 /** Un anuncio por imagen o vídeo en el conjunto; sus identificadores. */
-async function createAds(meta, plan, adSetId, thumbs, status) {
+export async function createAds(meta, plan, adSetId, thumbs, status) {
   const ads = []
   for (const ad of plan.anuncios) {
     const creative = await meta.graph(`${plan.cuenta}/adcreatives`, {

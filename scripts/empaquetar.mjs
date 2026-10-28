@@ -170,7 +170,8 @@ PARA INSTALAR (o actualizar sin perder tus tareas)
      Vuelve a abrir el instalador y confirma.
   2. Se abre la Terminal (si pregunta si puede acceder a Descargas, pulsa
      «Permitir»), instala Tablero y luego lo abre en Chrome.
-     Pulsa «Instalar» (arriba a la derecha) para tenerlo en el Dock.
+     Pulsa el icono de instalar a la derecha de la barra de direcciones
+     de Chrome para tenerlo en el Dock.
   3. Si macOS pregunta si «Tablero Avisos» puede acceder a Recordatorios,
      pulsa «Permitir»: así tus tareas llegan al iPhone y te avisan.
      También puede avisarte de que se han añadido elementos que se ejecutan

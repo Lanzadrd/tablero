@@ -11,6 +11,8 @@ import { activate, addAdSet, launch, readAds, saveTemplates, setStatus, uploadFi
 import { claudeStatus, saveClaudeKey, writeCopy } from './textos.mjs'
 import { capture, interpret } from './captura.mjs'
 import { DATA_DIR, exclusive, HttpError, localDay, localTime, readArchive, readStore, writeArchive, writeStore } from './almacen.mjs'
+import { addAds, details, duplicate, remove, update } from './edicion.mjs'
+import { createGoogle } from './google.mjs'
 import { createMeta } from './meta.mjs'
 import { applyOperations } from './operaciones.mjs'
 import { claudeUrl, openOnMac, projectFolder, taskPrompt } from './proyectos.mjs'
@@ -234,6 +236,7 @@ async function metaRoute(req, res, url, meta, options) {
           period: query.get('periodo') ?? '7d',
           campaign: query.get('campana'),
           adSet: query.get('conjunto'),
+          level: query.get('nivel'),
           fresh: query.has('actualizar'),
         }),
       )
@@ -266,6 +269,39 @@ async function metaRoute(req, res, url, meta, options) {
       meta.forget(lanzamiento.cuenta)
       return send(res, 200, { lanzamiento })
     }
+    // Editar lo publicado (edicion.mjs).
+    case '/api/meta/editar': {
+      if (req.method === 'GET') {
+        const query = url.searchParams
+        return send(res, 200, await details(meta, { cuenta: query.get('cuenta'), nivel: query.get('nivel'), id: query.get('id') }))
+      }
+      only(req, 'POST')
+      const body = await readJson(req)
+      const result = await update(meta, body, options)
+      meta.forget(body.cuenta)
+      return send(res, 200, result)
+    }
+    case '/api/meta/duplicar': {
+      only(req, 'POST')
+      const body = await readJson(req)
+      const result = await duplicate(meta, body)
+      meta.forget(body.cuenta)
+      return send(res, 200, result)
+    }
+    case '/api/meta/quitar': {
+      only(req, 'POST')
+      const body = await readJson(req)
+      const result = await remove(meta, body)
+      meta.forget(body.cuenta)
+      return send(res, 200, result)
+    }
+    case '/api/meta/anuncios': {
+      only(req, 'POST')
+      const body = await readJson(req)
+      const result = await addAds(meta, body, options)
+      meta.forget(body.cuenta)
+      return send(res, 200, result)
+    }
     case '/api/anuncios':
       only(req, 'GET')
       return send(res, 200, await readAds())
@@ -280,6 +316,59 @@ async function metaRoute(req, res, url, meta, options) {
       if (req.method === 'GET') return send(res, 200, await claudeStatus())
       only(req, 'PUT')
       return send(res, 200, await saveClaudeKey((await readJson(req))?.clave))
+    default:
+      throw new HttpError(404, 'No encontrado')
+  }
+}
+
+/** Anuncios en Google Ads (google.mjs): la conexión, las cuentas y «En marcha». */
+async function googleRoute(req, res, url, google) {
+  switch (url.pathname) {
+    case '/api/google/estado':
+      only(req, 'GET')
+      return send(res, 200, await google.status())
+    case '/api/google/cliente':
+      only(req, 'PUT')
+      return send(res, 200, await google.saveClient(await readJson(req)))
+    case '/api/google/conectar':
+      only(req, 'GET')
+      res.writeHead(302, { location: await google.connectUrl(req.headers.host), 'cache-control': 'no-store' })
+      return res.end()
+    case '/api/google/desconectar':
+      only(req, 'POST')
+      return send(res, 200, await google.disconnect())
+    case '/api/google/cuentas':
+      only(req, 'GET')
+      return send(res, 200, { portfolios: await google.accounts(url.searchParams.has('actualizar')) })
+    case '/api/google/campanas': {
+      only(req, 'GET')
+      const query = url.searchParams
+      return send(
+        res,
+        200,
+        await google.performance(query.get('cuenta'), {
+          period: query.get('periodo') ?? '7d',
+          campaign: query.get('campana'),
+          adGroup: query.get('conjunto'),
+          level: query.get('nivel'),
+          fresh: query.has('actualizar'),
+        }),
+      )
+    }
+    case '/api/google/campanas/estado':
+      only(req, 'POST')
+      return send(res, 200, await google.setStatus(await readJson(req)))
+    case '/api/google/editar': {
+      if (req.method === 'GET') {
+        const query = url.searchParams
+        return send(res, 200, await google.details({ cuenta: query.get('cuenta'), nivel: query.get('nivel'), id: query.get('id') }))
+      }
+      only(req, 'POST')
+      return send(res, 200, await google.update(await readJson(req)))
+    }
+    case '/api/google/quitar':
+      only(req, 'POST')
+      return send(res, 200, await google.remove(await readJson(req)))
     default:
       throw new HttpError(404, 'No encontrado')
   }
@@ -377,20 +466,27 @@ async function uploadToMeta(req, url, meta) {
 const escapeHtml = (value) =>
   String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 
+/** De dónde vuelve cada conexión: su nombre y la vista de Tablero a la que se vuelve. */
+const CONNECTIONS = {
+  meta: { name: 'Meta', view: 'anuncios' },
+  google: { name: 'Google Ads', view: 'google' },
+}
+
 /**
- * La página a la que vuelve el diálogo de Meta (en la ventana que se abrió para conectar): dice cómo ha ido y
- * se cierra; si se conectó en la ventana de Tablero, vuelve a Anuncios.
+ * La página a la que vuelve el diálogo de Meta o la pantalla de Google (en la ventana que se abrió para conectar):
+ * dice cómo ha ido y se cierra; si se conectó en la ventana de Tablero, vuelve a la vista.
  */
-function connectPage(res, port, { ok, message }) {
-  const back = `http://127.0.0.1${port ? `:${port}` : ''}/?vista=anuncios`
+function connectPage(res, port, { ok, message, to = 'meta' }) {
+  const { name, view } = CONNECTIONS[to]
+  const back = `http://127.0.0.1${port ? `:${port}` : ''}/?vista=${view}`
   res.writeHead(ok ? 200 : 400, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
   res.end(`<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark"><title>Tablero · Meta</title>
+<meta name="color-scheme" content="light dark"><title>Tablero · ${name}</title>
 <style>body{margin:0;display:grid;place-items:center;min-height:100vh;font:15px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:#f5f5f7;color:#1d1d1f}
 @media (prefers-color-scheme:dark){body{background:#111113;color:#f5f5f7}}main{max-width:360px;padding:24px;text-align:center}
 h1{font-size:19px;margin:0 0 6px}p{margin:0 0 16px;color:#6e6e73}a{color:#0066cc}</style></head>
-<body><main><h1>${ok ? 'Tablero ya está conectado con Meta' : 'No se ha podido conectar'}</h1><p>${escapeHtml(message)}</p>
+<body><main><h1>${ok ? `Tablero ya está conectado con ${name}` : 'No se ha podido conectar'}</h1><p>${escapeHtml(message)}</p>
 <a href="${back}">Volver a Tablero</a></main>
 <script>${ok ? `if (window.opener) setTimeout(() => window.close(), 900); else location.replace(${JSON.stringify(back)})` : ''}</script>
 </body></html>`)
@@ -410,6 +506,7 @@ export function createApi({
   titulo = {},
   guardado = () => {},
   meta = createMeta(),
+  google = createGoogle(),
   anuncios = {},
 } = {}) {
   return async function tableroApi(req, res, next) {
@@ -428,6 +525,17 @@ export function createApi({
           return connectPage(res, port, { ok: true, message: `Como ${status.usuario?.nombre ?? 'tu cuenta'}. Puedes cerrar esta ventana.` })
         } catch (err) {
           return connectPage(res, port, { ok: false, message: err?.message ?? String(err) })
+        }
+      }
+      // Lo mismo con la vuelta de la pantalla de Google (accounts.google.com).
+      if (pathname === '/api/google/volver') {
+        if (!isLocalHost(req)) throw new HttpError(403, 'Solo accesible desde este ordenador')
+        only(req, 'GET')
+        try {
+          const status = await google.finishConnect(Object.fromEntries(url.searchParams))
+          return connectPage(res, port, { ok: true, to: 'google', message: `Como ${status.usuario?.email ?? 'tu cuenta de Google'}. Puedes cerrar esta ventana.` })
+        } catch (err) {
+          return connectPage(res, port, { ok: false, to: 'google', message: err?.message ?? String(err) })
         }
       }
       checkCaller(req)
@@ -512,6 +620,7 @@ export function createApi({
       if (pathname.startsWith('/api/meta/') || pathname === '/api/anuncios' || pathname.startsWith('/api/anuncios/')) {
         return await metaRoute(req, res, url, meta, anuncios)
       }
+      if (pathname.startsWith('/api/google/')) return await googleRoute(req, res, url, google)
 
       if (pathname !== '/api/board') throw new HttpError(404, 'No encontrado')
 

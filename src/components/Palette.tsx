@@ -30,8 +30,13 @@ export type CommandId =
   | 'calendar'
   | 'subscriptions'
   | 'ads'
+  | 'google'
   | 'sidebar'
   | 'shortcuts'
+  | 'avisos'
+  | 'theme-light'
+  | 'theme-dark'
+  | 'theme-system'
 
 interface Command {
   id: CommandId
@@ -48,9 +53,14 @@ const COMMANDS: Command[] = [
   { id: 'board', label: 'Tablero', keys: ['T'], icon: Icon.Columns },
   { id: 'calendar', label: 'Calendario', keys: ['C'], icon: Icon.Calendar },
   { id: 'subscriptions', label: 'Suscripciones', keys: ['U'], icon: Icon.Card },
-  { id: 'ads', label: 'Anuncios', keys: ['P'], icon: Icon.Megaphone },
+  { id: 'ads', label: 'Meta Ads', keys: ['P'], icon: Icon.MetaLogo },
+  { id: 'google', label: 'Google Ads', keys: ['G'], icon: Icon.GoogleAdsLogo },
   { id: 'sidebar', label: 'Mostrar u ocultar el menú lateral', keys: ['⌃', '⌘', 'S'], icon: Icon.SidebarLeft },
   { id: 'shortcuts', label: 'Atajos de teclado', keys: ['?'], icon: Icon.Keyboard },
+  { id: 'avisos', label: 'Avisos en el iPhone', keys: [], icon: Icon.Bell },
+  { id: 'theme-light', label: 'Modo claro', keys: [], icon: Icon.Sun },
+  { id: 'theme-dark', label: 'Modo oscuro', keys: [], icon: Icon.Moon },
+  { id: 'theme-system', label: 'Apariencia del sistema', keys: [], icon: Icon.Contrast },
 ]
 
 /** Como mucho, tantas de cada grupo (se afina escribiendo más). */

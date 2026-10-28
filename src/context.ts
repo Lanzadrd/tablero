@@ -3,7 +3,7 @@ import type { Board } from './model'
 import type { Actions } from './state'
 import type { AvisosStatus } from './sync'
 
-export type View = 'today' | 'board' | 'calendar' | 'subscriptions' | 'ads'
+export type View = 'today' | 'board' | 'calendar' | 'subscriptions' | 'ads' | 'google'
 
 /**
  * Lo que la vista Suscripciones abre en cuanto está en pantalla: la ficha de una, «Nueva suscripción» o
@@ -32,6 +32,9 @@ export interface UI {
   /** Ayuda de atajos de teclado (tecla ?). */
   shortcutsOpen: boolean
   setShortcutsOpen: (open: boolean) => void
+  /** El estado de los avisos en el iPhone (desde la búsqueda). */
+  avisosOpen: boolean
+  setAvisosOpen: (open: boolean) => void
   /** Búsqueda (⌘K, /). */
   openSearch: () => void
   /** Va al tablero, enseña la tarea con el foco y, si `open`, abre su detalle. false si no existe. */

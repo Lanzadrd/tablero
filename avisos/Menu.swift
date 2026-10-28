@@ -116,13 +116,28 @@ final class BarraDeMenus: NSObject, NSMenuDelegate {
 
     // MARK: Icono
 
-    /// Tres columnas como las del icono de la app, en plantilla (se adapta a la barra clara u oscura).
+    /// La T con sus dos ondas, como en el icono de la app, en plantilla (se adapta a la barra clara u oscura).
     private static func icono() -> NSImage {
         let imagen = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
             NSColor.black.setFill()
-            for (i, alto) in [13.0, 10.0, 7.0].enumerated() {
-                let columna = NSRect(x: 1.5 + Double(i) * 5.5, y: 2.5, width: 4, height: alto)
-                NSBezierPath(roundedRect: columna, xRadius: 1.25, yRadius: 1.25).fill()
+            NSColor.black.setStroke()
+            NSBezierPath(roundedRect: NSRect(x: 1, y: 3.45, width: 11.1, height: 3.4), xRadius: 1.7, yRadius: 1.7).fill()
+            NSBezierPath(roundedRect: NSRect(x: 4.85, y: 3.45, width: 3.4, height: 12.6), xRadius: 1.7, yRadius: 1.7).fill()
+            // Cada onda es una curva cuadrática (inicio, control, fin), dibujada como cúbica.
+            for (inicio, control, fin) in [
+                (NSPoint(x: 13.6, y: 3.45), NSPoint(x: 15.05, y: 5.15), NSPoint(x: 13.6, y: 6.85)),
+                (NSPoint(x: 15.05, y: 2), NSPoint(x: 17.2, y: 5.15), NSPoint(x: 15.05, y: 8.3)),
+            ] {
+                let onda = NSBezierPath()
+                onda.move(to: inicio)
+                onda.curve(
+                    to: fin,
+                    controlPoint1: NSPoint(x: inicio.x + (control.x - inicio.x) * 2 / 3, y: inicio.y + (control.y - inicio.y) * 2 / 3),
+                    controlPoint2: NSPoint(x: fin.x + (control.x - fin.x) * 2 / 3, y: fin.y + (control.y - fin.y) * 2 / 3)
+                )
+                onda.lineWidth = 1.6
+                onda.lineCapStyle = .round
+                onda.stroke()
             }
             return true
         }

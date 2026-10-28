@@ -1,17 +1,27 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react'
-import { daysLeft, metaApi, redirectUri, type Launch, type MetaStatus, type Portfolio, type Template } from '../ads'
+import { metaAccounts, type AccountStore } from '../adAccounts'
+import { daysLeft, metaApi, redirectUri, type AdAccount, type Launch, type MetaStatus, type Portfolio, type Template } from '../ads'
 import { formatWhen } from '../dates'
 import { cx, useStoredState } from '../util'
 import { AdsComposer } from './AdsComposer'
-import { RunningCampaigns } from './AdsRunning'
+import { MetaAdder, MetaEditor } from './AdsEdit'
+import { META_SOURCE, RunningCampaigns, type RunningSource } from './AdsRunning'
 import * as Icon from './Icons'
 import { Popover } from './Popover'
 import { Segmented } from './Segmented'
 import '../styles/anuncios.css'
 
 const DEVELOPERS = 'https://developers.facebook.com/apps/'
-/** La lista de cuentas (se puede ocultar para que «En marcha» tenga todo el ancho). */
-const ACCOUNTS_ID = 'anuncios-cuentas'
+
+/** «En marcha» con Meta, con todo lo de editar: formularios, anuncio nuevo, duplicar, archivar y borrar. */
+const META_RUNNING: RunningSource = {
+  ...META_SOURCE,
+  editor: (props) => <MetaEditor {...props} />,
+  adder: (props) => <MetaAdder {...props} />,
+  duplicate: metaApi.duplicate,
+  archive: (account, level, id) => metaApi.remove(account, level, id, 'archivar'),
+  remove: { label: 'Borrar', run: (account, level, id) => metaApi.remove(account, level, id, 'borrar') },
+}
 /** Con menos días que estos, la conexión avisa de que va a caducar. */
 const EXPIRY_WARNING = 7
 
@@ -48,11 +58,15 @@ export function AdsView() {
     window.addEventListener('focus', load)
     return () => window.removeEventListener('focus', load)
   }, [load])
+  // Sin conexión, el menú lateral deja de enseñar las cuentas.
+  useEffect(() => {
+    if (status && !status.conectada) metaAccounts.forget()
+  }, [status])
 
   return (
     <main className="ads" aria-labelledby={titleId}>
       <header className="ads-head">
-        <h2 id={titleId}>Anuncios</h2>
+        <h2 id={titleId}>Meta Ads</h2>
         {status?.conectada && <ConnectionButton status={status} onChange={setStatus} />}
       </header>
       {error && !status && (
@@ -68,24 +82,44 @@ export function AdsView() {
 
 // ── Conexión ──
 
-/** Abre el diálogo de Meta en una ventana y avisa cuando ya hay conexión. */
-function useConnect(onChange: (status: MetaStatus) => void, onError: (message: string) => void) {
+/** Dónde empieza la conexión con un sitio de anuncios, cómo se mira y qué cambia al volver a conectar. */
+export interface Connection<S extends { conectada: boolean }> {
+  url: string
+  window: string
+  status: () => Promise<S>
+  /** Lo que es distinto en una conexión nueva (la fecha en que caduca, en la que se conectó). */
+  stamp: (status: S) => string | null
+}
+
+const META_CONNECTION: Connection<MetaStatus> = {
+  url: '/api/meta/conectar',
+  window: 'tablero-meta',
+  status: metaApi.status,
+  stamp: (s) => s.caduca,
+}
+
+/** Abre la pantalla de conexión en una ventana y avisa cuando ya hay conexión (nueva). */
+export function useConnect<S extends { conectada: boolean }>(
+  connection: Connection<S>,
+  onChange: (status: S) => void,
+  onError: (message: string) => void,
+) {
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
   useEffect(() => () => clearInterval(timer.current ?? undefined), [])
   return useCallback(
-    (wasConnectedAt: string | null = null) => {
-      const popup = window.open('/api/meta/conectar', 'tablero-meta', 'popup,width=640,height=780')
+    (previous: string | null = null) => {
+      const popup = window.open(connection.url, connection.window, 'popup,width=640,height=780')
       if (!popup) {
-        // Sin ventanas emergentes: en esta misma (al terminar vuelve a /?vista=anuncios).
-        location.href = '/api/meta/conectar'
+        // Sin ventanas emergentes: en esta misma (al terminar vuelve a la vista).
+        location.href = connection.url
         return
       }
       clearInterval(timer.current ?? undefined)
       timer.current = setInterval(() => {
         const closed = popup.closed
-        metaApi.status().then(
+        connection.status().then(
           (s) => {
-            const renewed = s.conectada && s.caduca !== wasConnectedAt
+            const renewed = s.conectada && connection.stamp(s) !== previous
             if (renewed || closed) clearInterval(timer.current ?? undefined)
             if (renewed) onChange(s)
           },
@@ -97,7 +131,7 @@ function useConnect(onChange: (status: MetaStatus) => void, onError: (message: s
         )
       }, 1500)
     },
-    [onChange, onError],
+    [connection, onChange, onError],
   )
 }
 
@@ -111,7 +145,7 @@ function Setup({ status, onChange }: { status: MetaStatus; onChange: (status: Me
   const [pasting, setPasting] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const connect = useConnect(onChange, setError)
+  const connect = useConnect(META_CONNECTION, onChange, setError)
 
   const run = async (fn: () => Promise<MetaStatus>) => {
     setBusy(true)
@@ -157,8 +191,9 @@ function Setup({ status, onChange }: { status: MetaStatus; onChange: (status: Me
             <h4>Una app de Meta para Tablero</h4>
             <p>
               En developers.facebook.com, <b>Crear app</b> con el caso de uso «Crear y gestionar anuncios con la API de
-              marketing» (o usa una que ya tengas). Es solo para ti: no hace falta publicarla ni pasar la revisión de
-              Meta.
+              marketing» (o usa una que ya tengas). Es solo para ti: no hace falta la revisión de Meta, pero sí
+              publicarla (en modo desarrollo Meta no deja crear anuncios), y para eso pide una URL de política de
+              privacidad.
             </p>
             <p>
               En su inicio de sesión con Facebook, añade esta dirección a las «URI de redireccionamiento de OAuth válidas»:
@@ -298,7 +333,7 @@ function Setup({ status, onChange }: { status: MetaStatus; onChange: (status: Me
 }
 
 /** Una dirección para copiar tal cual. */
-function CopyLine({ value }: { value: string }) {
+export function CopyLine({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <div className="ads-copy">
@@ -327,7 +362,7 @@ function ConnectionButton({ status, onChange }: { status: MetaStatus; onChange: 
   const button = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const connect = useConnect(onChange, setError)
+  const connect = useConnect(META_CONNECTION, onChange, setError)
   const days = daysLeft(status.caduca)
   const warn = (days !== null && days <= EXPIRY_WARNING) || status.faltan.length > 0
 
@@ -392,38 +427,14 @@ function ConnectionButton({ status, onChange }: { status: MetaStatus; onChange: 
 // ── Cuentas, plantillas y campañas ──
 
 function Workspace({ status, onStatus }: { status: MetaStatus; onStatus: (status: MetaStatus) => void }) {
-  const [portfolios, setPortfolios] = useState<Portfolio[] | null>(null)
+  const { portfolios, selected: accountId, loading, error: accountsError, disconnected } = metaAccounts.useAccounts()
   const [templates, setTemplates] = useState<Template[]>([])
   const [launches, setLaunches] = useState<Launch[]>([])
-  const [accountId, setAccountId] = useStoredState<string | null>('tablero.anuncios.cuenta', null)
   const [section, setSection] = useStoredState<Section>('tablero.anuncios.seccion', 'marcha')
-  const [accountsHidden, setAccountsHidden] = useStoredState('tablero.anuncios.sinCuentas', false)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  const loadAccounts = useCallback(
-    (fresh = false) => {
-      setLoading(true)
-      metaApi
-        .portfolios(fresh)
-        .then(
-          (list) => {
-            setPortfolios(list)
-            setError(null)
-          },
-          (err) => {
-            setError(errorText(err))
-            // La conexión caducó o se retiró: se vuelve a la pantalla de conectar.
-            if (err?.status === 401) metaApi.status().then(onStatus, () => {})
-          },
-        )
-        .finally(() => setLoading(false))
-    },
-    [onStatus],
-  )
 
   useEffect(() => {
-    loadAccounts()
+    void metaAccounts.load()
     metaApi.saved().then(
       (saved) => {
         setTemplates(saved.plantillas)
@@ -431,7 +442,12 @@ function Workspace({ status, onStatus }: { status: MetaStatus; onStatus: (status
       },
       (err) => setError(errorText(err)),
     )
-  }, [loadAccounts, status.usuario?.id])
+  }, [status.usuario?.id])
+
+  // La conexión caducó o se retiró: se vuelve a la pantalla de conectar.
+  useEffect(() => {
+    if (disconnected) metaApi.status().then(onStatus, () => {})
+  }, [disconnected, onStatus])
 
   const accounts = portfolios?.flatMap((p) => p.cuentas.map((account) => ({ account, portfolio: p }))) ?? []
   const selected = accounts.find((a) => a.account.id === accountId) ?? null
@@ -440,8 +456,8 @@ function Workspace({ status, onStatus }: { status: MetaStatus; onStatus: (status
   useEffect(() => {
     if (!portfolios || selected) return
     const first = accounts.find((a) => a.account.activa) ?? accounts[0]
-    if (first) setAccountId(first.account.id)
-  }, [portfolios, selected, accounts, setAccountId])
+    if (first) metaAccounts.select(first.account.id)
+  }, [portfolios, selected, accounts])
 
   const saveTemplates = useCallback(async (next: Template[]) => {
     const saved = await metaApi.saveTemplates(next)
@@ -454,10 +470,10 @@ function Workspace({ status, onStatus }: { status: MetaStatus; onStatus: (status
   }, [])
 
   if (!portfolios) {
-    return error ? (
+    return accountsError ? (
       <div className="ads-error-box" role="alert">
-        <p>{error}</p>
-        <button type="button" className="btn" onClick={() => loadAccounts(true)}>
+        <p>{accountsError}</p>
+        <button type="button" className="btn" disabled={loading} onClick={() => void metaAccounts.load(true)}>
           Reintentar
         </button>
       </div>
@@ -468,87 +484,121 @@ function Workspace({ status, onStatus }: { status: MetaStatus; onStatus: (status
     )
   }
 
+  const shownError = error ?? accountsError
   return (
-    <div className={cx('ads-layout', accountsHidden && 'is-full')}>
-      {!accountsHidden && (
-        <AccountList
-          portfolios={portfolios}
-          selected={selected?.account.id ?? null}
-          loading={loading}
-          onSelect={setAccountId}
-          onRefresh={() => loadAccounts(true)}
-        />
+    <div className="ads-main">
+      {shownError && (
+        <p className="ads-error" role="alert">
+          {shownError}
+        </p>
       )}
-      <div className="ads-main">
-        {error && (
-          <p className="ads-error" role="alert">
-            {error}
-          </p>
-        )}
-        {selected ? (
-          <>
-            <div className="ads-account-title">
-              <button
-                type="button"
-                className="icon-btn"
-                aria-pressed={!accountsHidden}
-                aria-controls={accountsHidden ? undefined : ACCOUNTS_ID}
-                aria-label="Lista de cuentas"
-                title={accountsHidden ? 'Mostrar las cuentas' : 'Ocultar las cuentas para ver más columnas'}
-                onClick={() => setAccountsHidden(!accountsHidden)}
-              >
-                <Icon.SidebarLeft />
-              </button>
-              <Avatar name={selected.portfolio.nombre} src={selected.portfolio.foto} />
-              <div className="ads-account-title-text">
-                <h3>{selected.account.nombre}</h3>
-                <p>
-                  {selected.portfolio.nombre} · {selected.account.moneda}
-                  {!selected.account.activa && <span className="ads-inactive"> · Cuenta {selected.account.estado}</span>}
-                </p>
-              </div>
-              <Segmented value={section === 'nueva' ? 'nueva' : 'marcha'} options={SECTIONS} label="Sección" onChange={setSection} />
+      {selected ? (
+        <>
+          <div className="ads-account-title">
+            <Avatar name={selected.portfolio.nombre} src={selected.portfolio.foto} />
+            <div className="ads-account-title-text">
+              <h3>
+                <AccountSwitcher store={metaAccounts} portfolios={portfolios} account={selected.account} loading={loading} />
+              </h3>
+              <p>
+                {selected.portfolio.nombre} · {selected.account.moneda}
+                {!selected.account.activa && <span className="ads-inactive"> · Cuenta {selected.account.estado}</span>}
+              </p>
             </div>
-            {section !== 'nueva' && (
-              <RunningCampaigns
-                key={selected.account.id}
-                account={selected.account}
-                templates={templates}
-                onTemplates={saveTemplates}
-                onLaunch={updateLaunch}
-                onCreate={() => setSection('nueva')}
-              />
-            )}
-            {/* Oculta en vez de quitada: lo que se esté preparando sigue ahí al volver. */}
-            <div hidden={section !== 'nueva'}>
-              <AdsComposer
-                key={selected.account.id}
-                account={selected.account}
-                templates={templates}
-                launches={launches.filter((l) => l.cuenta === selected.account.id)}
-                onTemplates={saveTemplates}
-                onLaunch={updateLaunch}
-              />
-            </div>
-          </>
-        ) : (
-          <p className="ads-empty">
-            No hay cuentas publicitarias a las que Tablero pueda acceder. Vuelve a conectar y da acceso a los portfolios que
-            quieras gestionar.
-          </p>
-        )}
-      </div>
+            <Segmented value={section === 'nueva' ? 'nueva' : 'marcha'} options={SECTIONS} label="Sección" onChange={setSection} />
+          </div>
+          {section !== 'nueva' && (
+            <RunningCampaigns
+              key={selected.account.id}
+              account={selected.account}
+              source={META_RUNNING}
+              meta={{ templates, onTemplates: saveTemplates, onLaunch: updateLaunch, onCreate: () => setSection('nueva') }}
+            />
+          )}
+          {/* Oculta en vez de quitada: lo que se esté preparando sigue ahí al volver. */}
+          <div hidden={section !== 'nueva'}>
+            <AdsComposer
+              key={selected.account.id}
+              account={selected.account}
+              templates={templates}
+              launches={launches.filter((l) => l.cuenta === selected.account.id)}
+              onTemplates={saveTemplates}
+              onLaunch={updateLaunch}
+            />
+          </div>
+        </>
+      ) : (
+        <p className="ads-empty">
+          No hay cuentas publicitarias a las que Tablero pueda acceder. Vuelve a conectar y da acceso a los portfolios que
+          quieras gestionar.
+        </p>
+      )}
     </div>
   )
 }
 
+/**
+ * El nombre de la cuenta, que abre la lista para cambiar a otra. Las cuentas están también en el menú lateral;
+ * esto sirve cuando el menú está oculto o se queda en iconos.
+ */
+export function AccountSwitcher({
+  store,
+  portfolios,
+  account,
+  loading,
+  heading = 'Portfolios',
+}: {
+  store: AccountStore
+  portfolios: Portfolio[]
+  account: AdAccount
+  loading: boolean
+  /** Cómo se llaman los grupos de cuentas: los portfolios de Meta, las cuentas de Google Ads. */
+  heading?: string
+}) {
+  const button = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        className="ads-switcher"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        title="Cambiar de cuenta"
+        onClick={() => setOpen(!open)}
+      >
+        <span>{account.nombre}</span>
+        <Icon.Chevron />
+      </button>
+      {open && button.current && (
+        <Popover anchor={button.current} placement="below-start" width={300} label="Cuentas publicitarias" onClose={() => setOpen(false)}>
+          <AccountList
+            heading={heading}
+            portfolios={portfolios}
+            selected={account.id}
+            loading={loading}
+            onSelect={(id) => {
+              store.select(id)
+              setOpen(false)
+            }}
+            onRefresh={() => void store.load(true)}
+          />
+        </Popover>
+      )}
+    </>
+  )
+}
+
 function AccountList({
+  heading,
   portfolios,
   selected,
   loading,
   onSelect,
   onRefresh,
 }: {
+  heading: string
   portfolios: Portfolio[]
   selected: string | null
   loading: boolean
@@ -556,9 +606,9 @@ function AccountList({
   onRefresh: () => void
 }) {
   return (
-    <nav id={ACCOUNTS_ID} className="ads-accounts" aria-label="Cuentas publicitarias">
+    <nav className="ads-accounts" aria-label="Cuentas publicitarias">
       <div className="ads-accounts-head">
-        <h3>Portfolios</h3>
+        <h3>{heading}</h3>
         <button type="button" className="icon-btn" aria-label="Actualizar las cuentas" title="Actualizar las cuentas" disabled={loading} onClick={onRefresh}>
           <Icon.Reload />
         </button>

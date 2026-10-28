@@ -8,34 +8,6 @@ import * as Icon from './Icons'
 import { Popover } from './Popover'
 import '../styles/teclado.css'
 
-/** Evento de Chrome cuando la web se puede instalar como app. */
-interface InstallPromptEvent extends Event {
-  prompt: () => Promise<{ outcome: 'accepted' | 'dismissed' }>
-}
-
-/** Botón «Instalar» mientras Tablero no esté instalado como app de Chrome. */
-function useInstallPrompt() {
-  const [prompt, setPrompt] = useState<InstallPromptEvent | null>(null)
-  useEffect(() => {
-    const onPrompt = (e: Event) => {
-      e.preventDefault()
-      setPrompt(e as InstallPromptEvent)
-    }
-    const onInstalled = () => setPrompt(null)
-    window.addEventListener('beforeinstallprompt', onPrompt)
-    window.addEventListener('appinstalled', onInstalled)
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onPrompt)
-      window.removeEventListener('appinstalled', onInstalled)
-    }
-  }, [])
-  if (!prompt) return null
-  return async () => {
-    const { outcome } = await prompt.prompt()
-    if (outcome === 'accepted') setPrompt(null)
-  }
-}
-
 type AvisosState = 'activo' | 'sin-permiso' | 'iniciando' | 'error' | 'desconectado'
 
 const avisosState = (avisos: AvisosStatus): AvisosState =>
@@ -115,18 +87,18 @@ function AvisosPanel({ avisos, inbox }: { avisos: AvisosStatus; inbox: string })
   )
 }
 
+/**
+ * La barra de arriba: el nombre y la fecha, y en el centro la búsqueda (⌘K), que lleva también a los comandos
+ * (nueva columna, atajos, avisos en el iPhone…). Los atajos y los avisos se abren debajo de ella.
+ */
 export function TopBar() {
   const now = useNow()
   const ui = useUI()
   const inbox = useBoard().columns.find((c) => c.inbox)?.name ?? 'Bandeja'
-  const install = useInstallPrompt()
-  const helpButton = useRef<HTMLButtonElement>(null)
-  // La ayuda se abre también con «?» y desde la búsqueda (src/keys.ts).
+  const search = useRef<HTMLButtonElement>(null)
+  // La ayuda se abre con «?» y desde la búsqueda (src/keys.ts).
   const helpOpen = ui.shortcutsOpen
   const setHelpOpen = ui.setShortcutsOpen
-  const avisosButton = useRef<HTMLButtonElement>(null)
-  const [avisosOpen, setAvisosOpen] = useState(false)
-  const avisos = ui.avisos ? avisosState(ui.avisos) : null
   const [appVersion, setAppVersion] = useState<string | null>(null)
 
   useEffect(() => {
@@ -139,68 +111,34 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      {/* Con el menú oculto (o reducido a iconos por falta de ancho), se abre y se cierra desde aquí. */}
-      <button
-        type="button"
-        className={cx('icon-btn', 'topbar-sidebar-btn', ui.sidebarOpen && 'is-sidebar-open')}
-        aria-label={ui.sidebarOpen ? 'Ocultar el menú lateral' : 'Mostrar el menú lateral'}
-        title={`${ui.sidebarOpen ? 'Ocultar' : 'Mostrar'} el menú lateral (⌃⌘S)`}
-        onClick={ui.toggleSidebar}
-      >
-        <Icon.SidebarLeft />
-      </button>
       <div className="topbar-title">
+        {/* Con el menú oculto (o reducido a iconos por falta de ancho), se abre y se cierra desde aquí. */}
+        <button
+          type="button"
+          className={cx('icon-btn', 'topbar-sidebar-btn', ui.sidebarOpen && 'is-sidebar-open')}
+          aria-label={ui.sidebarOpen ? 'Ocultar el menú lateral' : 'Mostrar el menú lateral'}
+          title={`${ui.sidebarOpen ? 'Ocultar' : 'Mostrar'} el menú lateral (⌃⌘S)`}
+          onClick={ui.toggleSidebar}
+        >
+          <Icon.SidebarLeft />
+        </button>
         <h1>Tablero</h1>
         <span className="topbar-date">{formatToday(now)}</span>
       </div>
-      <div className="topbar-actions">
-        {install && (
-          <button type="button" className="btn is-accent" onClick={install} title="Instalar Tablero como app, con su icono en el Dock">
-            <Icon.Download />
-            Instalar
-          </button>
-        )}
-        {ui.avisos && (
-          <button
-            ref={avisosButton}
-            type="button"
-            className={cx('icon-btn', 'avisos-btn', avisos && `is-${avisos}`)}
-            aria-label="Avisos en el iPhone"
-            title="Avisos en el iPhone"
-            aria-expanded={avisosOpen}
-            onClick={() => setAvisosOpen((open) => !open)}
-          >
-            <Icon.Bell />
-          </button>
-        )}
-        <button
-          ref={helpButton}
-          type="button"
-          className="icon-btn"
-          aria-label="Atajos de teclado"
-          title="Atajos de teclado (?)"
-          aria-expanded={helpOpen}
-          onClick={() => setHelpOpen(!helpOpen)}
-        >
-          <Icon.Keyboard />
-        </button>
-        <button type="button" className="icon-btn" aria-label="Buscar" title="Buscar (⌘K)" onClick={ui.openSearch}>
-          <Icon.Search />
-        </button>
-        <button type="button" className="btn topbar-new-column" onClick={ui.newColumn} title="Nueva columna (⇧N)">
-          <Icon.Plus />
-          <span className="topbar-btn-label">Columna</span>
-        </button>
-      </div>
+      <button ref={search} type="button" className="topbar-search" aria-keyshortcuts="Meta+K /" onClick={ui.openSearch}>
+        <Icon.Search />
+        <span className="topbar-search-label">Buscar</span>
+        <kbd>⌘K</kbd>
+      </button>
 
-      {avisosOpen && ui.avisos && avisosButton.current && (
-        <Popover anchor={avisosButton.current} placement="below-end" width={320} label="Avisos en el iPhone" onClose={() => setAvisosOpen(false)}>
+      {ui.avisosOpen && ui.avisos && search.current && (
+        <Popover anchor={search.current} placement="below-end" width={320} label="Avisos en el iPhone" onClose={() => ui.setAvisosOpen(false)}>
           <AvisosPanel avisos={ui.avisos} inbox={inbox} />
         </Popover>
       )}
-      {helpOpen && helpButton.current && (
+      {helpOpen && search.current && (
         <Popover
-          anchor={helpButton.current}
+          anchor={search.current}
           placement="below-end"
           width={600}
           label="Atajos de teclado"

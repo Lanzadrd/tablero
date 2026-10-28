@@ -48,19 +48,19 @@ type Phase =
   | { kind: 'creating' }
   | { kind: 'done'; launch: Launch }
 
-const GENDERS: Array<{ value: Gender; label: string }> = [
+export const GENDERS: Array<{ value: Gender; label: string }> = [
   { value: 'todos', label: 'Todos' },
   { value: 'mujeres', label: 'Mujeres' },
   { value: 'hombres', label: 'Hombres' },
 ]
 
 /** Cómo empieza la persona en el chat: con su mensaje ya escrito o tocando una pregunta. */
-const CHAT_STARTS: Array<{ value: AdSettings['tipoMensaje']; label: string }> = [
+export const CHAT_STARTS: Array<{ value: AdSettings['tipoMensaje']; label: string }> = [
   { value: 'escrito', label: 'Mensaje ya escrito' },
   { value: 'preguntas', label: 'Preguntas frecuentes' },
 ]
 
-const PLACEMENTS: Array<{ value: Placements; label: string }> = [
+export const PLACEMENTS: Array<{ value: Placements; label: string }> = [
   { value: 'auto', label: 'Automáticas' },
   { value: 'facebook', label: 'Solo Facebook' },
   { value: 'instagram', label: 'Solo Instagram' },
@@ -714,9 +714,9 @@ export function AdsComposer({
 
 const adsCount = (n: number) => (n === 1 ? '1 anuncio' : `${n} anuncios`)
 
-const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
+export const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
 
-function Field({ label, htmlFor, note, children }: { label: string; htmlFor?: string; note?: string | null; children: ReactNode }) {
+export function Field({ label, htmlFor, note, children }: { label: string; htmlFor?: string; note?: string | null; children: ReactNode }) {
   return (
     <div className="field ads-field">
       {htmlFor ? (
@@ -734,7 +734,7 @@ function Field({ label, htmlFor, note, children }: { label: string; htmlFor?: st
   )
 }
 
-function Chips<T extends string>({ label, options, value, onChange }: { label: string; options: Array<{ value: T; label: string }>; value: T; onChange: (value: T) => void }) {
+export function Chips<T extends string>({ label, options, value, onChange }: { label: string; options: Array<{ value: T; label: string }>; value: T; onChange: (value: T) => void }) {
   return (
     <div className="ads-chips" role="radiogroup" aria-label={label}>
       {options.map((o) => (
@@ -747,7 +747,7 @@ function Chips<T extends string>({ label, options, value, onChange }: { label: s
 }
 
 /** Las preguntas frecuentes del chat: una por línea (al menos una a la vista), hasta MAX_QUESTIONS. */
-function Questions({ value, onChange }: { value: string[]; onChange: (questions: string[]) => void }) {
+export function Questions({ value, onChange }: { value: string[]; onChange: (questions: string[]) => void }) {
   const questions = value.length ? value : ['']
   return (
     <div className="ads-questions">
@@ -778,7 +778,7 @@ function Questions({ value, onChange }: { value: string[]; onChange: (questions:
 }
 
 /** Cómo se verá el chat: vuestro mensaje y, abajo, lo de la persona (su mensaje escrito o las preguntas). */
-function ChatPreview({ settings }: { settings: AdSettings }) {
+export function ChatPreview({ settings }: { settings: AdSettings }) {
   const questions = settings.preguntas.map((q) => q.trim()).filter(Boolean)
   return (
     <div className="ads-chat-preview" aria-hidden="true">
@@ -798,7 +798,7 @@ function ChatPreview({ settings }: { settings: AdSettings }) {
 }
 
 /** Países, regiones y ciudades: los elegidos como píldoras y un buscador (el de Meta). */
-function PlacePicker({ id, places, onChange }: { id: string; places: Place[]; onChange: (places: Place[]) => void }) {
+export function PlacePicker({ id, places, onChange }: { id: string; places: Place[]; onChange: (places: Place[]) => void }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Place[]>([])
   const [active, setActive] = useState(0)

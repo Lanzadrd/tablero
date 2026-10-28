@@ -1,4 +1,4 @@
-import type { SVGProps } from 'react'
+import { useId, type SVGProps } from 'react'
 
 const stroke: SVGProps<SVGSVGElement> = {
   width: 16,
@@ -290,5 +290,106 @@ export const Sparkles = () => (
   <svg {...stroke}>
     <path d="M6.5 2.75 7.6 5.9l3.15 1.1-3.15 1.1L6.5 11.25 5.4 8.1 2.25 7l3.15-1.1z" />
     <path d="M12 9.75l.55 1.45 1.45.55-1.45.55L12 13.75l-.55-1.45L10 11.75l1.45-.55z" />
+  </svg>
+)
+
+/** Barras que suben (anuncios de búsqueda: Google Ads) */
+export const Chart = () => (
+  <svg {...stroke}>
+    <path d="M2.25 13.75h11.5" />
+    <rect x="3.25" y="8.25" width="2.5" height="3.5" rx="0.75" />
+    <rect x="6.75" y="5.75" width="2.5" height="6" rx="0.75" />
+    <rect x="10.25" y="2.75" width="2.5" height="9" rx="0.75" />
+  </svg>
+)
+
+/** Los logos van con sus colores (no con el del texto), del mismo tamaño que los iconos. */
+const logo: SVGProps<SVGSVGElement> = {
+  width: 16,
+  height: 16,
+  viewBox: '0 0 24 24',
+  'aria-hidden': true,
+  focusable: false,
+}
+
+/** Logo de Meta: el lazo azul con su degradado (el lado derecho, más abierto, como en el de Meta). */
+export const MetaLogo = () => {
+  const gradient = `meta-${useId()}`
+  return (
+    <svg {...logo}>
+      <defs>
+        <linearGradient id={gradient} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#0064E0" />
+          <stop offset="1" stopColor="#0082FB" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M10.5 12.4C9.1 9.6 7.8 7.4 6.2 7.4 4.3 7.4 3.2 9.9 3.2 12.4s1.1 4.2 2.6 4.2c1.9 0 3.2-2.1 4.7-4.8 1.6-2.8 3.7-4.6 6.1-4.6 2.8 0 4.7 2.4 4.7 5.3 0 2.5-1.4 4.3-3.7 4.3-2.4 0-5-1.8-7.1-4.4Z"
+        fill="none"
+        stroke={`url(#${gradient})`}
+        strokeWidth="2.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** Logo de Google Ads: la «A» amarilla y azul con el punto verde. */
+export const GoogleAdsLogo = () => (
+  <svg {...logo}>
+    <path d="M12 6.5 6 17.5" stroke="#FBBC04" strokeWidth="6" strokeLinecap="round" />
+    <path d="M12 6.5l6 11" stroke="#4285F4" strokeWidth="6" strokeLinecap="round" />
+    <circle cx="6" cy="17.5" r="3" fill="#34A853" />
+  </svg>
+)
+
+/** Logo de Tablero: una T (una columna con su cabecera) con dos ondas, como un megáfono. */
+export const TableroLogo = ({ size = 24 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 88 88" aria-hidden focusable={false}>
+    <rect width="88" height="88" rx="20" fill="#0A84FF" />
+    <rect x="14" y="18" width="46" height="14" rx="7" fill="#FFFFFF" />
+    <rect x="30" y="18" width="14" height="52" rx="7" fill="#FFFFFF" />
+    <path d="M66 18q6 7 0 14M72 12q9 13 0 26" fill="none" stroke="#FF9F0A" strokeWidth="6.5" strokeLinecap="round" />
+  </svg>
+)
+
+/** Sol (apariencia clara) */
+export const Sun = () => (
+  <svg {...stroke}>
+    <circle cx="8" cy="8" r="2.75" />
+    <path d="M8 1.75v1.5M8 12.75v1.5M1.75 8h1.5M12.75 8h1.5M3.6 3.6l1.05 1.05M11.35 11.35l1.05 1.05M3.6 12.4l1.05-1.05M11.35 4.65l1.05-1.05" />
+  </svg>
+)
+
+/** Luna (apariencia oscura) */
+export const Moon = () => (
+  <svg {...stroke}>
+    <path d="M13.25 9.6A5.5 5.5 0 0 1 6.4 2.75a5.5 5.5 0 1 0 6.85 6.85Z" />
+  </svg>
+)
+
+/** Medio círculo (apariencia del sistema) */
+export const Contrast = () => (
+  <svg {...stroke}>
+    <circle cx="8" cy="8" r="5.75" />
+    <path d="M8 2.25v11.5a5.75 5.75 0 0 0 0-11.5Z" fill="currentColor" stroke="none" />
+  </svg>
+)
+
+/** Cuatro cuadrados (los conjuntos de anuncios, como en el Administrador de anuncios) */
+export const Grid = () => (
+  <svg {...stroke}>
+    <rect x="2.25" y="2.25" width="4.75" height="4.75" rx="1.25" />
+    <rect x="9" y="2.25" width="4.75" height="4.75" rx="1.25" />
+    <rect x="2.25" y="9" width="4.75" height="4.75" rx="1.25" />
+    <rect x="9" y="9" width="4.75" height="4.75" rx="1.25" />
+  </svg>
+)
+
+/** Una ventana (los anuncios, como en el Administrador de anuncios) */
+export const Window = () => (
+  <svg {...stroke}>
+    <rect x="2" y="2.75" width="12" height="10.5" rx="2" />
+    <path d="M2 6h12" />
   </svg>
 )

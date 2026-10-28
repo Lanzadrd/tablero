@@ -51,7 +51,7 @@ const LEVELS = {
     insights: 'adset',
     states: ['ACTIVE', 'PAUSED', 'CAMPAIGN_PAUSED', 'IN_PROCESS', 'WITH_ISSUES'],
     fields:
-      'id,name,status,effective_status,daily_budget,lifetime_budget,start_time,end_time,updated_time,promoted_object,' +
+      'id,name,status,effective_status,daily_budget,lifetime_budget,start_time,end_time,updated_time,promoted_object,campaign{id,name},' +
       'ads.limit(100){status,effective_status}',
   },
   anuncio: {
@@ -69,7 +69,9 @@ const LEVELS = {
       'DISAPPROVED',
       'PENDING_BILLING_INFO',
     ],
-    fields: 'id,name,status,effective_status,updated_time,creative{thumbnail_url,degrees_of_freedom_spec,contextual_multi_ads}',
+    fields:
+      'id,name,status,effective_status,updated_time,campaign{id,name},adset{id,name},' +
+      'creative{thumbnail_url,degrees_of_freedom_spec,contextual_multi_ads}',
   },
 }
 
@@ -474,23 +476,27 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
   }
 
   /**
-   * «En marcha»: las campañas de la cuenta (o los conjuntos de `campaign`, o los anuncios de `adSet`), activas
-   * y en pausa, con sus métricas del periodo, y el total (de Meta: el alcance no se puede sumar). Al bajar de
-   * nivel, también la campaña o el conjunto de arriba (`padre`), para saber si está entregando.
+   * «En marcha»: las campañas, los conjuntos o los anuncios (`level`; sin él, el que toca bajo `campaign` o
+   * `adSet`), activos y en pausa, con sus métricas del periodo, y el total (de Meta: el alcance no se puede sumar).
+   * Los conjuntos, de toda la cuenta o de `campaign`; los anuncios, de la cuenta, de `campaign` o de `adSet`. Con
+   * campaña o conjunto, también ese de arriba (`padre`), para saber si está entregando.
    */
-  function performance(account, { period = '7d', campaign = null, adSet = null, fresh = false } = {}) {
+  function performance(account, { period = '7d', campaign = null, adSet = null, level: wanted = null, fresh = false } = {}) {
     if (!/^act_\d+$/.test(account ?? '')) throw new HttpError(400, 'Cuenta publicitaria no válida')
     if (!Object.hasOwn(PERIODS, period)) throw new HttpError(400, 'Periodo no válido')
     for (const objectId of [campaign, adSet]) {
       if (objectId !== null && !/^\d{1,32}$/.test(objectId)) throw new HttpError(400, 'Campaña o conjunto no válido')
     }
-    const level = adSet ? 'anuncio' : campaign ? 'conjunto' : 'campana'
-    const parentLevel = adSet ? 'conjunto' : campaign ? 'campana' : null
-    const parent = adSet ?? campaign ?? account
+    const level = wanted ?? (adSet ? 'anuncio' : campaign ? 'conjunto' : 'campana')
+    if (!Object.hasOwn(LEVELS, level)) throw new HttpError(400, 'Nivel no válido')
+    // Lo que filtra: el conjunto (solo en los anuncios) o la campaña (en conjuntos y anuncios); si no, la cuenta.
+    const scope = level === 'anuncio' ? (adSet ?? campaign) : level === 'conjunto' ? campaign : null
+    const parentLevel = !scope ? null : scope === adSet ? 'conjunto' : 'campana'
+    const parent = scope ?? account
     const { edge, insights: insightsLevel, states, fields } = LEVELS[level]
     const datePreset = PERIODS[period]
     return cached(
-      `campanas:${account}:${period}:${parent}`,
+      `campanas:${account}:${period}:${level}:${parent}`,
       fresh,
       async () => {
         const [info, list, insights, totals, parentObject] = await Promise.all([

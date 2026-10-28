@@ -36,7 +36,8 @@ export const SHORTCUTS: ShortcutSection[] = [
       { keys: [['T']], label: 'Tablero' },
       { keys: [['C']], label: 'Calendario' },
       { keys: [['U']], label: 'Suscripciones' },
-      { keys: [['P']], label: 'Anuncios' },
+      { keys: [['P']], label: 'Meta Ads' },
+      { keys: [['G']], label: 'Google Ads' },
       { keys: [['⌃', '⌘', 'S']], label: 'Mostrar u ocultar el menú lateral' },
       { keys: [['N']], label: 'Nueva tarea' },
       { keys: [['1', '…', '9']], label: 'Nueva tarea en esa columna' },
@@ -276,7 +277,7 @@ export interface KeyContext {
   openTask: (id: string, anchor: HTMLElement) => void
 }
 
-const VIEW_KEYS: Record<string, View> = { d: 'today', t: 'board', c: 'calendar', u: 'subscriptions', p: 'ads' }
+const VIEW_KEYS: Record<string, View> = { d: 'today', t: 'board', c: 'calendar', u: 'subscriptions', p: 'ads', g: 'google' }
 const NAV_KEYS: Record<string, Direction> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', k: 'up', j: 'down' }
 const WHEN_KEYS: Record<string, When> = { h: 'today', m: 'tomorrow', l: 'nextWeek' }
 

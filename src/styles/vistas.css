@@ -7,10 +7,15 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --star: #ffb340;
     --star-text: #ffb340;
   }
+}
+
+:root[data-theme='dark'] {
+  --star: #ffb340;
+  --star-text: #ffb340;
 }
 
 /* ───────── Hoy ───────── */
