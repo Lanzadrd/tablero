@@ -25,15 +25,15 @@ import {
   type MetaPage,
   type NewAdSet,
   type Place,
-  type Placements,
   type Template,
 } from '../ads'
 import { formatWhen } from '../dates'
 import { cx } from '../util'
-import { errorText } from './Ads'
+import { Avatar, errorText } from './Ads'
 import * as Icon from './Icons'
 import { CopyButton } from './AdsCopy'
-import { addDrafts, measure, MediaList, snapshot, type Creative, type Draft } from './AdsMedia'
+import { addDrafts, formatOfCreative, measure, MediaList, snapshot, type Creative, type Draft } from './AdsMedia'
+import { PlacementPicker } from './AdsPlacements'
 import { AdPreview } from './AdsPreview'
 import { Popover } from './Popover'
 import { Switch } from './Switch'
@@ -42,11 +42,7 @@ import { Switch } from './Switch'
 const MAX_IMAGE = 30 * 1024 * 1024
 const MAX_VIDEO = 1024 * 1024 * 1024
 
-type Phase =
-  | { kind: 'idle' }
-  | { kind: 'uploading'; done: number; total: number }
-  | { kind: 'creating' }
-  | { kind: 'done'; launch: Launch }
+type Phase = { kind: 'idle' } | { kind: 'uploading'; done: number; total: number } | { kind: 'creating' } | { kind: 'done'; launch: Launch }
 
 export const GENDERS: Array<{ value: Gender; label: string }> = [
   { value: 'todos', label: 'Todos' },
@@ -55,15 +51,12 @@ export const GENDERS: Array<{ value: Gender; label: string }> = [
 ]
 
 /** Cómo empieza la persona en el chat: con su mensaje ya escrito o tocando una pregunta. */
-export const CHAT_STARTS: Array<{ value: AdSettings['tipoMensaje']; label: string }> = [
+export const CHAT_STARTS: Array<{
+  value: AdSettings['tipoMensaje']
+  label: string
+}> = [
   { value: 'escrito', label: 'Mensaje ya escrito' },
   { value: 'preguntas', label: 'Preguntas frecuentes' },
-]
-
-export const PLACEMENTS: Array<{ value: Placements; label: string }> = [
-  { value: 'auto', label: 'Automáticas' },
-  { value: 'facebook', label: 'Solo Facebook' },
-  { value: 'instagram', label: 'Solo Instagram' },
 ]
 
 /** La plantilla elegida al entrar en la cuenta: la última usada en ella, si sigue existiendo. */
@@ -124,7 +117,10 @@ export function AdsComposer({
   const heading = useRef<HTMLHeadingElement>(null)
   /** Las opciones de la plantilla; en una campaña, con la página de sus conjuntos (y su Instagram, después). */
   const startFrom = (t: Template | null): AdSettings => {
-    const base = { ...(t ? settingsOf(t) : DEFAULT_SETTINGS), cuenta: account.id }
+    const base = {
+      ...(t ? settingsOf(t) : DEFAULT_SETTINGS),
+      cuenta: account.id,
+    }
     return adSetIn?.pagina && base.pagina !== adSetIn.pagina ? { ...base, pagina: null, instagram: null } : base
   }
   const shared = adSetIn?.presupuesto?.reparte ? adSetIn.presupuesto : null
@@ -148,7 +144,9 @@ export function AdsComposer({
 
   const update = useCallback((changes: Partial<AdSettings>) => setSettings((s) => ({ ...s, ...changes })), [])
   const toggleEnhancement = (key: Enhancement, on: boolean) =>
-    update({ mejoras: ENHANCEMENTS.map((e) => e.key).filter((k) => (k === key ? on : settings.mejoras.includes(k))) })
+    update({
+      mejoras: ENHANCEMENTS.map((e) => e.key).filter((k) => (k === key ? on : settings.mejoras.includes(k))),
+    })
 
   // ── Páginas de la cuenta ──
   const loadPages = useCallback(
@@ -168,11 +166,14 @@ export function AdsComposer({
   useEffect(() => {
     if (!pages) return
     setSettings((s) => {
-      const page =
-        pages.find((p) => p.id === s.pagina) ?? pages.find((p) => p.id === preferredPage) ?? (pages.length === 1 ? pages[0] : null)
+      const page = pages.find((p) => p.id === s.pagina) ?? pages.find((p) => p.id === preferredPage) ?? (pages.length === 1 ? pages[0] : null)
       const instagram = page && s.instagram && page.instagrams.some((i) => i.id === s.instagram) ? s.instagram : (page?.instagrams[0]?.id ?? null)
       if (page?.id === s.pagina && instagram === s.instagram) return s
-      return { ...s, pagina: page?.id ?? null, instagram: s.pagina === page?.id ? s.instagram : instagram }
+      return {
+        ...s,
+        pagina: page?.id ?? null,
+        instagram: s.pagina === page?.id ? s.instagram : instagram,
+      }
     })
   }, [pages, preferredPage])
 
@@ -198,7 +199,12 @@ export function AdsComposer({
   }
 
   const createTemplate = async (nombre: string) => {
-    const created: Template = { ...settings, cuenta: account.id, id: crypto.randomUUID(), nombre }
+    const created: Template = {
+      ...settings,
+      cuenta: account.id,
+      id: crypto.randomUUID(),
+      nombre,
+    }
     await onTemplates([...allTemplates, created])
     setTemplateId(created.id)
     writeLastTemplate(account.id, created.id)
@@ -237,7 +243,20 @@ export function AdsComposer({
       accepted.map(async ({ file, tipo }): Promise<Draft> => {
         const preview = URL.createObjectURL(file)
         const ratio = await measure(file, tipo, preview)
-        return { key: crypto.randomUUID(), nombre: adNameFrom(file.name), items: [{ key: crypto.randomUUID(), file, tipo, preview, medio: null, ratio }] }
+        return {
+          key: crypto.randomUUID(),
+          nombre: adNameFrom(file.name),
+          items: [
+            {
+              key: crypto.randomUUID(),
+              file,
+              tipo,
+              preview,
+              medio: null,
+              ratio,
+            },
+          ],
+        }
       }),
     )
     if (added.length) setDrafts((list) => addDrafts(list, added))
@@ -253,14 +272,25 @@ export function AdsComposer({
     pagina: page?.nombre ?? '',
     instagram: page?.instagrams.find((i) => i.id === settings.instagram)?.usuario ?? '',
     lugares: settings.lugares.map((l) => [l.nombre, l.detalle].filter(Boolean).join(', ')),
-    actuales: { texto: settings.texto, titular: settings.titular, descripcion: settings.descripcion, bienvenida: settings.bienvenida, saludo: settings.saludo, preguntas: settings.preguntas },
+    actuales: {
+      texto: settings.texto,
+      titular: settings.titular,
+      descripcion: settings.descripcion,
+      bienvenida: settings.bienvenida,
+      saludo: settings.saludo,
+      preguntas: settings.preguntas,
+    },
   })
 
   // ── Crear ──
   // Con Advantage+, Meta no admite una edad mínima por encima de 25 (se manda así; anuncios.mjs igual).
   const minAge = settings.advantage ? Math.min(settings.edadMin, 25) : settings.edadMin
   const campaign = name ?? campaignName(template?.nombre ?? null)
-  const blocked = missing({ ...settings, presupuesto: shared ? 1 : settings.presupuesto, creatividades: drafts.length })
+  const blocked = missing({
+    ...settings,
+    presupuesto: shared ? 1 : settings.presupuesto,
+    creatividades: drafts.length,
+  })
   const busy = phase.kind === 'uploading' || phase.kind === 'creating'
 
   const create = async () => {
@@ -273,7 +303,12 @@ export function AdsComposer({
         const medio = creative.medio ?? (await uploadMedia(account.id, creative.file))
         media.set(creative.key, medio)
         if (!creative.medio) {
-          setDrafts((list) => list.map((d) => ({ ...d, items: d.items.map((c) => (c.key === creative.key ? { ...c, medio } : c)) })))
+          setDrafts((list) =>
+            list.map((d) => ({
+              ...d,
+              items: d.items.map((c) => (c.key === creative.key ? { ...c, medio } : c)),
+            })),
+          )
         }
       }
       setPhase({ kind: 'creating' })
@@ -285,11 +320,13 @@ export function AdsComposer({
         plantilla: template?.nombre ?? null,
         inicio: start || null,
         fin: end || null,
-        // Con dos, la primera es la del feed y la segunda la vertical.
-        anuncios: drafts.map(({ nombre, items: [main, vertical] }) => ({
+        // Cada versión con su formato: Meta pone cada una en sus ubicaciones.
+        anuncios: drafts.map(({ nombre, items }) => ({
           nombre,
-          medio: media.get(main.key)!,
-          ...(vertical ? { vertical: media.get(vertical.key)! } : {}),
+          versiones: items.map((c) => ({
+            formato: formatOfCreative(c),
+            medio: media.get(c.key)!,
+          })),
         })),
       }
       if (adSetIn) {
@@ -392,7 +429,10 @@ export function AdsComposer({
                     value={settings.pagina ?? ''}
                     onChange={(e) => {
                       const next = pages.find((p) => p.id === e.target.value) ?? null
-                      update({ pagina: next?.id ?? null, instagram: next?.instagrams[0]?.id ?? null })
+                      update({
+                        pagina: next?.id ?? null,
+                        instagram: next?.instagrams[0]?.id ?? null,
+                      })
                     }}
                   >
                     {!settings.pagina && <option value="">Elige una página…</option>}
@@ -493,7 +533,13 @@ export function AdsComposer({
             </Field>
             <Field label="Edad" htmlFor={`${ids}-age`} note={settings.advantage ? 'Con Advantage+, la mínima es como mucho 25.' : null}>
               <span className="ads-age">
-                <select id={`${ids}-age`} className="input" aria-label="Edad mínima" value={minAge} onChange={(e) => update({ edadMin: Number(e.target.value) })}>
+                <select
+                  id={`${ids}-age`}
+                  className="input"
+                  aria-label="Edad mínima"
+                  value={minAge}
+                  onChange={(e) => update({ edadMin: Number(e.target.value) })}
+                >
                   {range(18, settings.advantage ? 25 : 65).map((n) => (
                     <option key={n} value={n}>
                       {n}
@@ -519,9 +565,6 @@ export function AdsComposer({
                 <Chips label="Sexo" options={GENDERS} value={settings.genero} onChange={(genero) => update({ genero })} />
               </Field>
             )}
-            <Field label="Ubicaciones">
-              <Chips label="Ubicaciones" options={PLACEMENTS} value={settings.ubicaciones} onChange={(ubicaciones) => update({ ubicaciones })} />
-            </Field>
           </div>
         </section>
 
@@ -530,11 +573,24 @@ export function AdsComposer({
             Imágenes y vídeos <span className="ads-count">{drafts.length ? `· ${adsCount(drafts.length)}` : ''}</span>
           </h4>
           <p className="ads-hint">
-            Cada fila es un anuncio, con el mismo texto, en el mismo conjunto. Si subes la versión vertical (9:16) y la del feed
-            (4:5 o 1:1) de una pieza, se juntan en un solo anuncio: cada una en sus ubicaciones.
+            Cada fila es un anuncio, con el mismo texto, en el mismo conjunto. Si subes varios formatos de una pieza (1:1, 4:5, 9:16 y 16:9), se juntan en un
+            solo anuncio: cada uno va en las ubicaciones que le toquen.
           </p>
           <DropZone onFiles={(files) => void addFiles(files)} disabled={busy} />
           {drafts.length > 0 && <MediaList drafts={drafts} busy={busy} onChange={setDrafts} />}
+          <h5 className="ads-subtitle">Ubicaciones</h5>
+          <PlacementPicker
+            mode={settings.ubicaciones}
+            chosen={settings.posiciones}
+            pieces={drafts.length ? drafts.map((d) => d.items.map(formatOfCreative)) : undefined}
+            video={drafts.length ? drafts.every((d) => d.items[0].tipo === 'video') : null}
+            onChange={(ubicaciones, posiciones) =>
+              update({
+                ubicaciones: ubicaciones === 'meta' ? 'manual' : ubicaciones,
+                posiciones,
+              })
+            }
+          />
         </section>
 
         <section className="ads-card" aria-labelledby={`${ids}-copy`}>
@@ -555,7 +611,14 @@ export function AdsComposer({
             <CopyButton
               build={copyRequest}
               onCopy={(copy) => {
-                setUndo({ texto: settings.texto, titular: settings.titular, descripcion: settings.descripcion, bienvenida: settings.bienvenida, saludo: settings.saludo, preguntas: settings.preguntas })
+                setUndo({
+                  texto: settings.texto,
+                  titular: settings.titular,
+                  descripcion: settings.descripcion,
+                  bienvenida: settings.bienvenida,
+                  saludo: settings.saludo,
+                  preguntas: settings.preguntas,
+                })
                 update(copy)
               }}
             />
@@ -620,7 +683,7 @@ export function AdsComposer({
                 </Field>
               )}
             </div>
-            <ChatPreview settings={settings} />
+            <ChatPreview settings={settings} page={page} />
           </div>
         </section>
 
@@ -629,8 +692,8 @@ export function AdsComposer({
             Mejoras automáticas de Meta <span className="ads-count">· {automaticSummary(settings).replace(/ de Meta/, '')}</span>
           </h4>
           <p className="ads-hint">
-            Si no se le dice nada, Meta activa algunas por su cuenta. Tablero se las manda todas: solo van activadas las que
-            marques aquí (las de catálogo y web, siempre desactivadas). La música no se añade nunca.
+            Si no se le dice nada, Meta activa algunas por su cuenta. Tablero se las manda todas: solo van activadas las que marques aquí (las de catálogo y
+            web, siempre desactivadas). La música no se añade nunca.
           </p>
           <div className="ads-fields">
             <Field
@@ -734,11 +797,28 @@ export function Field({ label, htmlFor, note, children }: { label: string; htmlF
   )
 }
 
-export function Chips<T extends string>({ label, options, value, onChange }: { label: string; options: Array<{ value: T; label: string }>; value: T; onChange: (value: T) => void }) {
+export function Chips<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string
+  options: Array<{ value: T; label: string }>
+  value: T
+  onChange: (value: T) => void
+}) {
   return (
     <div className="ads-chips" role="radiogroup" aria-label={label}>
       {options.map((o) => (
-        <button key={o.value} type="button" role="radio" aria-checked={o.value === value} className={cx('chip', o.value === value && 'is-active')} onClick={() => onChange(o.value)}>
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={o.value === value}
+          className={cx('chip', o.value === value && 'is-active')}
+          onClick={() => onChange(o.value)}
+        >
           {o.label}
         </button>
       ))}
@@ -778,22 +858,43 @@ export function Questions({ value, onChange }: { value: string[]; onChange: (que
 }
 
 /** Cómo se verá el chat: vuestro mensaje y, abajo, lo de la persona (su mensaje escrito o las preguntas). */
-export function ChatPreview({ settings }: { settings: AdSettings }) {
+/**
+ * El chat de WhatsApp como lo verá la persona: arriba, vuestra empresa; a la izquierda, vuestro mensaje; a la
+ * derecha (en verde), lo que envía ella con un toque, o los botones de preguntas que puede tocar.
+ */
+export function ChatPreview({ settings, page }: { settings: AdSettings; page?: Pick<MetaPage, 'nombre' | 'foto'> | null }) {
   const questions = settings.preguntas.map((q) => q.trim()).filter(Boolean)
+  const name = page?.nombre ?? 'Tu empresa'
   return (
-    <div className="ads-chat-preview" aria-hidden="true">
-      <span className="ads-chat-title">Vista previa</span>
-      <p className="ads-bubble">{settings.bienvenida.trim() || GREETING}</p>
-      {settings.tipoMensaje === 'escrito' ? (
-        <p className="ads-chat-input">{settings.saludo.trim() || 'Escribe un mensaje'}</p>
-      ) : (
-        <div className="ads-chat-questions">
-          {(questions.length ? questions : ['Pregunta']).map((q, i) => (
-            <span key={i}>{q}</span>
-          ))}
-        </div>
-      )}
-    </div>
+    <figure className="ads-wa" aria-label="Vista previa del chat de WhatsApp">
+      <div className="ads-wa-head" aria-hidden="true">
+        <Avatar name={name} src={page?.foto ?? null} />
+        <span>
+          <strong>{name}</strong>
+          <small>Cuenta de empresa</small>
+        </span>
+      </div>
+      <div className="ads-wa-body">
+        <p className="ads-wa-who is-them">Vuestro mensaje</p>
+        <p className="ads-wa-bubble is-them">{settings.bienvenida.trim() || GREETING}</p>
+        {settings.tipoMensaje === 'escrito' ? (
+          <>
+            <p className="ads-wa-who is-me">El cliente lo envía con un toque</p>
+            <p className="ads-wa-bubble is-me">{settings.saludo.trim() || 'Hola, quiero más información'}</p>
+          </>
+        ) : (
+          <>
+            <p className="ads-wa-who is-me">El cliente toca una</p>
+            <div className="ads-wa-questions">
+              {(questions.length ? questions : ['Pregunta']).map((q, i) => (
+                <span key={i}>{q}</span>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      <figcaption className="ads-wa-foot">Así se abre WhatsApp al tocar el anuncio</figcaption>
+    </figure>
   )
 }
 
@@ -955,8 +1056,7 @@ function SaveTemplate({ anchor, onClose, onSave }: { anchor: HTMLElement; onClos
         <label htmlFor={id}>Nombre de la plantilla</label>
         <input id={id} className="input" autoFocus value={value} placeholder="p. ej. Captación Madrid" onChange={(e) => setValue(e.target.value)} />
         <p className="ads-note">
-          Guarda la página, el presupuesto, el público, las ubicaciones, los textos, el chat de WhatsApp y las mejoras de Meta. Las
-          imágenes no.
+          Guarda la página, el presupuesto, el público, las ubicaciones, los textos, el chat de WhatsApp y las mejoras de Meta. Las imágenes no.
         </p>
         {error && (
           <p className="ads-error" role="alert">
@@ -1026,8 +1126,7 @@ function ActivateButton({ launch, onLaunch }: { launch: Launch; onLaunch: (launc
         <Popover anchor={anchor} placement="below-end" width={280} label="Activar la campaña" onClose={() => setAnchor(null)}>
           <div className="ads-confirm">
             <p>
-              <b>{launch.nombre}</b> empezará a gastar hasta {money(launch.presupuesto, launch.moneda)} al día en cuanto Meta
-              apruebe los anuncios.
+              <b>{launch.nombre}</b> empezará a gastar hasta {money(launch.presupuesto, launch.moneda)} al día en cuanto Meta apruebe los anuncios.
             </p>
             {error && (
               <p className="ads-error" role="alert">
@@ -1060,13 +1159,19 @@ function RecentLaunches({ launches, onLaunch }: { launches: Launch[]; onLaunch: 
             <div className="ads-recent-text">
               <span className="ads-recent-name">{l.nombre}</span>
               <span className="ads-recent-meta">
-                {formatWhen(l.creadoEn)} · {l.anuncios.length === 1 ? '1 anuncio' : `${l.anuncios.length} anuncios`} ·{' '}
-                {money(l.presupuesto, l.moneda)} al día
+                {formatWhen(l.creadoEn)} · {l.anuncios.length === 1 ? '1 anuncio' : `${l.anuncios.length} anuncios`} · {money(l.presupuesto, l.moneda)} al día
               </span>
             </div>
             <span className={cx('ads-status', `is-${l.estado}`)}>{l.estado === 'activa' ? 'Activa' : 'En pausa'}</span>
             {l.estado === 'pausada' && <ActivateButton launch={l} onLaunch={onLaunch} />}
-            <a className="icon-btn" href={l.enlace} target="_blank" rel="noreferrer" aria-label={`Abrir ${l.nombre} en Meta`} title="Abrir en el Administrador de anuncios">
+            <a
+              className="icon-btn"
+              href={l.enlace}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Abrir ${l.nombre} en Meta`}
+              title="Abrir en el Administrador de anuncios"
+            >
               <Icon.External />
             </a>
           </li>

@@ -61,6 +61,74 @@ export function campaignBody(plan) {
   }
 }
 
+/** Los formatos de las versiones de un anuncio, por su proporción. */
+export const FORMATS = ['4:5', '1:1', '9:16', '16:9']
+/** La versión que va en el resto de ubicaciones (las que no tienen una propia): la del feed, si la hay. */
+const FALLBACK_ORDER = ['4:5', '1:1', '16:9', '9:16']
+
+/**
+ * Las ubicaciones que se eligen en Tablero para un anuncio a WhatsApp, con los formatos que les van (el primero, el
+ * mejor). `video`: solo admite vídeos. (Los feeds de vídeo de Facebook y el Explorar de Instagram ya no se pueden
+ * elegir en esta versión de la API.)
+ */
+export const PLACEMENTS = {
+  fb_feed: { platform: 'facebook', position: 'feed', formats: ['4:5', '1:1'] },
+  fb_profile: { platform: 'facebook', position: 'profile_feed', formats: ['4:5', '1:1'] },
+  fb_marketplace: { platform: 'facebook', position: 'marketplace', formats: ['1:1', '4:5'] },
+  fb_search: { platform: 'facebook', position: 'search', formats: ['1:1', '4:5'] },
+  fb_right: { platform: 'facebook', position: 'right_hand_column', formats: ['1:1', '16:9'] },
+  fb_notification: { platform: 'facebook', position: 'notification', formats: ['1:1'] },
+  fb_story: { platform: 'facebook', position: 'story', formats: ['9:16'] },
+  fb_reels: { platform: 'facebook', position: 'facebook_reels', formats: ['9:16'] },
+  fb_instream: { platform: 'facebook', position: 'instream_video', formats: ['16:9', '1:1'], video: true },
+  ig_feed: { platform: 'instagram', position: 'stream', formats: ['4:5', '1:1'] },
+  ig_profile: { platform: 'instagram', position: 'profile_feed', formats: ['4:5', '1:1'] },
+  ig_explore_home: { platform: 'instagram', position: 'explore_home', formats: ['1:1', '4:5'] },
+  ig_search: { platform: 'instagram', position: 'ig_search', formats: ['4:5', '1:1'] },
+  ig_story: { platform: 'instagram', position: 'story', formats: ['9:16'] },
+  ig_reels: { platform: 'instagram', position: 'reels', formats: ['9:16'] },
+  ig_profile_reels: { platform: 'instagram', position: 'profile_reels', formats: ['9:16'] },
+  ms_inbox: { platform: 'messenger', position: 'messenger_home', formats: ['1:1'] },
+  ms_story: { platform: 'messenger', position: 'story', formats: ['9:16'] },
+  // Meta solo lo deja con Instagram Stories (positionsOf la añade).
+  wa_status: { platform: 'whatsapp', position: 'status', formats: ['9:16'] },
+}
+
+/** Las ubicaciones elegidas, como las pide Meta: las plataformas y las posiciones de cada una. */
+export function positionsOf(keys) {
+  const wanted = new Set(keys ?? [])
+  // Los Estados de WhatsApp, Meta solo los admite con Instagram Stories.
+  if (wanted.has('wa_status')) wanted.add('ig_story')
+  const chosen = Object.keys(PLACEMENTS)
+    .filter((key) => wanted.has(key))
+    .map((key) => PLACEMENTS[key])
+  if (!chosen.length) throw new HttpError(400, 'Elige al menos una ubicación (o déjalas automáticas).')
+  const spec = { publisher_platforms: [...new Set(chosen.map((p) => p.platform))] }
+  for (const platform of spec.publisher_platforms) spec[`${platform}_positions`] = chosen.filter((p) => p.platform === platform).map((p) => p.position)
+  return spec
+}
+
+/** Las ubicaciones de Tablero que hay en lo que dice Meta; null si hay alguna que Tablero no conoce. */
+export function placementKeysOf(targeting) {
+  const platforms = targeting?.publisher_platforms
+  if (!platforms?.length) return []
+  const keys = []
+  for (const platform of platforms) {
+    const ours = Object.entries(PLACEMENTS).filter(([, p]) => p.platform === platform)
+    if (!ours.length) return null
+    const positions = targeting[`${platform}_positions`]
+    // Sin posiciones, todas las de la plataforma.
+    if (!positions?.length) keys.push(...ours.filter(([, p]) => !p.video).map(([key]) => key))
+    else
+      for (const position of positions) {
+        const found = ours.find(([, p]) => p.position === position)
+        if (!found) return null
+        keys.push(found[0])
+      }
+  }
+  return keys
+}
+
 /**
  * Público y ubicaciones. Con Advantage+ (advantage_audience 1), Meta solo admite la edad mínima (18–25) y
  * decide el resto; sin él, la edad y el sexo son límites.
@@ -81,7 +149,8 @@ export function targetingOf(plan) {
     if (plan.genero === 'hombres') targeting.genders = [1]
     if (plan.genero === 'mujeres') targeting.genders = [2]
   }
-  if (plan.ubicaciones === 'facebook' || plan.ubicaciones === 'instagram') targeting.publisher_platforms = [plan.ubicaciones]
+  if (plan.ubicaciones === 'manual') Object.assign(targeting, positionsOf(plan.posiciones))
+  else if (plan.ubicaciones === 'facebook' || plan.ubicaciones === 'instagram') targeting.publisher_platforms = [plan.ubicaciones]
   return targeting
 }
 
@@ -190,59 +259,78 @@ export function automaticOf(creative) {
   }
 }
 
-/** Las ubicaciones de feed, donde va la versión del feed; en las demás (Stories, Reels, Estados…), la vertical. */
-const FEED_PLACEMENTS = {
-  imagen: {
-    publisher_platforms: ['facebook', 'instagram'],
-    facebook_positions: ['feed', 'profile_feed', 'marketplace', 'notification', 'search'],
-    instagram_positions: ['stream', 'explore', 'explore_home', 'profile_feed'],
-  },
-  video: {
-    publisher_platforms: ['facebook', 'instagram'],
-    facebook_positions: ['feed', 'profile_feed', 'marketplace', 'instream_video', 'search'],
-    instagram_positions: ['stream', 'explore', 'explore_home', 'profile_feed'],
-  },
-}
 /** Como en el Administrador de anuncios: cada regla lleva la edad entera (la de «todo lo demás», solo eso). */
 const ALL_AGES = { age_min: 13, age_max: 65 }
 
+/** Las versiones de un anuncio (1:1, 4:5, 9:16, 16:9): las que trae o, en los de antes, la del feed y la vertical. */
+export function versionsOf(ad) {
+  if (Array.isArray(ad.versiones) && ad.versiones.length) return ad.versiones
+  return [{ formato: '4:5', medio: ad.medio }, ...(ad.vertical ? [{ formato: '9:16', medio: ad.vertical }] : [])]
+}
+
 /**
- * Un anuncio con su versión del feed y su vertical, cada una en sus ubicaciones (asset_feed_spec con reglas por
- * ubicación, como lo hace el Administrador de anuncios). Las etiquetas unen cada regla con lo que enseña.
+ * Qué versión va en cada ubicación (la primera de sus formatos que haya) y cuál en todas las demás. Las ubicaciones
+ * son las elegidas o, con las automáticas, todas las que conoce Tablero (Meta usa además otras: van con la del feed).
+ */
+export function placementPlan(plan, versions) {
+  const video = versions[0].medio.tipo === 'video'
+  const available = new Set(versions.map((v) => v.formato))
+  const keys = plan.ubicaciones === 'manual' ? (plan.posiciones ?? []) : Object.keys(PLACEMENTS)
+  const fallback = FALLBACK_ORDER.find((f) => available.has(f))
+  const groups = new Map()
+  for (const key of keys) {
+    const placement = PLACEMENTS[key]
+    if (!placement || (placement.video && !video)) continue
+    const formato = placement.formats.find((f) => available.has(f))
+    if (!formato || formato === fallback) continue
+    groups.set(formato, [...(groups.get(formato) ?? []), key])
+  }
+  return { fallback, groups }
+}
+
+/**
+ * Un anuncio con varias versiones (cuadrada, del feed, vertical, horizontal), cada una en sus ubicaciones
+ * (asset_feed_spec con reglas por ubicación, como lo hace el Administrador de anuncios); la del feed, en el resto.
+ * Las etiquetas unen cada regla con lo que enseña. null si al final solo se usa una versión.
  */
 function placementAssets(plan, ad, { thumbs, tag }) {
-  const video = ad.medio.tipo === 'video'
-  const feed = `tablero_feed_${tag}`
-  const vertical = `tablero_vertical_${tag}`
-  const both = [{ name: feed }, { name: vertical }]
-  const asset = (medio, label) => {
-    if (!video) return { hash: medio.hash, adlabels: [{ name: label }] }
+  const versions = versionsOf(ad)
+  const video = versions[0].medio.tipo === 'video'
+  const { fallback, groups } = placementPlan(plan, versions)
+  const used = versions.filter((v) => v.formato === fallback || groups.has(v.formato))
+  if (used.length < 2) return null
+  const label = (formato) => `tablero_${formato.replace(':', 'x')}_${tag}`
+  const labels = used.map((v) => ({ name: label(v.formato) }))
+  const asset = ({ formato, medio }) => {
+    if (!video) return { hash: medio.hash, adlabels: [{ name: label(formato) }] }
     if (!thumbs.get(medio.id)) throw new HttpError(500, 'Falta la miniatura del vídeo')
-    return { video_id: medio.id, thumbnail_hash: thumbs.get(medio.id), adlabels: [{ name: label }] }
+    return { video_id: medio.id, thumbnail_hash: thumbs.get(medio.id), adlabels: [{ name: label(formato) }] }
   }
   const titular = plan.titular?.trim()
   const descripcion = plan.descripcion?.trim()
-  const rule = (label, spec, priority) => ({
+  const rule = (formato, spec, priority) => ({
     customization_spec: { ...ALL_AGES, ...spec },
-    [video ? 'video_label' : 'image_label']: { name: label },
-    body_label: { name: label },
-    link_url_label: { name: label },
-    ...(titular ? { title_label: { name: label } } : {}),
-    ...(descripcion ? { description_label: { name: label } } : {}),
+    [video ? 'video_label' : 'image_label']: { name: label(formato) },
+    body_label: { name: label(formato) },
+    link_url_label: { name: label(formato) },
+    ...(titular ? { title_label: { name: label(formato) } } : {}),
+    ...(descripcion ? { description_label: { name: label(formato) } } : {}),
     priority,
   })
+  const rules = [...groups].map(([formato, keys], i) => rule(formato, positionsOf(keys), i + 1))
+  rules.push(rule(fallback, {}, rules.length + 1))
   const welcome = welcomeMessage(plan)
   return {
-    [video ? 'videos' : 'images']: [asset(ad.medio, feed), asset(ad.vertical, vertical)],
-    bodies: [{ text: plan.texto, adlabels: both }],
-    ...(titular ? { titles: [{ text: titular, adlabels: both }] } : {}),
-    ...(descripcion ? { descriptions: [{ text: descripcion, adlabels: both }] } : {}),
-    link_urls: [{ website_url: WHATSAPP_LINK, adlabels: both }],
+    [video ? 'videos' : 'images']: used.map(asset),
+    bodies: [{ text: plan.texto, adlabels: labels }],
+    ...(titular ? { titles: [{ text: titular, adlabels: labels }] } : {}),
+    ...(descripcion ? { descriptions: [{ text: descripcion, adlabels: labels }] } : {}),
+    link_urls: [{ website_url: WHATSAPP_LINK, adlabels: labels }],
     call_to_action_types: [CTA_TYPE],
     call_to_actions: [{ type: CTA_TYPE, value: { app_destination: 'WHATSAPP' } }],
     ad_formats: [video ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE'],
     optimization_type: 'PLACEMENT',
-    asset_customization_rules: [rule(feed, FEED_PLACEMENTS[ad.medio.tipo], 1), rule(vertical, {}, 2)],
+    asset_customization_rules: rules,
     ...(welcome ? { additional_data: { page_welcome_message: welcome } } : {}),
   }
 }
@@ -261,8 +349,15 @@ export function creativeBody(plan, ad, { thumbs = new Map(), tag = randomUUID().
     // Si puede salir junto a anuncios de otras empresas (anuncios multianunciante).
     contextual_multi_ads: { enroll_status: plan.multianunciante ? 'OPT_IN' : 'OPT_OUT' },
   }
-  // Con versión vertical, todo va en asset_feed_spec; en object_story_spec, solo quién anuncia.
-  if (ad.vertical) return { ...common, asset_feed_spec: placementAssets(plan, ad, { thumbs, tag }) }
+  // Con varias versiones, todo va en asset_feed_spec; en object_story_spec, solo quién anuncia.
+  const versions = versionsOf(ad)
+  if (versions.length > 1) {
+    const assets = placementAssets(plan, ad, { thumbs, tag })
+    if (assets) return { ...common, asset_feed_spec: assets }
+  }
+  // Una sola (o solo se usa una): la que va en el feed.
+  const { fallback } = placementPlan(plan, versions)
+  const medio = (versions.find((v) => v.formato === fallback) ?? versions[0]).medio
 
   const welcome = welcomeMessage(plan)
   const greeting = welcome ? { page_welcome_message: welcome } : {}
@@ -283,9 +378,9 @@ export function creativeBody(plan, ad, { thumbs = new Map(), tag = randomUUID().
     }
   }
   const texts = !common.asset_feed_spec
-  if (ad.medio.tipo === 'imagen') {
+  if (medio.tipo === 'imagen') {
     spec.link_data = {
-      image_hash: ad.medio.hash,
+      image_hash: medio.hash,
       link: WHATSAPP_LINK,
       ...(texts ? { message: plan.texto } : {}),
       ...(texts && titular ? { name: titular } : {}),
@@ -294,10 +389,10 @@ export function creativeBody(plan, ad, { thumbs = new Map(), tag = randomUUID().
       ...greeting,
     }
   } else {
-    const thumbnailHash = thumbs.get(ad.medio.id)
+    const thumbnailHash = thumbs.get(medio.id)
     if (!thumbnailHash) throw new HttpError(500, 'Falta la miniatura del vídeo')
     spec.video_data = {
-      video_id: ad.medio.id,
+      video_id: medio.id,
       image_hash: thumbnailHash,
       ...(texts ? { message: plan.texto } : {}),
       ...(texts && titular ? { title: titular } : {}),
@@ -524,7 +619,8 @@ export function cleanSettings(raw) {
     edadMax: clamp(raw?.edadMax, 18, 65),
     genero: ['todos', 'hombres', 'mujeres'].includes(raw?.genero) ? raw.genero : 'todos',
     advantage: raw?.advantage !== false,
-    ubicaciones: ['auto', 'facebook', 'instagram'].includes(raw?.ubicaciones) ? raw.ubicaciones : 'auto',
+    ubicaciones: ['auto', 'manual', 'facebook', 'instagram'].includes(raw?.ubicaciones) ? raw.ubicaciones : 'auto',
+    posiciones: Array.isArray(raw?.posiciones) ? Object.keys(PLACEMENTS).filter((key) => raw.posiciones.includes(key)) : [],
     mejoras: Array.isArray(raw?.mejoras) ? Object.keys(ENHANCEMENTS).filter((key) => raw.mejoras.includes(key)) : [],
     multianunciante: raw?.multianunciante === true,
     texto: text(raw?.texto, 3000),
@@ -555,13 +651,20 @@ export function cleanPlan(raw) {
     inicio: DAY.test(raw?.inicio ?? '') ? raw.inicio : null,
     fin: DAY.test(raw?.fin ?? '') ? raw.fin : null,
     anuncios: (Array.isArray(raw?.anuncios) ? raw.anuncios : []).slice(0, 50).map((ad, i) => {
-      const medio = cleanMedia(ad?.medio)
-      if (!medio) throw new HttpError(400, `Al anuncio ${i + 1} le falta la imagen o el vídeo.`)
-      if (!ad.vertical) return { nombre: text(ad.nombre, 200) || `Anuncio ${i + 1}`, medio }
-      // Con versión vertical: las dos imágenes o los dos vídeos.
-      const vertical = cleanMedia(ad.vertical)
-      if (vertical?.tipo !== medio.tipo) throw new HttpError(400, `En el anuncio ${i + 1}, la vertical y la del feed tienen que ser las dos imágenes o los dos vídeos.`)
-      return { nombre: text(ad.nombre, 200) || `Anuncio ${i + 1}`, medio, vertical }
+      // Sus versiones (1:1, 4:5, 9:16, 16:9) o, como antes, la del feed y la vertical.
+      const raw = Array.isArray(ad?.versiones) && ad.versiones.length ? ad.versiones : [{ formato: '4:5', medio: ad?.medio }, ...(ad?.vertical ? [{ formato: '9:16', medio: ad.vertical }] : [])]
+      const versiones = []
+      for (const version of raw.slice(0, FORMATS.length)) {
+        const medio = cleanMedia(version?.medio)
+        if (!medio) throw new HttpError(400, `Al anuncio ${i + 1} le falta la imagen o el vídeo.`)
+        const formato = FORMATS.includes(version?.formato) ? version.formato : '4:5'
+        if (versiones.some((v) => v.formato === formato)) throw new HttpError(400, `En el anuncio ${i + 1} hay dos versiones ${formato}.`)
+        versiones.push({ formato, medio })
+      }
+      if (versiones.some((v) => v.medio.tipo !== versiones[0].medio.tipo)) {
+        throw new HttpError(400, `En el anuncio ${i + 1}, todas las versiones tienen que ser imágenes o todas vídeos.`)
+      }
+      return { nombre: text(ad.nombre, 200) || `Anuncio ${i + 1}`, medio: versiones[0].medio, versiones }
     }),
   }
   if (!plan.cuenta?.startsWith('act_')) throw new HttpError(400, 'Falta la cuenta publicitaria.')
@@ -676,7 +779,7 @@ async function videoThumbnail(meta, account, videoId, { wait = VIDEO_WAIT, poll 
 /** La miniatura de cada vídeo del plan (Meta la pide aparte, como imagen). */
 export async function thumbnailsOf(meta, plan, options) {
   const thumbs = new Map()
-  for (const medio of plan.anuncios.flatMap((ad) => [ad.medio, ad.vertical].filter(Boolean))) {
+  for (const medio of plan.anuncios.flatMap((ad) => versionsOf(ad).map((v) => v.medio))) {
     if (medio.tipo === 'video' && !thumbs.has(medio.id)) {
       thumbs.set(medio.id, await videoThumbnail(meta, plan.cuenta, medio.id, options))
     }

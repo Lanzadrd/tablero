@@ -139,10 +139,12 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
 - **Editar lo publicado** (el menú «…» de cada fila), sin pasar por el Administrador de anuncios:
   - *Campaña*: nombre, presupuesto (si lo reparte entre sus conjuntos), estrategia de puja y límite de gasto.
   - *Conjunto*: nombre, presupuesto, fechas (el inicio, si aún no ha empezado; el fin, o sin fin), puja (volumen
-    máximo, objetivo de coste o límite de puja, con su importe) y público: lugares, Advantage+, edad, sexo y
-    ubicaciones. Lo que Tablero no enseña del público (intereses, públicos personalizados…) se queda como está.
-  - *Anuncio*: imagen o vídeo y su vertical, texto principal, título y descripción (con sus otras opciones de
-    texto, como en el Administrador), Instagram, chat de WhatsApp y mejoras automáticas. Meta no deja cambiar el
+    máximo, objetivo de coste o límite de puja, con su importe), público (lugares, Advantage+, edad, sexo) y
+    ubicaciones (automáticas o elegidas una a una). Lo que Tablero no enseña del público (intereses, públicos
+    personalizados…) y las ubicaciones que no conoce se quedan como están.
+  - *Anuncio*: una imagen o un vídeo por formato (4:5, 1:1, 9:16 y 16:9), con las ubicaciones del conjunto y un
+    check en las que tienen versión de su tamaño; texto principal, título y descripción (con sus otras opciones de
+    texto, como en el Administrador, si hay una sola versión), Instagram, chat de WhatsApp y mejoras automáticas. Meta no deja cambiar el
     contenido de un anuncio publicado: Tablero crea uno nuevo con los cambios y se lo pone al mismo anuncio, que
     conserva sus métricas (Meta lo vuelve a revisar). Los que usan una publicación existente, los carruseles y los
     que no llevan a WhatsApp solo cambian de nombre.
@@ -154,24 +156,32 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
   el conjunto no lleva. Se crea en pausa con los anuncios listos: se enciende con su interruptor.
 - **Nueva campaña**: eliges la cuenta (agrupadas por portfolio), una **plantilla** (página, Instagram,
   presupuesto diario, lugares, edad, sexo, Advantage+, ubicaciones, textos, chat de WhatsApp y mejoras de Meta)
-  y arrastras imágenes o vídeos: cada uno es un anuncio del mismo conjunto. «Crear en pausa» sube todo y crea
+  y arrastras imágenes o vídeos: cada pieza es un anuncio del mismo conjunto. Se empieza con el botón verde
+  **+ Crear**, a la izquierda de las fechas (como en el Administrador). «Crear en pausa» sube todo y crea
   campaña, conjunto y anuncios **en pausa**; si algo falla a medias, borra lo creado. Luego, «Revisar en Meta»
   (Administrador de anuncios) o «Activar» (pide confirmación: desde ahí gasta).
 - **Orden del formulario**: nombre de la campaña (o del conjunto) arriba del todo; luego plantilla, quién
-  anuncia, presupuesto, público (sin plantilla, **Ciudad del Este**), imágenes y vídeos, texto, chat y mejoras.
-  Con sitio, a la derecha va la **vista previa** del anuncio en el feed de Facebook, el de Instagram y Stories
-  y Reels (con la versión que toca en cada uno); sin sitio, debajo.
+  anuncia, presupuesto, público (sin plantilla, **Ciudad del Este**), imágenes y vídeos con sus ubicaciones,
+  texto, chat y mejoras. Con sitio, a la derecha va la **vista previa**, todas a la vez: feed de Facebook y de
+  Instagram (4:5), Stories y Reels (9:16) y horizontal (16:9), cada una con la versión que le toca y avisando
+  si Meta tiene que adaptar otra; con ubicaciones elegidas, solo las que salen. Sin sitio, debajo.
 - **Texto**: texto principal, título y descripción (los dos últimos, opcionales). **Escribir con Claude** los
   escribe todos, y el chat de WhatsApp, con la API de Claude (Claude Opus 5.5): ve las imágenes, la página, el
   público, lo ya escrito y unas indicaciones opcionales; no inventa precios ni fechas, y se puede deshacer. La
   primera vez pide la clave de la API (console.anthropic.com), que se guarda en `datos/claude.json` (solo en este
   Mac, permisos 600; nunca vuelve a la web). Sin ella, usa `ANTHROPIC_API_KEY` si está.
 - **Chat de WhatsApp**: vuestro mensaje (lo primero que ve la persona) y, para que empiece, su mensaje ya escrito
-  o hasta 4 preguntas frecuentes que toca para enviarlas; con vista previa.
-- **Formatos**: Tablero mide cada imagen o vídeo (9:16, 4:5, 1:1…). La versión vertical y la del feed de una
-  pieza (mismo nombre sin el formato, como «2_9_16» y «2_4_5», o si solo hay esas dos) se juntan en **un solo
-  anuncio**: la del feed en las ubicaciones de feed y la vertical en Stories, Reels, Estados de WhatsApp y el
-  resto, como hace el Administrador de anuncios. Se pueden separar o juntar a mano.
+  o hasta 4 preguntas frecuentes que toca para enviarlas; con vista previa del chat (vuestro mensaje a la
+  izquierda, el del cliente a la derecha, en verde).
+- **Formatos**: Tablero mide cada imagen o vídeo y lo enseña junto al nombre (4:5, 1:1, 9:16, 16:9). Las
+  versiones de una pieza (mismo nombre sin el formato, como «2_9_16» y «2_4_5», o si solo hay dos) se juntan en
+  **un solo anuncio** (hasta cuatro, una por formato): cada una va en las ubicaciones que le tocan y la primera
+  (4:5, si la hay) en el resto, como hace el Administrador de anuncios. Se pueden separar o juntar a mano.
+- **Ubicaciones**: automáticas (Meta reparte) o elegidas una a una, por grupos: Facebook (feed, perfil,
+  Marketplace, búsqueda, columna derecha, notificaciones, Stories, Reels y vídeos in-stream, solo con vídeo),
+  Instagram (feed, perfil, Explorar, búsqueda, Stories, Reels y Reels del perfil), Messenger (bandeja de entrada y
+  Stories) y Estados de WhatsApp (Meta los pide con Instagram Stories: se marcan juntos). Al lado de cada una, el
+  tamaño recomendado y un **check verde** si alguna versión subida le va (con varios anuncios, cuántos la tienen).
 - Con Advantage+ activado, Meta solo admite la edad mínima (hasta 25) y decide el resto.
 - **Mejoras automáticas de Meta** (Advantage+ creative: retoques, superposiciones, mejoras de texto,
   comentarios relevantes, traducción, stickers…) y **anuncios multianunciante**: sin decir nada, Meta activa

@@ -8,7 +8,6 @@ import { MetaAdder, MetaEditor } from './AdsEdit'
 import { META_SOURCE, RunningCampaigns, type RunningSource } from './AdsRunning'
 import * as Icon from './Icons'
 import { Popover } from './Popover'
-import { Segmented } from './Segmented'
 import '../styles/anuncios.css'
 
 const DEVELOPERS = 'https://developers.facebook.com/apps/'
@@ -25,11 +24,8 @@ const META_RUNNING: RunningSource = {
 /** Con menos días que estos, la conexión avisa de que va a caducar. */
 const EXPIRY_WARNING = 7
 
+/** Lo que se ve de la cuenta: «En marcha» o el formulario de una campaña nueva («Crear»). */
 type Section = 'marcha' | 'nueva'
-const SECTIONS: Array<{ value: Section; label: string }> = [
-  { value: 'marcha', label: 'En marcha' },
-  { value: 'nueva', label: 'Nueva campaña' },
-]
 
 export const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
@@ -505,7 +501,6 @@ function Workspace({ status, onStatus }: { status: MetaStatus; onStatus: (status
                 {!selected.account.activa && <span className="ads-inactive"> · Cuenta {selected.account.estado}</span>}
               </p>
             </div>
-            <Segmented value={section === 'nueva' ? 'nueva' : 'marcha'} options={SECTIONS} label="Sección" onChange={setSection} />
           </div>
           {section !== 'nueva' && (
             <RunningCampaigns
@@ -516,7 +511,14 @@ function Workspace({ status, onStatus }: { status: MetaStatus; onStatus: (status
             />
           )}
           {/* Oculta en vez de quitada: lo que se esté preparando sigue ahí al volver. */}
-          <div hidden={section !== 'nueva'}>
+          <div hidden={section !== 'nueva'} className="ads-new-campaign">
+            <header className="ads-composer-head">
+              <h3>Nueva campaña</h3>
+              <button type="button" className="btn" onClick={() => setSection('marcha')}>
+                <Icon.ChevronLeft />
+                Volver a En marcha
+              </button>
+            </header>
             <AdsComposer
               key={selected.account.id}
               account={selected.account}

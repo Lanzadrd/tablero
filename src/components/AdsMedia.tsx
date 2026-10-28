@@ -1,4 +1,5 @@
 import { adNameFrom, type Media } from '../ads'
+import { formatOf, type Formato } from '../placements'
 import * as Icon from './Icons'
 
 /** Una imagen o un vídeo elegido para los anuncios. */
@@ -13,13 +14,18 @@ export interface Creative {
   ratio: number | null
 }
 
-/** Un anuncio: una imagen o un vídeo; o la versión del feed y la vertical, cada una en sus ubicaciones. */
+/** Un anuncio: una imagen o un vídeo, o varias versiones de la misma pieza (1:1, 4:5, 9:16, 16:9), cada una en sus ubicaciones. */
 export interface Draft {
   key: string
   nombre: string
-  /** Una, o dos: la del feed primero y la vertical después. */
+  /** De una a cuatro, cada una de un formato; la del feed (la que va en el resto de ubicaciones) primero. */
   items: Creative[]
 }
+
+/** El formato de una versión (si no se ha podido medir, el del feed). */
+export const formatOfCreative = (c: Creative): Formato => formatOf(c.ratio) ?? '4:5'
+const ORDER: Formato[] = ['4:5', '1:1', '9:16', '16:9']
+const byFormat = (a: Creative, b: Creative) => ORDER.indexOf(formatOfCreative(a)) - ORDER.indexOf(formatOfCreative(b))
 
 /** Más estrecha que esto (9:16 y parecidas) es vertical: la de Stories, Reels y Estados. */
 const VERTICAL = 0.7
@@ -118,17 +124,16 @@ export function baseName(name: string) {
     .trim()
 }
 
-/** ¿Son las dos versiones de una pieza? Sueltas, del mismo tipo, una vertical y la otra no. */
+/** ¿Pueden ser versiones de la misma pieza? Del mismo tipo, medidas, y sin repetir formato (como mucho cuatro). */
 export function fits(a: Draft, b: Draft) {
-  if (a.items.length !== 1 || b.items.length !== 1) return false
-  const [x, y] = [a.items[0], b.items[0]]
-  return x.tipo === y.tipo && x.ratio !== null && y.ratio !== null && isVertical(x) !== isVertical(y)
+  const all = [...a.items, ...b.items]
+  if (all.length > ORDER.length || all.some((c) => c.ratio === null || c.tipo !== all[0].tipo)) return false
+  return new Set(all.map(formatOfCreative)).size === all.length
 }
 
-/** Las dos en un anuncio, la del feed primero, con el nombre sin el formato. */
+/** Todas en un anuncio, la del feed primero, con el nombre sin el formato. */
 function join(a: Draft, b: Draft): Draft {
-  const items = [a.items[0], b.items[0]].sort((x, y) => Number(isVertical(x)) - Number(isVertical(y)))
-  return { key: a.key, nombre: baseName(a.nombre) || a.nombre, items }
+  return { key: a.key, nombre: baseName(a.nombre) || a.nombre, items: [...a.items, ...b.items].sort(byFormat) }
 }
 
 /** Junta `b` con `a` en el sitio del que va antes en la lista. */
@@ -138,8 +143,8 @@ export function joinIn(list: Draft[], a: Draft, b: Draft) {
 }
 
 /**
- * Los anuncios con los nuevos al final. Cada nuevo se junta con la otra versión de su pieza (la del mismo nombre
- * sin el formato); y si al final solo quedan dos sueltos que encajan, también (lo normal: subir las dos).
+ * Los anuncios con los nuevos al final. Cada nuevo se junta con las otras versiones de su pieza (las del mismo
+ * nombre sin el formato); y si al final solo quedan dos sueltos que encajan, también (lo normal: subir las dos).
  */
 export function addDrafts(list: Draft[], added: Draft[]) {
   let all = [...list, ...added]
@@ -156,11 +161,11 @@ export function addDrafts(list: Draft[], added: Draft[]) {
   return all
 }
 
-/** Separa las dos versiones en dos anuncios, cada uno con el nombre de su archivo. */
+/** Separa las versiones en anuncios sueltos, cada uno con el nombre de su archivo. */
 export const split = (list: Draft[], draft: Draft) =>
   list.flatMap((d) => (d === draft ? d.items.map((c) => ({ key: crypto.randomUUID(), nombre: adNameFrom(c.file.name), items: [c] })) : [d]))
 
-/** Las imágenes y vídeos elegidos, un anuncio por fila: con su formato y, si son dos, dónde va cada una. */
+/** Las imágenes y vídeos elegidos, un anuncio por fila: con sus formatos al lado del nombre. */
 export function MediaList({ drafts, busy, onChange }: { drafts: Draft[]; busy: boolean; onChange: (drafts: Draft[]) => void }) {
   const remove = (draft: Draft) => {
     draft.items.forEach((c) => URL.revokeObjectURL(c.preview))
@@ -169,8 +174,8 @@ export function MediaList({ drafts, busy, onChange }: { drafts: Draft[]; busy: b
   return (
     <ul className="ads-creatives">
       {drafts.map((d) => {
-        const [first, second] = d.items
         const partners = drafts.filter((o) => o !== d && fits(o, d))
+        const formats = d.items.map(formatOfCreative)
         return (
           <li key={d.key} className="ads-creative">
             <div className="ads-creative-media">
@@ -179,32 +184,39 @@ export function MediaList({ drafts, busy, onChange }: { drafts: Draft[]; busy: b
               ))}
             </div>
             <div className="ads-creative-body">
-              <input
-                className="input ads-creative-name"
-                aria-label={`Nombre del anuncio de ${d.items.map((c) => c.file.name).join(' y ')}`}
-                value={d.nombre}
-                disabled={busy}
-                onChange={(e) => onChange(drafts.map((x) => (x === d ? { ...x, nombre: e.target.value } : x)))}
-              />
+              <span className="ads-creative-title">
+                <input
+                  className="input ads-creative-name"
+                  aria-label={`Nombre del anuncio de ${d.items.map((c) => c.file.name).join(', ')}`}
+                  value={d.nombre}
+                  disabled={busy}
+                  onChange={(e) => onChange(drafts.map((x) => (x === d ? { ...x, nombre: e.target.value } : x)))}
+                />
+                <span className="ads-formats" aria-label={`Formatos: ${formats.join(', ')}`}>
+                  {formats.map((f) => (
+                    <span key={f} className="ads-format">
+                      {f}
+                    </span>
+                  ))}
+                </span>
+              </span>
               <p className="ads-creative-note">
-                {second ? (
+                {d.items.length > 1 ? (
                   <>
-                    {ratioLabel(first.ratio) ?? 'La otra'} en el feed · {ratioLabel(second.ratio) ?? 'la vertical'} en Stories, Reels y Estados
+                    Cada versión va en sus ubicaciones; la {formats[0]}, en las demás.
                     <button type="button" className="link-btn" disabled={busy} onClick={() => onChange(split(drafts, d))}>
                       Separar
                     </button>
                   </>
-                ) : first.ratio === null ? (
+                ) : d.items[0].ratio === null ? (
                   'No se ha podido ver su formato: sale igual en todas las ubicaciones.'
-                ) : isVertical(first) ? (
-                  'Vertical: en el feed, Meta la recorta.'
                 ) : (
-                  'Sale igual en todas las ubicaciones.'
+                  'Sale en todas las ubicaciones (Meta la recorta donde no encaje). Sube otros formatos de la misma pieza para cada sitio.'
                 )}
                 {partners.length > 0 && (
                   <select
                     className="input ads-join"
-                    aria-label={`Juntar «${d.nombre}» con su versión ${isVertical(first) ? 'del feed' : 'vertical'}`}
+                    aria-label={`Juntar «${d.nombre}» con otra versión de la misma pieza`}
                     value=""
                     disabled={busy}
                     onChange={(e) => {
@@ -212,10 +224,10 @@ export function MediaList({ drafts, busy, onChange }: { drafts: Draft[]; busy: b
                       if (partner) onChange(joinIn(drafts, d, partner))
                     }}
                   >
-                    <option value="">{isVertical(first) ? 'Juntar con la del feed…' : 'Juntar con la vertical…'}</option>
+                    <option value="">Juntar con otra versión…</option>
                     {partners.map((p) => (
                       <option key={p.key} value={p.key}>
-                        {p.nombre}
+                        {p.nombre} ({p.items.map(formatOfCreative).join(', ')})
                       </option>
                     ))}
                   </select>

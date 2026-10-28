@@ -4,18 +4,43 @@
 :root {
   --ads-ok: #248a3d;
   --ads-warning: #a85d00;
+  /* El chat de WhatsApp de la vista previa, con sus colores. */
+  --wa-head: #008069;
+  --wa-wall: #efeae2;
+  --wa-in: #ffffff;
+  --wa-out: #d9fdd3;
+  --wa-text: #111b21;
+  --wa-who: #54656f;
+  --wa-chip: #008069;
+  /* «Crear», en verde (con letra blanca que se lee). */
+  --create: #1d8c3f;
+  --create-hover: #187a36;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --ads-ok: #30d158;
     --ads-warning: #ffb340;
+    --wa-head: #202c33;
+    --wa-wall: #0b141a;
+    --wa-in: #202c33;
+    --wa-out: #005c4b;
+    --wa-text: #e9edef;
+    --wa-who: #8696a0;
+    --wa-chip: #00a884;
   }
 }
 
 :root[data-theme='dark'] {
   --ads-ok: #30d158;
   --ads-warning: #ffb340;
+  --wa-head: #202c33;
+  --wa-wall: #0b141a;
+  --wa-in: #202c33;
+  --wa-out: #005c4b;
+  --wa-text: #e9edef;
+  --wa-who: #8696a0;
+  --wa-chip: #00a884;
 }
 
 /* ───────── Página ───────── */
@@ -474,13 +499,18 @@
 
 @container ads-main (min-width: 960px) {
   .ads-composer-layout {
-    grid-template-columns: minmax(0, 740px) minmax(280px, 360px);
+    grid-template-columns: minmax(0, 700px) minmax(380px, 1fr);
     align-items: start;
   }
 
+  /* Quieta al bajar; si no cabe entera, baja por dentro. */
   .ads-preview-column {
     position: sticky;
     top: 0;
+    max-height: calc(100dvh - var(--bar-h) - 40px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 14px;
   }
 }
 
@@ -552,8 +582,52 @@
   max-width: 60%;
 }
 
-.ads-preview .segmented {
-  justify-self: start;
+/* Todas las vistas a la vez, en dos columnas si caben (las altas no dejan huecos). */
+.ads-preview-grid {
+  columns: 2 180px;
+  column-gap: 14px;
+}
+
+.ads-preview-item {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 16px;
+  break-inside: avoid;
+}
+
+.ads-preview-item figcaption {
+  display: grid;
+  gap: 1px;
+}
+
+.ads-preview-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.ads-preview-where {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.ads-preview-fit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--ads-warning);
+}
+
+.ads-preview-fit.is-ok {
+  color: var(--ads-ok);
+}
+
+.ads-preview-fit svg {
+  width: 12px;
+  height: 12px;
 }
 
 .ads-preview .ads-note {
@@ -1254,7 +1328,195 @@
 }
 
 .input.ads-creative-name {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+}
+
+/* El nombre del anuncio y, a su lado, los formatos que tiene. */
+.ads-creative-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ads-formats {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.ads-format {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--fill);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ads-subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ───────── Ubicaciones: cada una con su tamaño y, si hay versión que le va, un check ───────── */
+
+.ads-placements {
+  display: grid;
+  gap: 10px;
+}
+
+.ads-placements-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.ads-placements-head > span {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.ads-placements-head small {
+  font-size: 12px;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.ads-placements .ads-hint {
+  margin: 0;
+}
+
+.ads-placement-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 6px 16px;
+}
+
+.ads-placement-group {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ads-placement-group legend {
+  padding: 0 8px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ads-placement-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.ads-placement-all input,
+.ads-placement input {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* Casilla · nombre · tamaño recomendado · check. */
+.ads-placement {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.ads-placement:has(input:not(:disabled)):hover {
+  background: var(--hover);
+}
+
+.ads-placement-group.is-read-only .ads-placement {
+  grid-template-columns: minmax(0, 1fr) auto 18px;
+}
+
+.ads-placement-name {
+  min-width: 0;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.ads-placement-name small {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.ads-placement.is-disabled,
+.ads-placement.is-off {
+  color: var(--text-3);
+}
+
+.ads-placement.is-disabled .ads-placement-name,
+.ads-placement-group.is-read-only .ads-placement-name,
+.ads-placement-group:disabled .ads-placement-name {
+  cursor: default;
+}
+
+.ads-placement-size {
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ads-placement.is-off .ads-placement-size {
+  color: var(--text-3);
+}
+
+.ads-placement-ok {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ads-ok);
+  color: #fff;
+}
+
+.ads-placement-ok svg {
+  width: 11px;
+  height: 11px;
+}
+
+.ads-placement-some {
+  justify-self: center;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ads-warning);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sin versión de su tamaño: Meta adapta la del feed. */
+.ads-placement-none {
+  justify-self: center;
+  width: 12px;
+  height: 12px;
+  border: 1.5px dashed var(--text-3);
+  border-radius: 50%;
 }
 
 /* ───────── Chat de WhatsApp ───────── */
@@ -1289,60 +1551,117 @@
   width: 100%;
 }
 
-/* Un chat de WhatsApp de mentira: la burbuja de la empresa y, abajo, lo que puede enviar la persona. */
-.ads-chat-preview {
-  flex: 0 1 240px;
-  display: grid;
-  gap: 8px;
-  min-width: 200px;
-  padding: 10px 10px 12px;
-  border-radius: 12px;
-  background: color-mix(in srgb, #25d366 8%, var(--fill));
+/* Un chat de WhatsApp de mentira: la empresa arriba, su mensaje a la izquierda y lo del cliente, a la derecha en verde. */
+.ads-wa {
+  flex: 0 1 270px;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--wa-wall);
+  box-shadow: 0 0 0 0.5px var(--separator);
   font-size: 12.5px;
   line-height: 1.35;
 }
 
-.ads-chat-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-2);
+.ads-wa-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--wa-head);
+  color: #fff;
 }
 
-.ads-bubble {
-  justify-self: start;
-  max-width: 92%;
+.ads-wa-head .ads-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+}
+
+.ads-wa-head span {
+  display: grid;
+  min-width: 0;
+}
+
+.ads-wa-head strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.ads-wa-head small {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.ads-wa-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 10px 12px;
+}
+
+.ads-wa-who {
+  margin: 6px 4px 1px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--wa-who);
+}
+
+.ads-wa-who.is-me {
+  align-self: flex-end;
+}
+
+.ads-wa-bubble {
+  max-width: 88%;
   margin: 0;
   padding: 6px 9px;
-  border-radius: 2px 10px 10px 10px;
-  background: var(--surface);
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  color: var(--wa-text);
+  box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
 }
 
-.ads-chat-input {
-  margin: 0;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  overflow-wrap: anywhere;
+.ads-wa-bubble.is-them {
+  align-self: flex-start;
+  border-radius: 2px 10px 10px 10px;
+  background: var(--wa-in);
 }
 
-.ads-chat-questions {
-  display: grid;
-  justify-items: end;
+.ads-wa-bubble.is-me {
+  align-self: flex-end;
+  border-radius: 10px 2px 10px 10px;
+  background: var(--wa-out);
+}
+
+.ads-wa-questions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 4px;
 }
 
-.ads-chat-questions span {
-  max-width: 92%;
-  padding: 5px 9px;
-  border: 1px solid color-mix(in srgb, #25d366 45%, transparent);
+.ads-wa-questions span {
+  max-width: 88%;
+  padding: 5px 10px;
   border-radius: 999px;
-  background: var(--surface);
-  color: color-mix(in srgb, #128c7e 80%, var(--text));
+  border: 1px solid var(--wa-chip);
+  background: var(--wa-in);
+  color: var(--wa-chip);
+  font-weight: 500;
   overflow-wrap: anywhere;
+}
+
+.ads-wa-foot {
+  padding: 6px 10px 8px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--wa-who);
 }
 
 /* ───────── Crear ───────── */
@@ -2081,11 +2400,11 @@
   padding: 0 4px;
 }
 
-/* La imagen o el vídeo del feed y la vertical, cada uno con su miniatura. */
+/* Una imagen o un vídeo por formato, cada uno con su miniatura. */
 .ads-slots {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 12px 16px;
 }
 
 .ads-slot {
@@ -2095,15 +2414,21 @@
   min-width: 0;
 }
 
-.ads-slot-media {
-  position: relative;
+/* Cada hueco, con la forma de su formato dentro de un cuadrado (todos alineados). */
+.ads-slot-frame {
   flex: none;
   display: grid;
   place-items: center;
-  width: 72px;
-  height: 72px;
+  width: 76px;
+  height: 76px;
+}
+
+.ads-slot-media {
+  position: relative;
+  display: grid;
+  place-items: center;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--fill);
   color: var(--text-3);
 }
@@ -2115,9 +2440,27 @@
   object-fit: cover;
 }
 
-.ads-slot-media.is-empty {
+.ads-slot.is-empty .ads-slot-media {
   border: 1px dashed var(--separator);
   background: none;
+}
+
+.ads-slot-ratio {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ads-slot-text strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.ads-slot-text .ads-note.is-warning {
+  color: var(--ads-warning);
 }
 
 .ads-slot-badge {
@@ -2452,4 +2795,46 @@
   width: 15px;
   height: 15px;
   accent-color: var(--accent);
+}
+
+/* «+ Crear»: verde, como en el Administrador de anuncios, a la izquierda de la barra. */
+.ads .ads-create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 14px 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--create);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  transition: background-color 120ms;
+}
+
+.ads .ads-create-btn:hover {
+  background: var(--create-hover);
+}
+
+.ads-create-btn svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.2;
+}
+
+.ads-new-campaign {
+  display: grid;
+  gap: 12px;
+}
+
+/* Se queda montada (para no perder lo escrito) pero sin verse mientras se mira «En marcha». */
+.ads-new-campaign[hidden] {
+  display: none;
+}
+
+.ads-new-campaign > .ads-composer-head .btn svg {
+  width: 13px;
+  height: 13px;
 }

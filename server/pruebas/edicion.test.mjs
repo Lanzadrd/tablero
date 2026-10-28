@@ -48,37 +48,47 @@ test('público: lugares con su nombre, edad, sexo, ubicaciones y lo que Tablero 
   assert.equal(a.genero, 'mujeres')
   assert.equal(a.advantage, false)
   assert.equal(a.ubicaciones, 'manual')
+  assert.deepEqual(a.posiciones, ['fb_feed', 'ig_feed'])
   assert.deepEqual(a.extras, ['intereses y comportamientos', 'públicos personalizados'])
-  assert.equal(audienceOf({ geo_locations: { countries: ['ES'] }, publisher_platforms: ['instagram'], targeting_automation: { advantage_audience: 1 } }).ubicaciones, 'instagram')
+  // Solo Instagram (sin posiciones): todas las suyas.
+  assert.deepEqual(audienceOf({ geo_locations: { countries: ['ES'] }, publisher_platforms: ['instagram'] }).posiciones, ['ig_feed', 'ig_profile', 'ig_explore_home', 'ig_search', 'ig_story', 'ig_reels', 'ig_profile_reels'])
+  // Con una que Tablero no conoce, se quedan las de Meta.
+  assert.equal(audienceOf({ geo_locations: { countries: ['ES'] }, publisher_platforms: ['audience_network'] }).ubicaciones, 'meta')
+  assert.equal(audienceOf({ geo_locations: { countries: ['ES'] } }).ubicaciones, 'auto')
 })
 
-test('público al guardar: cambia lo de Tablero y conserva lo demás (intereses, radio de la ciudad, ubicaciones a mano)', () => {
+test('público al guardar: cambia lo de Tablero y conserva lo demás (intereses, radio de la ciudad, ubicaciones de Meta)', () => {
   const lugares = [
     { key: '1903856', tipo: 'city', nombre: 'Ciudad del Este', detalle: '' },
     { key: '2591', tipo: 'region', nombre: 'Central', detalle: '' },
   ]
-  const kept = mergeTargeting(TARGETING, { lugares, edadMin: 30, edadMax: 50, genero: 'todos', advantage: false, ubicaciones: 'manual' })
+  const kept = mergeTargeting(TARGETING, { lugares, edadMin: 30, edadMax: 50, genero: 'todos', advantage: false, ubicaciones: 'meta', posiciones: [] })
   assert.deepEqual(kept.geo_locations, { cities: [{ key: '1903856', radius: 25, distance_unit: 'kilometer' }], regions: [{ key: '2591' }], location_types: ['home', 'recent'] })
   assert.equal(kept.age_min, 30)
   assert.equal(kept.age_max, 50)
   assert.equal(kept.genders, undefined)
   assert.deepEqual(kept.flexible_spec, TARGETING.flexible_spec)
   assert.deepEqual(kept.custom_audiences, TARGETING.custom_audiences)
-  assert.deepEqual(kept.facebook_positions, ['feed'], 'las ubicaciones a mano se quedan')
+  assert.deepEqual(kept.facebook_positions, ['feed'], 'las ubicaciones de Meta se quedan')
+  const chosen = mergeTargeting(TARGETING, { lugares, edadMin: 30, edadMax: 50, genero: 'todos', advantage: false, ubicaciones: 'manual', posiciones: ['fb_marketplace', 'ig_story'] })
+  assert.deepEqual(chosen.publisher_platforms, ['facebook', 'instagram'])
+  assert.deepEqual(chosen.facebook_positions, ['marketplace'])
+  assert.deepEqual(chosen.instagram_positions, ['story'])
+  assert.throws(() => mergeTargeting(TARGETING, { lugares, edadMin: 30, edadMax: 50, genero: 'todos', advantage: false, ubicaciones: 'manual', posiciones: [] }), /al menos una ubicación/)
   assert.equal(TARGETING.age_min, 25, 'no toca el original')
 
-  const auto = mergeTargeting(TARGETING, { lugares, edadMin: 40, edadMax: 60, genero: 'hombres', advantage: true, ubicaciones: 'auto' })
+  const auto = mergeTargeting(TARGETING, { lugares, edadMin: 40, edadMax: 60, genero: 'hombres', advantage: true, ubicaciones: 'auto', posiciones: [] })
   assert.equal(auto.age_min, 25, 'con Advantage+, como mucho 25')
   assert.equal(auto.age_max, undefined)
   assert.equal(auto.genders, undefined)
   assert.equal(auto.targeting_automation.advantage_audience, 1)
   assert.deepEqual(auto.targeting_relaxation_types, { lookalike: 1, custom_audience: 1 }, 'Meta lo pide al guardar con Advantage+')
   assert.equal(auto.targeting_optimization, 'expansion_all')
-  assert.equal(mergeTargeting({ ...TARGETING, age_range: [25, 54] }, { lugares, edadMin: 30, edadMax: 40, genero: 'todos', advantage: false, ubicaciones: 'manual' }).age_range, undefined)
+  assert.equal(mergeTargeting({ ...TARGETING, age_range: [25, 54] }, { lugares, edadMin: 30, edadMax: 40, genero: 'todos', advantage: false, ubicaciones: 'meta', posiciones: [] }).age_range, undefined)
   assert.equal(auto.publisher_platforms, undefined)
   assert.equal(auto.facebook_positions, undefined)
-  assert.deepEqual(mergeTargeting(TARGETING, { lugares, edadMin: 18, edadMax: 65, genero: 'todos', advantage: false, ubicaciones: 'instagram' }).publisher_platforms, ['instagram'])
-  assert.throws(() => mergeTargeting(TARGETING, { lugares: [], edadMin: 18, edadMax: 65, genero: 'todos', advantage: true, ubicaciones: 'auto' }), /al menos un lugar/)
+  assert.deepEqual(mergeTargeting(TARGETING, { lugares, edadMin: 18, edadMax: 65, genero: 'todos', advantage: false, ubicaciones: 'instagram', posiciones: [] }).publisher_platforms, ['instagram'])
+  assert.throws(() => mergeTargeting(TARGETING, { lugares: [], edadMin: 18, edadMax: 65, genero: 'todos', advantage: true, ubicaciones: 'auto', posiciones: [] }), /al menos un lugar/)
 })
 
 // ── El contenido de un anuncio ──
@@ -102,8 +112,7 @@ test('contenido: un anuncio a WhatsApp con imagen se puede editar; con otro dest
   }
   const c = contentOf(creative)
   assert.equal(c.editable, true)
-  assert.deepEqual(c.medio, { tipo: 'imagen', hash: 'abc123def456' })
-  assert.equal(c.vertical, null)
+  assert.deepEqual(c.versiones, [{ formato: '4:5', medio: { tipo: 'imagen', hash: 'abc123def456' } }])
   assert.equal(c.ajustes.texto, 'Escríbenos')
   assert.equal(c.ajustes.titular, 'City tour')
   assert.equal(c.ajustes.descripcion, 'Desde 150.000')
@@ -137,8 +146,10 @@ test('contenido: con versión vertical (vídeos), cada una en su sitio y con su 
     },
   })
   assert.equal(c.editable, true)
-  assert.deepEqual(c.medio, { tipo: 'video', id: '901' })
-  assert.deepEqual(c.vertical, { tipo: 'video', id: '902' })
+  assert.deepEqual(c.versiones, [
+    { formato: '4:5', medio: { tipo: 'video', id: '901' } },
+    { formato: '9:16', medio: { tipo: 'video', id: '902' } },
+  ])
   assert.deepEqual(c.miniaturas, [['901', 'aaa111'], ['902', 'bbb222']])
   assert.equal(c.ajustes.saludo, 'Quiero info')
   assert.equal(c.ajustes.tipoMensaje, 'escrito')
@@ -318,14 +329,16 @@ test('anuncio: cambiar el texto crea otro contenido con lo demás igual y se lo 
     },
   }
   routes['GET 30'] = { name: 'Anuncio 1', status: 'ACTIVE', account_id: '111', adset_id: '20', creative }
+  routes['GET 20'] = { targeting: { geo_locations: { countries: ['PY'] } } }
   routes['GET act_111/adimages'] = { data: [{ hash: 'abc123def456', url: 'https://cdn/abc.jpg', width: 1080, height: 1350 }] }
   routes['POST act_111/adcreatives'] = { id: '701' }
   routes['POST 30'] = { success: true }
   const read = await request('GET', '/api/meta/editar?cuenta=act_111&nivel=anuncio&id=30')
   assert.equal(read.status, 200, read.text)
   assert.equal(read.body.anuncio.editable, true)
-  assert.equal(read.body.anuncio.medio.url, 'https://cdn/abc.jpg')
-  assert.equal(read.body.anuncio.medio.ratio, 0.8)
+  assert.equal(read.body.anuncio.versiones[0].medio.url, 'https://cdn/abc.jpg')
+  assert.equal(read.body.anuncio.versiones[0].medio.ratio, 0.8)
+  assert.equal(read.body.anuncio.versiones[0].formato, '4:5', 'el formato de una sola imagen, por su proporción')
 
   const saved = await request('POST', '/api/meta/editar', {
     body: { cuenta: 'act_111', nivel: 'anuncio', id: '30', cambios: { contenido: { ...read.body.anuncio.contenido, texto: 'Después' } } },
@@ -434,7 +447,7 @@ test('varias opciones de texto (las del Administrador de anuncios): se leen y se
   assert.deepEqual(c.miniaturas, [['905', 'ccc333']])
 
   const plan = { ...c.ajustes, variantes: { textos: ['Dos', 'Tres'], titulos: ['T2'], descripciones: [] }, cuenta: 'act_111', mejoras: [], anuncios: [] }
-  const body = creativeBody(plan, { nombre: 'A', medio: c.medio }, { thumbs: new Map(c.miniaturas) })
+  const body = creativeBody(plan, { nombre: 'A', medio: c.versiones[0].medio }, { thumbs: new Map(c.miniaturas) })
   assert.deepEqual(body.asset_feed_spec, {
     bodies: [{ text: 'Uno' }, { text: 'Dos' }, { text: 'Tres' }],
     titles: [{ text: 'T1' }, { text: 'T2' }],
@@ -443,7 +456,7 @@ test('varias opciones de texto (las del Administrador de anuncios): se leen y se
   assert.equal(body.object_story_spec.video_data.message, undefined, 'los textos van solo en asset_feed_spec')
   assert.equal(body.object_story_spec.video_data.video_id, '905')
   // Sin variantes, como siempre.
-  const single = creativeBody({ ...plan, variantes: { textos: [], titulos: [], descripciones: [] } }, { nombre: 'A', medio: c.medio }, { thumbs: new Map(c.miniaturas) })
+  const single = creativeBody({ ...plan, variantes: { textos: [], titulos: [], descripciones: [] } }, { nombre: 'A', medio: c.versiones[0].medio }, { thumbs: new Map(c.miniaturas) })
   assert.equal(single.asset_feed_spec, undefined)
   assert.equal(single.object_story_spec.video_data.message, 'Uno')
 })

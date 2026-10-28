@@ -9,21 +9,23 @@ import {
   type AdAccount,
   type AdContent,
   type AdSettings,
+  type AdVersion,
   type Audience,
   type Bid,
   type EditChanges,
   type EditDetails,
   type Enhancement,
   type Level,
-  type Media,
   type MediaPreview,
   type MetaPage,
   type Variants,
 } from '../ads'
+import { formatOf, FORMATOS, type Formato } from '../placements'
 import { cx } from '../util'
 import { errorText } from './Ads'
-import { CHAT_STARTS, ChatPreview, Chips, Field, GENDERS, PLACEMENTS, PlacePicker, Questions, range } from './AdsComposer'
+import { CHAT_STARTS, ChatPreview, Chips, Field, GENDERS, PlacePicker, Questions, range } from './AdsComposer'
 import { measure, type Creative } from './AdsMedia'
+import { PlacementPicker, type PlacementMode } from './AdsPlacements'
 import { AdPreview } from './AdsPreview'
 import type { AdderProps, EditorProps } from './AdsRunning'
 import * as Icon from './Icons'
@@ -77,7 +79,7 @@ export function MetaEditor({ account, level, row, onCancel, onSaved }: EditorPro
 
   const save = async (cambios: EditChanges) => {
     const saved = await metaApi.update(account.id, level, row.id, cambios)
-    const review = cambios.contenido || cambios.medio || cambios.vertical !== undefined ? ' Meta lo vuelve a revisar antes de enseñar los cambios.' : ''
+    const review = cambios.contenido || cambios.versiones ? ' Meta lo vuelve a revisar antes de enseñar los cambios.' : ''
     onSaved(`${capitalize(WORDS[level].el)} «${saved.nombre}», ${WORDS[level].saved}.${review}`)
   }
 
@@ -140,7 +142,21 @@ export function useSave<T>(onSave: (cambios: T) => Promise<void>) {
   return { busy, error, run }
 }
 
-export function SaveBar({ changed, busy, error, note, label = 'Guardar', onSave }: { changed: boolean; busy: boolean; error: string | null; note?: ReactNode; label?: string; onSave: () => void }) {
+export function SaveBar({
+  changed,
+  busy,
+  error,
+  note,
+  label = 'Guardar',
+  onSave,
+}: {
+  changed: boolean
+  busy: boolean
+  error: string | null
+  note?: ReactNode
+  label?: string
+  onSave: () => void
+}) {
   return (
     <section className="ads-card ads-launch" aria-label="Guardar">
       <div className="ads-launch-row">
@@ -289,12 +305,17 @@ function AdSetForm({ data, onSave }: FormProps) {
           ) : (
             <Field label="Presupuesto">
               <span className="ads-note">
-                Usa el de la campaña{s.presupuestoCampana ? ` (${budgetText(s.presupuestoCampana, data.moneda)})` : ''}: se cambia editando la campaña.
+                Usa el de la campaña
+                {s.presupuestoCampana ? ` (${budgetText(s.presupuestoCampana, data.moneda)})` : ''}: se cambia editando la campaña.
               </span>
             </Field>
           )}
           <Field label="Empieza" htmlFor={`${ids}-start`} note={s.empezado ? 'Ya ha empezado: no se puede cambiar.' : start ? null : 'En cuanto lo actives'}>
-            {s.empezado ? <span>{s.inicio ? formatDay(s.inicio) : 'Desde que se activó'}</span> : <input id={`${ids}-start`} className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />}
+            {s.empezado ? (
+              <span>{s.inicio ? formatDay(s.inicio) : 'Desde que se activó'}</span>
+            ) : (
+              <input id={`${ids}-start`} className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+            )}
           </Field>
           <Field label="Termina" htmlFor={`${ids}-end`} note={s.presupuesto?.tipo === 'total' ? 'Con presupuesto total hace falta una fecha de fin.' : null}>
             <span className="ads-end">
@@ -336,7 +357,10 @@ function AdSetForm({ data, onSave }: FormProps) {
           <Field label="Lugares" htmlFor={`${ids}-places`}>
             <PlacePicker id={`${ids}-places`} places={audience.lugares} onChange={(lugares) => update({ lugares })} />
           </Field>
-          <Field label="Advantage+" note={audience.advantage ? 'Meta decide la edad máxima y el sexo según dónde encuentre más resultados.' : 'Desactivado: la edad y el sexo son límites estrictos.'}>
+          <Field
+            label="Advantage+"
+            note={audience.advantage ? 'Meta decide la edad máxima y el sexo según dónde encuentre más resultados.' : 'Desactivado: la edad y el sexo son límites estrictos.'}
+          >
             <Switch checked={audience.advantage} label="Público Advantage+" onChange={(advantage) => update({ advantage })} />
           </Field>
           <Field label="Edad" htmlFor={`${ids}-age`} note={audience.advantage ? 'Con Advantage+, la mínima es como mucho 25.' : null}>
@@ -367,15 +391,12 @@ function AdSetForm({ data, onSave }: FormProps) {
               <Chips label="Sexo" options={GENDERS} value={audience.genero} onChange={(genero) => update({ genero })} />
             </Field>
           )}
-          <Field label="Ubicaciones" note={audience.ubicaciones === 'manual' ? 'Elegidas a mano en Meta: se quedan como están si no eliges otra opción.' : null}>
-            <Chips
-              label="Ubicaciones"
-              options={s.publico.ubicaciones === 'manual' ? [...PLACEMENTS, { value: 'manual' as const, label: 'Las de Meta' }] : PLACEMENTS}
-              value={audience.ubicaciones}
-              onChange={(ubicaciones) => update({ ubicaciones })}
-            />
-          </Field>
         </div>
+      </section>
+
+      <section className="ads-card" aria-labelledby={`${ids}-placements`}>
+        <h4 id={`${ids}-placements`}>Ubicaciones</h4>
+        <PlacementPicker mode={audience.ubicaciones} chosen={audience.posiciones} onChange={(ubicaciones, posiciones) => update({ ubicaciones, posiciones })} />
       </section>
 
       <section className="ads-card" aria-labelledby={`${ids}-fixed`}>
@@ -392,7 +413,12 @@ function AdSetForm({ data, onSave }: FormProps) {
 }
 
 const joinWords = (list: string[]) => (list.length < 2 ? (list[0] ?? '') : `${list.slice(0, -1).join(', ')} y ${list.at(-1)}`)
-const formatDay = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
+const formatDay = (day: string) =>
+  new Date(`${day}T12:00:00`).toLocaleDateString('es-ES', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
 
 // ── Anuncio ──
 
@@ -419,7 +445,8 @@ function AdForm({ data, account, onSave }: FormProps) {
       account={account}
       name={data.nombre}
       initial={a.contenido}
-      media={{ feed: a.medio, vertical: a.vertical }}
+      versions={a.versiones}
+      placements={a.ubicaciones}
       mode="edit"
       busy={busy}
       error={error}
@@ -428,8 +455,7 @@ function AdForm({ data, account, onSave }: FormProps) {
           const changes: EditChanges = {}
           if (result.nombre !== data.nombre) changes.nombre = result.nombre
           if (result.contentChanged) changes.contenido = result.contenido
-          if (result.medio) changes.medio = result.medio
-          if (result.vertical !== undefined) changes.vertical = result.vertical
+          if (result.versiones) changes.versiones = result.versiones
           return changes
         })
       }
@@ -437,36 +463,61 @@ function AdForm({ data, account, onSave }: FormProps) {
   )
 }
 
-/** Un hueco de imagen o vídeo: el que ya tiene el anuncio o uno nuevo (que se sube al guardar). */
+/** Un hueco de imagen o vídeo de un formato: el que ya tiene el anuncio (`medio`) o uno nuevo (que se sube al guardar). */
 interface Slot {
   tipo: 'imagen' | 'video'
   preview: string | null
   ratio: number | null
   file: File | null
+  medio: MediaPreview | null
 }
 
-const slotOf = (media: MediaPreview | null): Slot | null => (media ? { tipo: media.tipo, preview: media.url, ratio: media.ratio, file: null } : null)
+type Slots = Partial<Record<Formato, Slot>>
+
+const slotsOf = (versions: Array<{ formato: Formato; medio: MediaPreview }>): Slots =>
+  Object.fromEntries(
+    versions.map((v) => [
+      v.formato,
+      {
+        tipo: v.medio.tipo,
+        preview: v.medio.url,
+        ratio: v.medio.ratio,
+        file: null,
+        medio: v.medio,
+      },
+    ]),
+  )
+
+/** La proporción de cada formato (para las que no se han podido medir). */
+const RATIO: Record<Formato, number> = {
+  '4:5': 4 / 5,
+  '1:1': 1,
+  '9:16': 9 / 16,
+  '16:9': 16 / 9,
+}
+
+/** Las ubicaciones de un conjunto, como llegan de Meta. */
+type AdSetPlacements = { ubicaciones: PlacementMode; posiciones: string[] }
 
 interface ContentResult {
   nombre: string
   contenido: AdContent
   contentChanged: boolean
-  /** Solo si se ha cambiado. */
-  medio?: Media
-  /** undefined: igual; null: quitada. */
-  vertical?: Media | null
+  /** Todas las versiones, solo si se ha cambiado alguna. */
+  versiones?: AdVersion[]
 }
 
 /**
- * El contenido de un anuncio (uno que se edita o uno nuevo en el conjunto): la imagen o el vídeo y su vertical, los
- * textos (con sus otras opciones, como en el Administrador de anuncios), el Instagram, el chat de WhatsApp y las
- * mejoras; con la vista previa al lado.
+ * El contenido de un anuncio (uno que se edita o uno nuevo en el conjunto): una imagen o un vídeo por formato (cada
+ * uno va en sus ubicaciones, que son las del conjunto), los textos (con sus otras opciones, como en el Administrador
+ * de anuncios), el Instagram, el chat de WhatsApp y las mejoras; con la vista previa al lado.
  */
 function AdContentEditor({
   account,
   name: initialName,
   initial,
-  media,
+  versions,
+  placements,
   mode,
   busy,
   error,
@@ -476,7 +527,8 @@ function AdContentEditor({
   account: AdAccount
   name: string
   initial: AdContent
-  media: { feed: MediaPreview | null; vertical: MediaPreview | null }
+  versions: Array<{ formato: Formato; medio: MediaPreview }>
+  placements: AdSetPlacements | null
   mode: 'edit' | 'new'
   busy: boolean
   error: string | null
@@ -486,8 +538,7 @@ function AdContentEditor({
   const ids = useId()
   const [name, setName] = useState(initialName)
   const [content, setContent] = useState<AdContent>(initial)
-  const [feed, setFeed] = useState<Slot | null>(() => slotOf(media.feed))
-  const [vertical, setVertical] = useState<Slot | null>(() => slotOf(media.vertical))
+  const [slots, setSlots] = useState<Slots>(() => slotsOf(versions))
   const [pages, setPages] = useState<MetaPage[] | null>(null)
   const [uploading, setUploading] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
@@ -498,47 +549,82 @@ function AdContentEditor({
     metaApi.pages(account.id).then(setPages, () => setPages([]))
   }, [account.id])
   // Las vistas previas de los archivos nuevos se liberan al salir.
-  const slots = useRef<Array<Slot | null>>([])
-  slots.current = [feed, vertical]
-  useEffect(() => () => slots.current.forEach((slot) => slot?.file && slot.preview && URL.revokeObjectURL(slot.preview)), [])
+  const slotsRef = useRef(slots)
+  slotsRef.current = slots
+  useEffect(() => () => Object.values(slotsRef.current).forEach((slot) => slot?.file && slot.preview && URL.revokeObjectURL(slot.preview)), [])
 
   const page = pages?.find((p) => p.id === content.pagina) ?? null
+  const filled = FORMATOS.filter((f) => slots[f.value]).map((f) => f.value)
+  const single = filled.length <= 1
   const hasVariants = Object.values(content.variantes).some((list) => list.length)
-  const feedChanged = Boolean(feed?.file)
-  const verticalChanged = vertical?.file ? true : Boolean(media.vertical) !== Boolean(vertical)
+  const versionsChanged =
+    filled.some((f) => slots[f]?.file) ||
+    filled.join() !==
+      versions
+        .map((v) => v.formato)
+        .sort(byOrder)
+        .join()
   const contentChanged = JSON.stringify(content) !== JSON.stringify(initial)
-  const changed = mode === 'new' || name.trim() !== initialName || contentChanged || feedChanged || verticalChanged
+  const changed = mode === 'new' || name.trim() !== initialName || contentChanged || versionsChanged
   const blocked = !content.texto.trim()
     ? 'Falta el texto principal.'
-    : !feed
+    : !filled.length
       ? 'Falta la imagen o el vídeo.'
-      : vertical && hasVariants
-        ? 'Con versión vertical, cada texto va uno solo: quita las otras opciones o la vertical.'
+      : !single && hasVariants
+        ? 'Con varias versiones, cada texto va uno solo: quita las otras opciones o deja una versión.'
         : null
 
-  const pick = async (file: File | undefined, which: 'feed' | 'vertical') => {
+  const pick = async (file: File | undefined, formato: Formato) => {
     if (!file) return
     const tipo = file.type.startsWith('image/') ? 'imagen' : file.type.startsWith('video/') ? 'video' : null
     if (!tipo) return setLocalError('Solo imágenes o vídeos.')
-    const other = which === 'feed' ? vertical : feed
-    if (other && other.tipo !== tipo) return setLocalError('La vertical y la del feed tienen que ser las dos imágenes o los dos vídeos.')
+    const others = filled.filter((f) => f !== formato).map((f) => slots[f]!)
+    if (others.some((o) => o.tipo !== tipo)) return setLocalError('Todas las versiones tienen que ser imágenes o todas vídeos.')
     setLocalError(null)
     const preview = URL.createObjectURL(file)
     const ratio = await measure(file, tipo, preview)
-    const slot: Slot = { tipo, preview, ratio, file }
-    if (which === 'feed') setFeed(slot)
-    else setVertical(slot)
+    setSlots((current) => {
+      const old = current[formato]
+      if (old?.file && old.preview) URL.revokeObjectURL(old.preview)
+      return {
+        ...current,
+        [formato]: { tipo, preview, ratio, file, medio: null },
+      }
+    })
   }
 
+  const removeSlot = (formato: Formato) =>
+    setSlots((current) => {
+      const old = current[formato]
+      if (old?.file && old.preview) URL.revokeObjectURL(old.preview)
+      const next = { ...current }
+      delete next[formato]
+      return next
+    })
+
   const submit = async () => {
-    if (blocked || !feed) return
+    if (blocked) return
     setUploading(true)
     setLocalError(null)
     try {
-      const medio = feed.file ? await uploadMedia(account.id, feed.file) : undefined
-      const verticalMedia = vertical?.file ? await uploadMedia(account.id, vertical.file) : vertical ? undefined : media.vertical ? null : undefined
+      let versiones: AdVersion[] | undefined
+      if (versionsChanged || mode === 'new') {
+        versiones = []
+        for (const formato of filled) {
+          const slot = slots[formato]!
+          versiones.push({
+            formato,
+            medio: slot.file ? await uploadMedia(account.id, slot.file) : slot.medio!,
+          })
+        }
+      }
       setUploading(false)
-      onSubmit({ nombre: name.trim() || initialName, contenido: content, contentChanged: contentChanged || mode === 'new', medio, vertical: verticalMedia })
+      onSubmit({
+        nombre: name.trim() || initialName,
+        contenido: content,
+        contentChanged: contentChanged || mode === 'new',
+        versiones,
+      })
     } catch (err) {
       setUploading(false)
       setLocalError(errorText(err))
@@ -546,20 +632,27 @@ function AdContentEditor({
   }
 
   // La vista previa: lo que hay ahora en cada hueco (las que no se pueden ver, fuera). De un vídeo que ya tiene el
-  // anuncio solo hay su fotograma: se enseña como imagen (y la vertical, como vertical).
-  const previewSettings: AdSettings = { ...DEFAULT_SETTINGS, ...content, cuenta: account.id }
-  const items = [feed, vertical]
-    .map((slot, i) => (slot?.preview ? { slot, vertical: i === 1 } : null))
-    .filter((item): item is { slot: Slot; vertical: boolean } => Boolean(item))
-    .map(({ slot, vertical: isVerticalSlot }, i): Creative => ({
-      key: String(i),
-      file: slot.file as File,
-      tipo: slot.file ? slot.tipo : 'imagen',
-      preview: slot.preview!,
-      medio: null,
-      ratio: slot.ratio ?? (isVerticalSlot ? 9 / 16 : 1),
-    }))
+  // anuncio solo hay su fotograma: se enseña como imagen, con la proporción de su formato.
+  const previewSettings: AdSettings = {
+    ...DEFAULT_SETTINGS,
+    ...content,
+    cuenta: account.id,
+  }
+  const items = filled
+    .filter((f) => slots[f]?.preview)
+    .map((f): Creative => {
+      const slot = slots[f]!
+      return {
+        key: f,
+        file: slot.file as File,
+        tipo: slot.file ? slot.tipo : 'imagen',
+        preview: slot.preview!,
+        medio: null,
+        ratio: slot.file ? slot.ratio : RATIO[f],
+      }
+    })
   const drafts = items.length ? [{ key: 'anuncio', nombre: name, items }] : []
+  const video = filled.length ? slots[filled[0]]!.tipo === 'video' : null
 
   return (
     <div className="ads-composer-layout">
@@ -568,18 +661,39 @@ function AdContentEditor({
 
         <section className="ads-card" aria-labelledby={`${ids}-media`}>
           <h4 id={`${ids}-media`}>Imagen o vídeo</h4>
-          <p className="ads-hint">La del feed va en Facebook, Instagram y las demás ubicaciones; si añades la vertical (9:16), va en Stories, Reels y Estados.</p>
+          <p className="ads-hint">Una por formato, todas de la misma pieza. Cada una va en las ubicaciones que le tocan; la primera que haya (4:5, si la hay), en las demás.</p>
           <div className="ads-slots">
-            <MediaSlot id={`${ids}-feed`} label="Feed" slot={feed} disabled={busy || uploading} onPick={(file) => void pick(file, 'feed')} />
-            <MediaSlot
-              id={`${ids}-vertical`}
-              label="Vertical"
-              slot={vertical}
-              disabled={busy || uploading}
-              onPick={(file) => void pick(file, 'vertical')}
-              onRemove={() => setVertical(null)}
-            />
+            {FORMATOS.map((f) => (
+              <MediaSlot
+                key={f.value}
+                id={`${ids}-${f.value.replace(':', 'x')}`}
+                format={f}
+                slot={slots[f.value] ?? null}
+                disabled={busy || uploading}
+                onPick={(file) => void pick(file, f.value)}
+                onRemove={() => removeSlot(f.value)}
+              />
+            ))}
           </div>
+          <h5 className="ads-subtitle">Ubicaciones del conjunto</h5>
+          {placements ? (
+            <PlacementPicker
+              mode={placements.ubicaciones}
+              chosen={placements.posiciones}
+              pieces={[filled]}
+              video={video}
+              readOnly
+              note={
+                placements.ubicaciones === 'auto'
+                  ? 'Automáticas: Meta lo enseña en todas las que pueda. Se cambian editando el conjunto.'
+                  : placements.ubicaciones === 'meta'
+                    ? 'Elegidas en Meta, con alguna que Tablero no conoce. Se cambian editando el conjunto.'
+                    : 'Las elegidas en el conjunto. Se cambian editando el conjunto.'
+              }
+            />
+          ) : (
+            <p className="ads-note">Leyendo las ubicaciones del conjunto…</p>
+          )}
         </section>
 
         <section className="ads-card" aria-labelledby={`${ids}-copy`}>
@@ -588,13 +702,13 @@ function AdContentEditor({
             <Field label="Texto principal" htmlFor={`${ids}-text`}>
               <textarea id={`${ids}-text`} className="input ads-textarea" rows={4} value={content.texto} onChange={(e) => update({ texto: e.target.value })} />
             </Field>
-            {mode === 'edit' && !vertical && (
+            {mode === 'edit' && single && (
               <VariantList label="Otras opciones del texto" values={content.variantes.textos} multiline onChange={(textos) => setVariants({ textos })} />
             )}
             <Field label="Título" htmlFor={`${ids}-headline`}>
               <input id={`${ids}-headline`} className="input ads-wide" value={content.titular} placeholder="Opcional" onChange={(e) => update({ titular: e.target.value })} />
             </Field>
-            {mode === 'edit' && !vertical && <VariantList label="Otras opciones del título" values={content.variantes.titulos} onChange={(titulos) => setVariants({ titulos })} />}
+            {mode === 'edit' && single && <VariantList label="Otras opciones del título" values={content.variantes.titulos} onChange={(titulos) => setVariants({ titulos })} />}
             <Field label="Descripción" htmlFor={`${ids}-description`}>
               <input
                 id={`${ids}-description`}
@@ -604,7 +718,7 @@ function AdContentEditor({
                 onChange={(e) => update({ descripcion: e.target.value })}
               />
             </Field>
-            {mode === 'edit' && !vertical && (
+            {mode === 'edit' && single && (
               <VariantList label="Otras opciones de la descripción" values={content.variantes.descripciones} onChange={(descripciones) => setVariants({ descripciones })} />
             )}
             {page && (
@@ -615,7 +729,9 @@ function AdContentEditor({
                       {i.usuario ? `@${i.usuario}` : `La de tus anuncios anteriores (${i.id})`}
                     </option>
                   ))}
-                  {content.instagram && !page.instagrams.some((i) => i.id === content.instagram) && <option value={content.instagram}>La que tiene ahora ({content.instagram})</option>}
+                  {content.instagram && !page.instagrams.some((i) => i.id === content.instagram) && (
+                    <option value={content.instagram}>La que tiene ahora ({content.instagram})</option>
+                  )}
                   <option value="">Sin Instagram (como la página)</option>
                 </select>
               </Field>
@@ -628,7 +744,13 @@ function AdContentEditor({
           <div className="ads-chat">
             <div className="ads-fields">
               <Field label="Vuestro mensaje" htmlFor={`${ids}-welcome`}>
-                <textarea id={`${ids}-welcome`} className="input ads-textarea is-short" rows={2} value={content.bienvenida} onChange={(e) => update({ bienvenida: e.target.value })} />
+                <textarea
+                  id={`${ids}-welcome`}
+                  className="input ads-textarea is-short"
+                  rows={2}
+                  value={content.bienvenida}
+                  onChange={(e) => update({ bienvenida: e.target.value })}
+                />
               </Field>
               <Field label="Para empezar">
                 <Chips label="Para empezar" options={CHAT_STARTS} value={content.tipoMensaje} onChange={(tipoMensaje) => update({ tipoMensaje })} />
@@ -643,7 +765,7 @@ function AdContentEditor({
                 </Field>
               )}
             </div>
-            <ChatPreview settings={previewSettings} />
+            <ChatPreview settings={previewSettings} page={page} />
           </div>
         </section>
 
@@ -664,7 +786,9 @@ function AdContentEditor({
                       type="checkbox"
                       checked={content.mejoras.includes(e.key)}
                       onChange={(ev) =>
-                        update({ mejoras: ENHANCEMENTS.map((x) => x.key).filter((k): k is Enhancement => (k === e.key ? ev.target.checked : content.mejoras.includes(k))) })
+                        update({
+                          mejoras: ENHANCEMENTS.map((x) => x.key).filter((k): k is Enhancement => (k === e.key ? ev.target.checked : content.mejoras.includes(k))),
+                        })
                       }
                     />
                     <span>
@@ -686,53 +810,86 @@ function AdContentEditor({
           note={
             uploading
               ? 'Subiendo la imagen o el vídeo…'
-              : (blocked ?? (mode === 'new' ? 'Se crea en pausa: enciéndelo con su interruptor.' : changed ? 'Al guardar, Meta vuelve a revisar el anuncio (conserva sus métricas).' : 'Sin cambios.'))
+              : (blocked ??
+                (mode === 'new'
+                  ? 'Se crea en pausa: enciéndelo con su interruptor.'
+                  : changed
+                    ? 'Al guardar, Meta vuelve a revisar el anuncio (conserva sus métricas).'
+                    : 'Sin cambios.'))
           }
           onSave={() => void submit()}
         />
       </div>
       <aside className="ads-preview-column" aria-label="Vista previa del anuncio">
-        <AdPreview settings={previewSettings} page={page} drafts={drafts} />
+        <AdPreview settings={previewSettings} page={page} drafts={drafts} placements={placements} />
       </aside>
     </div>
   )
 }
 
+const ORDER = FORMATOS.map((f) => f.value)
+const byOrder = (a: Formato, b: Formato) => ORDER.indexOf(a) - ORDER.indexOf(b)
+
 function MediaSlot({
   id,
-  label,
+  format,
   slot,
   disabled,
   onPick,
   onRemove,
 }: {
   id: string
-  label: string
+  format: (typeof FORMATOS)[number]
   slot: Slot | null
   disabled: boolean
   onPick: (file: File | undefined) => void
-  onRemove?: () => void
+  onRemove: () => void
 }) {
   const input = useRef<HTMLInputElement>(null)
+  // Una nueva de otra proporción: Meta la recorta para este formato.
+  const measured = slot?.file ? formatOf(slot.ratio) : null
   return (
-    <div className="ads-slot">
-      <div className={cx('ads-slot-media', !slot && 'is-empty')}>
-        {slot?.preview ? (
-          slot.tipo === 'video' && slot.file ? (
-            <video src={slot.preview} muted playsInline />
+    <div className={cx('ads-slot', !slot && 'is-empty')}>
+      <div className="ads-slot-frame">
+        <div
+          className="ads-slot-media"
+          style={{
+            aspectRatio: RATIO[format.value],
+            [RATIO[format.value] >= 1 ? 'width' : 'height']: '100%',
+          }}
+        >
+          {slot?.preview ? (
+            slot.tipo === 'video' && slot.file ? (
+              <video src={slot.preview} muted playsInline />
+            ) : (
+              <img src={slot.preview} alt="" referrerPolicy="no-referrer" />
+            )
+          ) : slot ? (
+            <Icon.Video />
           ) : (
-            <img src={slot.preview} alt="" referrerPolicy="no-referrer" />
-          )
-        ) : slot ? (
-          <Icon.Video />
-        ) : (
-          <Icon.Image />
-        )}
-        {slot?.tipo === 'video' && <span className="ads-slot-badge">Vídeo</span>}
+            <span className="ads-slot-ratio" aria-hidden="true">
+              {format.value}
+            </span>
+          )}
+          {slot?.tipo === 'video' && <span className="ads-slot-badge">Vídeo</span>}
+        </div>
       </div>
       <div className="ads-slot-text">
-        <strong>{label}</strong>
-        <span className="ads-note">{slot ? (slot.file ? `Nueva: ${slot.file.name}` : 'La que tiene ahora') : label === 'Vertical' ? 'Opcional' : 'Elige una imagen o un vídeo'}</span>
+        <strong>
+          {format.label} <span className="ads-format">{format.value}</span>
+        </strong>
+        <span className="ads-note">
+          {format.size} · {format.where}
+        </span>
+        <span className={cx('ads-note', measured && measured !== format.value && 'is-warning')}>
+          {slot
+            ? slot.file
+              ? measured && measured !== format.value
+                ? `Nueva, pero es ${measured}: Meta la recortará.`
+                : `Nueva: ${slot.file.name}`
+              : 'La que tiene ahora'
+            : 'Opcional'}
+        </span>
         <span className="ads-slot-actions">
           <input
             ref={input}
@@ -746,11 +903,11 @@ function MediaSlot({
               e.target.value = ''
             }}
           />
-          <button type="button" className="btn" disabled={disabled} onClick={() => input.current?.click()}>
+          <button type="button" className="btn" disabled={disabled} aria-label={`${slot ? 'Cambiar' : 'Elegir'} la ${format.value}`} onClick={() => input.current?.click()}>
             {slot ? 'Cambiar…' : 'Elegir…'}
           </button>
-          {onRemove && slot && (
-            <button type="button" className="link-btn" disabled={disabled} onClick={onRemove}>
+          {slot && (
+            <button type="button" className="link-btn" disabled={disabled} aria-label={`Quitar la ${format.value}`} onClick={onRemove}>
               Quitar
             </button>
           )}
@@ -799,6 +956,7 @@ function VariantList({ label, values, multiline = false, onChange }: { label: st
 export function MetaAdder({ account, adSet, template, onCancel, onSaved }: AdderProps) {
   const heading = useRef<HTMLHeadingElement>(null)
   const [start, setStart] = useState<AdContent | null>(null)
+  const [placements, setPlacements] = useState<AdSetPlacements | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -822,6 +980,11 @@ export function MetaAdder({ account, adSet, template, onCancel, onSaved }: Adder
     Promise.all([metaApi.details(account.id, 'conjunto', adSet.id), template ? metaApi.details(account.id, 'anuncio', template.id).catch(() => null) : null]).then(
       ([set, ad]) => {
         const pagina = set.conjunto?.pagina ?? null
+        if (set.conjunto)
+          setPlacements({
+            ubicaciones: set.conjunto.publico.ubicaciones,
+            posiciones: set.conjunto.publico.posiciones,
+          })
         const copied = ad?.anuncio?.editable && ad.anuncio.contenido ? { ...ad.anuncio.contenido, pagina, variantes: NO_VARIANTS } : null
         setStart(copied ?? blank(pagina))
       },
@@ -830,7 +993,7 @@ export function MetaAdder({ account, adSet, template, onCancel, onSaved }: Adder
   }, [account.id, adSet.id, template])
 
   const create = async (result: ContentResult) => {
-    if (!result.medio) return
+    if (!result.versiones?.length) return
     setBusy(true)
     setSaveError(null)
     try {
@@ -838,7 +1001,7 @@ export function MetaAdder({ account, adSet, template, onCancel, onSaved }: Adder
         ...result.contenido,
         cuenta: account.id,
         conjunto: adSet.id,
-        anuncios: [{ nombre: result.nombre, medio: result.medio, ...(result.vertical ? { vertical: result.vertical } : {}) }],
+        anuncios: [{ nombre: result.nombre, versiones: result.versiones }],
       })
       onSaved(`Anuncio «${result.nombre}» creado en pausa en «${adSet.nombre}». Enciéndelo con su interruptor cuando quieras.`)
     } catch (err) {
@@ -874,7 +1037,8 @@ export function MetaAdder({ account, adSet, template, onCancel, onSaved }: Adder
             account={account}
             name="Anuncio nuevo"
             initial={start}
-            media={{ feed: null, vertical: null }}
+            versions={[]}
+            placements={placements}
             mode="new"
             busy={busy}
             error={saveError}

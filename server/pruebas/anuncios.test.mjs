@@ -158,31 +158,33 @@ test('mensaje de WhatsApp: el vuestro y, para empezar, el de la persona ya escri
   assert.equal(ads.cleanSettings({ preguntas: ['x'.repeat(100)] }).preguntas[0].length, 80)
 })
 
-test('con versión vertical: un solo anuncio, la del feed en el feed y la vertical en lo demás', () => {
+test('con versión vertical: un solo anuncio, la vertical en Stories y Reels y la del feed en lo demás', () => {
   const p = ads.cleanPlan(
     plan({ anuncios: [{ nombre: 'Verano', medio: { tipo: 'imagen', hash: 'aaaa0000feed' }, vertical: { tipo: 'imagen', hash: 'bbbb1111cccc' } }] }),
   )
+  assert.deepEqual(p.anuncios[0].versiones.map((v) => v.formato), ['4:5', '9:16'], 'los de antes, como versiones')
   const body = ads.creativeBody(p, p.anuncios[0], { tag: 't1' })
   assert.deepEqual(body.object_story_spec, { page_id: '222', instagram_user_id: '333' })
   const spec = body.asset_feed_spec
   assert.deepEqual(
     spec.images.map((i) => [i.hash, i.adlabels[0].name]),
     [
-      ['aaaa0000feed', 'tablero_feed_t1'],
-      ['bbbb1111cccc', 'tablero_vertical_t1'],
+      ['aaaa0000feed', 'tablero_4x5_t1'],
+      ['bbbb1111cccc', 'tablero_9x16_t1'],
     ],
   )
-  assert.deepEqual(spec.bodies, [{ text: 'Escríbenos por WhatsApp', adlabels: [{ name: 'tablero_feed_t1' }, { name: 'tablero_vertical_t1' }] }])
+  assert.deepEqual(spec.bodies, [{ text: 'Escríbenos por WhatsApp', adlabels: [{ name: 'tablero_4x5_t1' }, { name: 'tablero_9x16_t1' }] }])
   assert.equal(spec.titles[0].text, 'Clases de prueba')
   assert.equal(spec.descriptions[0].text, 'Primera clase gratis')
   assert.deepEqual(spec.call_to_actions, [{ type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } }])
   assert.equal(spec.optimization_type, 'PLACEMENT')
   assert.deepEqual(spec.ad_formats, ['SINGLE_IMAGE'])
-  const [feed, rest] = spec.asset_customization_rules
-  assert.equal(feed.image_label.name, 'tablero_feed_t1')
-  assert.deepEqual(feed.customization_spec.instagram_positions, ['stream', 'explore', 'explore_home', 'profile_feed'])
-  assert.equal(feed.title_label.name, 'tablero_feed_t1')
-  assert.equal(rest.image_label.name, 'tablero_vertical_t1')
+  const [vertical, rest] = spec.asset_customization_rules
+  assert.equal(vertical.image_label.name, 'tablero_9x16_t1')
+  assert.deepEqual(vertical.customization_spec.facebook_positions, ['story', 'facebook_reels'])
+  assert.deepEqual(vertical.customization_spec.instagram_positions, ['story', 'reels', 'profile_reels'])
+  assert.equal(vertical.title_label.name, 'tablero_9x16_t1')
+  assert.equal(rest.image_label.name, 'tablero_4x5_t1')
   assert.deepEqual(rest.customization_spec, { age_min: 13, age_max: 65 })
   assert.equal(JSON.parse(spec.additional_data.page_welcome_message).text_format.message.text, '¡Hola! Te contamos todo')
   assert.ok(body.degrees_of_freedom_spec)
@@ -196,11 +198,11 @@ test('con versión vertical: un solo anuncio, la del feed en el feed y la vertic
   assert.deepEqual(videos.ad_formats, ['SINGLE_VIDEO'])
   assert.equal(videos.titles, undefined)
   assert.equal(videos.asset_customization_rules[0].title_label, undefined)
-  assert.ok(videos.asset_customization_rules[0].customization_spec.facebook_positions.includes('instream_video'))
+  assert.deepEqual(videos.asset_customization_rules[0].customization_spec.facebook_positions, ['story', 'facebook_reels'])
   // Una imagen con un vídeo no se juntan.
   assert.throws(
     () => ads.cleanPlan(plan({ anuncios: [{ medio: { tipo: 'imagen', hash: 'aaaa0000feed' }, vertical: { tipo: 'video', id: '72' } }] })),
-    /las dos imágenes o los dos vídeos/,
+    /todas las versiones tienen que ser imágenes o todas vídeos/,
   )
 })
 
@@ -1216,4 +1218,47 @@ test('las rutas de Meta solo desde Tablero', async () => {
     }
   }
   assert.equal(calls.length, 0)
+})
+
+test('ubicaciones elegidas: cada plataforma con sus posiciones; los Estados de WhatsApp, con Instagram Stories', () => {
+  assert.deepEqual(ads.positionsOf(['ig_reels', 'fb_feed', 'fb_marketplace']), {
+    publisher_platforms: ['facebook', 'instagram'],
+    facebook_positions: ['feed', 'marketplace'],
+    instagram_positions: ['reels'],
+  })
+  assert.deepEqual(ads.positionsOf(['wa_status']), { publisher_platforms: ['instagram', 'whatsapp'], instagram_positions: ['story'], whatsapp_positions: ['status'] })
+  assert.throws(() => ads.positionsOf([]), /al menos una ubicación/)
+  const t = ads.targetingOf(plan({ ubicaciones: 'manual', posiciones: ['fb_story', 'nada'] }))
+  assert.deepEqual(t.facebook_positions, ['story'])
+})
+
+test('cuatro versiones: cada ubicación con la que le va (y la del feed en el resto); con ubicaciones elegidas, solo esas', () => {
+  const versiones = [
+    { formato: '9:16', medio: { tipo: 'imagen', hash: 'a9a9a9a9a9' } },
+    { formato: '4:5', medio: { tipo: 'imagen', hash: 'a4a4a4a4a4' } },
+    { formato: '1:1', medio: { tipo: 'imagen', hash: 'a1a1a1a1a1' } },
+    { formato: '16:9', medio: { tipo: 'imagen', hash: 'a6a6a6a6a6' } },
+  ]
+  const p = ads.cleanPlan(plan({ anuncios: [{ nombre: 'Pieza', versiones }] }))
+  const spec = ads.creativeBody(p, p.anuncios[0], { tag: 'x' }).asset_feed_spec
+  const rules = spec.asset_customization_rules.map((r) => [r.image_label.name, r.customization_spec.facebook_positions ?? null])
+  assert.deepEqual(rules, [
+    ['tablero_1x1_x', ['marketplace', 'search', 'right_hand_column', 'notification']],
+    ['tablero_9x16_x', ['story', 'facebook_reels']],
+    ['tablero_4x5_x', null],
+  ])
+  // La horizontal no tiene dónde ir con imágenes (los in-stream son de vídeo): no se manda.
+  assert.deepEqual(spec.images.map((i) => i.hash), ['a9a9a9a9a9', 'a4a4a4a4a4', 'a1a1a1a1a1'])
+
+  // Solo el feed de Instagram y sus Stories: la vertical en Stories y la del feed en el resto (sin la cuadrada).
+  const chosen = ads.cleanPlan(plan({ ubicaciones: 'manual', posiciones: ['ig_feed', 'ig_story'], anuncios: [{ nombre: 'Pieza', versiones }] }))
+  const only = ads.creativeBody(chosen, chosen.anuncios[0], { tag: 'y' }).asset_feed_spec
+  assert.deepEqual(only.asset_customization_rules.map((r) => r.image_label.name), ['tablero_9x16_y', 'tablero_4x5_y'])
+  assert.deepEqual(only.images.map((i) => i.hash), ['a9a9a9a9a9', 'a4a4a4a4a4'])
+  // Si al final solo se usa una, un anuncio normal con esa.
+  const feedOnly = ads.cleanPlan(plan({ ubicaciones: 'manual', posiciones: ['ig_feed'], anuncios: [{ nombre: 'Pieza', versiones }] }))
+  const single = ads.creativeBody(feedOnly, feedOnly.anuncios[0], { tag: 'z' })
+  assert.equal(single.asset_feed_spec, undefined)
+  assert.equal(single.object_story_spec.link_data.image_hash, 'a4a4a4a4a4')
+  assert.throws(() => ads.cleanPlan(plan({ anuncios: [{ nombre: 'P', versiones: [versiones[1], { ...versiones[2], formato: '4:5' }] }] })), /dos versiones 4:5/)
 })

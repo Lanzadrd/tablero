@@ -423,6 +423,12 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
   return (
     <div className={cx('ads-running', loading && 'is-loading')} aria-busy={loading}>
       <div className="ads-running-bar">
+        {meta && (
+          <button type="button" className="ads-create-btn" onClick={meta.onCreate}>
+            <Icon.Plus />
+            Crear
+          </button>
+        )}
         <Segmented value={period} options={PERIODS} label="Periodo" onChange={setPeriod} />
         <MetricsPicker
           options={source.metrics}

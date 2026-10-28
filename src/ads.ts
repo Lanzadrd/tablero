@@ -1,6 +1,8 @@
 // Anuncios en Meta y Google Ads: lo que las vistas piden al servidor (server/meta.mjs, server/anuncios.mjs y
 // server/google.mjs) y las cuentas del formulario. Los tokens nunca llegan aquí: solo si hay conexión y de quién.
 
+import type { Formato } from './placements'
+
 export interface MetaStatus {
   /** ¿Están el identificador y la clave secreta de la app de Meta? */
   app: boolean
@@ -92,7 +94,8 @@ export const ENHANCEMENTS: Array<{ key: Enhancement; label: string; note: string
   { key: 'destino', label: 'Información del destino', note: 'Añade textos sacados de adonde lleva el anuncio.', group: 'texto' },
   { key: 'resumen', label: 'Resumen', note: 'Añade un resumen del anuncio hecho por Meta.', group: 'texto' },
 ]
-export type Placements = 'auto' | 'facebook' | 'instagram'
+/** Automáticas, elegidas (en `posiciones`) o, en las plantillas de antes, solo Facebook o solo Instagram. */
+export type Placements = 'auto' | 'manual' | 'facebook' | 'instagram'
 
 /** Lo que se repite de una campaña a otra. Una plantilla es esto con nombre (y sin las creatividades). */
 export interface AdSettings {
@@ -109,6 +112,8 @@ export interface AdSettings {
   /** Público Advantage+: Meta puede ir más allá de la edad y el sexo si encuentra más conversaciones. */
   advantage: boolean
   ubicaciones: Placements
+  /** Las ubicaciones elegidas (src/placements.ts), con `ubicaciones: 'manual'`. */
+  posiciones: string[]
   /** Texto principal, título y descripción (los dos últimos, opcionales). */
   texto: string
   titular: string
@@ -130,6 +135,12 @@ export interface Template extends AdSettings {
 }
 
 export type Media = { tipo: 'imagen'; hash: string; url: string | null } | { tipo: 'video'; id: string }
+
+/** Una versión de un anuncio: su formato y la imagen o el vídeo ya subido. */
+export interface AdVersion {
+  formato: Formato
+  medio: Media
+}
 
 export interface Launch {
   id: string
@@ -228,7 +239,9 @@ export interface Audience {
   genero: Gender
   advantage: boolean
   /** «manual»: elegidas a mano en Meta (se quedan como están si no se cambian). */
-  ubicaciones: Placements | 'manual'
+  /** «meta»: elegidas en Meta con alguna que Tablero no conoce (se quedan como están si no se cambian). */
+  ubicaciones: Placements | 'meta'
+  posiciones: string[]
   extras: string[]
 }
 
@@ -275,12 +288,13 @@ export interface EditDetails {
     editable: boolean
     motivo: string | null
     contenido: AdContent | null
-    medio: MediaPreview | null
-    vertical: MediaPreview | null
+    versiones: Array<{ formato: Formato; medio: MediaPreview }>
+    /** Las del conjunto: dónde va cada versión. */
+    ubicaciones: { ubicaciones: 'auto' | 'manual' | 'meta'; posiciones: string[] }
   }
 }
 
-/** Lo que se cambia (solo lo que se ha tocado). `medio`/`vertical`: los nuevos; `vertical: null`, quitarla. */
+/** Lo que se cambia (solo lo que se ha tocado). */
 export interface EditChanges {
   nombre?: string
   presupuesto?: number
@@ -291,8 +305,8 @@ export interface EditChanges {
   importePuja?: number
   publico?: Audience
   contenido?: AdContent
-  medio?: Media
-  vertical?: Media | null
+  /** Todas las versiones del anuncio (las que se quedan y las nuevas). */
+  versiones?: AdVersion[]
 }
 
 /** Un texto de un anuncio de búsqueda adaptable de Google Ads (`fijado`: en qué posición va siempre). */
@@ -392,8 +406,8 @@ export interface LaunchPlan extends AdSettings {
   /** Día de inicio (AAAA-MM-DD); null = en cuanto se active. */
   inicio: string | null
   fin: string | null
-  /** Uno por imagen o vídeo; con `vertical`, la del feed (en `medio`) y la vertical, cada una en sus ubicaciones. */
-  anuncios: Array<{ nombre: string; medio: Media; vertical?: Media }>
+  /** Uno por pieza: sus versiones (1:1, 4:5, 9:16, 16:9), cada una en sus ubicaciones. */
+  anuncios: Array<{ nombre: string; versiones: AdVersion[] }>
 }
 
 /** Lo primero que ve la persona en el chat si no se escribe otra cosa (el de Meta, en anuncios.mjs igual). */
@@ -413,6 +427,7 @@ export const DEFAULT_SETTINGS: AdSettings = {
   genero: 'todos',
   advantage: true,
   ubicaciones: 'auto',
+  posiciones: [],
   texto: '',
   titular: '',
   descripcion: '',
@@ -436,6 +451,7 @@ export const settingsOf = (t: AdSettings): AdSettings => ({
   genero: t.genero,
   advantage: t.advantage,
   ubicaciones: t.ubicaciones,
+  posiciones: t.posiciones ?? [],
   texto: t.texto,
   titular: t.titular,
   // Las plantillas de antes no tienen descripción ni el chat entero.
@@ -483,7 +499,9 @@ export const adNameFrom = (file: string) => file.replace(/\.[a-z0-9]{2,5}$/i, ''
 
 /** Qué falta para poder crear la campaña (null = nada). */
 export function missing(
-  plan: Pick<AdSettings, 'cuenta' | 'pagina' | 'presupuesto' | 'lugares' | 'texto' | 'tipoMensaje' | 'saludo' | 'preguntas'> & { creatividades: number },
+  plan: Pick<AdSettings, 'cuenta' | 'pagina' | 'presupuesto' | 'lugares' | 'texto' | 'tipoMensaje' | 'saludo' | 'preguntas' | 'ubicaciones' | 'posiciones'> & {
+    creatividades: number
+  },
 ) {
   if (!plan.cuenta) return 'Elige una cuenta publicitaria'
   if (!plan.pagina) return 'Elige la página de Facebook'
@@ -493,6 +511,7 @@ export function missing(
   if (plan.tipoMensaje === 'escrito' && !plan.saludo.trim()) return 'Escribe el mensaje de la persona en WhatsApp'
   if (plan.tipoMensaje === 'preguntas' && !plan.preguntas.some((q) => q.trim())) return 'Añade al menos una pregunta para WhatsApp'
   if (!plan.creatividades) return 'Añade al menos una imagen o un vídeo'
+  if (plan.ubicaciones === 'manual' && !plan.posiciones.length) return 'Elige al menos una ubicación'
   return null
 }
 
@@ -581,7 +600,7 @@ export const metaApi = {
   duplicate: (account: string, level: Level, id: string) => call<{ id: string }>('POST', '/api/meta/duplicar', { cuenta: account, nivel: level, id }),
   remove: (account: string, level: Level, id: string, modo: 'archivar' | 'borrar') =>
     call<{ id: string }>('POST', '/api/meta/quitar', { cuenta: account, nivel: level, id, modo }),
-  addAds: (plan: AdContent & { cuenta: string; conjunto: string; anuncios: Array<{ nombre: string; medio: Media; vertical?: Media }> }) =>
+  addAds: (plan: AdContent & { cuenta: string; conjunto: string; anuncios: Array<{ nombre: string; versiones: AdVersion[] }> }) =>
     call<{ conjunto: string; anuncios: string[] }>('POST', '/api/meta/anuncios', plan),
   setStatus: (account: string, level: Level, id: string, estado: AdRow['estado']) =>
     call<{ id: string; estado: AdRow['estado']; lanzamiento: Launch | null }>('POST', '/api/meta/campanas/estado', {

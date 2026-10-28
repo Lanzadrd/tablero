@@ -8,6 +8,7 @@
 import { HttpError, localDay } from './almacen.mjs'
 import {
   automaticOf,
+  FORMATS,
   cleanMedia,
   cleanPlan,
   cleanSettings,
@@ -17,6 +18,8 @@ import {
   localDateTime,
   majorUnits,
   minorUnits,
+  placementKeysOf,
+  positionsOf,
   text,
   thumbnailsOf,
 } from './anuncios.mjs'
@@ -98,12 +101,14 @@ function extrasOf(t) {
   return extras
 }
 
-/** Las ubicaciones: automáticas, solo Facebook, solo Instagram o elegidas a mano en Meta. */
+/**
+ * Las ubicaciones: automáticas, elegidas (las de Tablero, en `posiciones`) o «meta»: elegidas en Meta con alguna que
+ * Tablero no conoce (se quedan como están si no se cambian).
+ */
 function placementsOf(t) {
-  const platforms = t?.publisher_platforms
-  if (!platforms?.length) return 'auto'
-  if (platforms.length === 1 && (platforms[0] === 'facebook' || platforms[0] === 'instagram')) return platforms[0]
-  return 'manual'
+  if (!t?.publisher_platforms?.length) return { ubicaciones: 'auto', posiciones: [] }
+  const keys = placementKeysOf(t)
+  return keys ? { ubicaciones: 'manual', posiciones: keys } : { ubicaciones: 'meta', posiciones: [] }
 }
 
 /** El público de un conjunto, como lo enseña el formulario de Tablero. */
@@ -126,14 +131,14 @@ export function audienceOf(t) {
     edadMax: t?.age_max ?? 65,
     genero: genders.length === 1 ? (genders[0] === 1 ? 'hombres' : 'mujeres') : 'todos',
     advantage: t?.targeting_automation?.advantage_audience === 1,
-    ubicaciones: placementsOf(t),
+    ...placementsOf(t),
     extras: extrasOf(t),
   }
 }
 
 /**
  * El público nuevo: el de antes con lo que se ha cambiado en Tablero. Los lugares que ya estaban conservan lo suyo
- * (el radio de una ciudad, por ejemplo); con ubicaciones elegidas a mano en Meta («manual»), no se tocan.
+ * (el radio de una ciudad, por ejemplo); con las ubicaciones de Meta que Tablero no conoce («meta»), no se tocan.
  */
 export function mergeTargeting(original, publico) {
   const t = structuredClone(original ?? {})
@@ -175,10 +180,11 @@ export function mergeTargeting(original, publico) {
     else if (publico.genero === 'mujeres') t.genders = [2]
     else delete t.genders
   }
-  if (publico.ubicaciones !== 'manual') {
+  if (publico.ubicaciones !== 'meta') {
     for (const key of Object.keys(t)) if (key.endsWith('_positions')) delete t[key]
-    if (publico.ubicaciones === 'facebook' || publico.ubicaciones === 'instagram') t.publisher_platforms = [publico.ubicaciones]
-    else delete t.publisher_platforms
+    delete t.publisher_platforms
+    if (publico.ubicaciones === 'manual') Object.assign(t, positionsOf(publico.posiciones))
+    else if (publico.ubicaciones === 'facebook' || publico.ubicaciones === 'instagram') t.publisher_platforms = [publico.ubicaciones]
   }
   return t
 }
@@ -191,7 +197,8 @@ function cleanAudience(raw) {
     edadMax: settings.edadMax,
     genero: settings.genero,
     advantage: settings.advantage,
-    ubicaciones: raw?.ubicaciones === 'manual' ? 'manual' : settings.ubicaciones,
+    ubicaciones: raw?.ubicaciones === 'meta' ? 'meta' : settings.ubicaciones,
+    posiciones: settings.posiciones,
   }
 }
 
@@ -229,7 +236,7 @@ export function contentOf(creative) {
     instagram: spec.instagram_user_id ?? creative?.instagram_user_id ?? null,
     ...automaticOf(creative),
   }
-  const no = (motivo) => ({ editable: false, motivo, ajustes: null, medio: null, vertical: null, miniaturas: [] })
+  const no = (motivo) => ({ editable: false, motivo, ajustes: null, versiones: [], miniaturas: [] })
   if (!creative) return no('No se ha podido leer el anuncio.')
   if (!creative.object_story_spec && (creative.object_story_id || creative.effective_object_story_id)) {
     return no('Este anuncio usa una publicación que ya existía: su contenido es el de la publicación.')
@@ -256,16 +263,6 @@ export function contentOf(creative) {
     if (feed.call_to_action_types?.length && !feed.call_to_action_types.includes('WHATSAPP_MESSAGE')) {
       return no('Este anuncio no lleva a WhatsApp: su contenido se cambia en el Administrador de anuncios.')
     }
-    const label = (a) => a.adlabels?.[0]?.name ?? ''
-    // La vertical: la de la regla de Stories y Reels (o, en las de Tablero, la de la etiqueta «vertical»).
-    const storyRule = (feed.asset_customization_rules ?? []).find((rule) => {
-      const spec = rule.customization_spec ?? {}
-      return [...(spec.facebook_positions ?? []), ...(spec.instagram_positions ?? [])].some((p) => /story|reels/.test(p))
-    })
-    const storyLabel = storyRule?.[video ? 'video_label' : 'image_label']?.name
-    const verticalAsset =
-      assets.length > 1 ? (assets.find((a) => storyLabel && label(a) === storyLabel) ?? assets.find((a) => /vertical/i.test(label(a))) ?? assets[1]) : null
-    const feedAsset = assets.find((a) => a !== verticalAsset) ?? assets[0]
     const toMedia = (a) => (video ? { tipo: 'video', id: String(a.video_id) } : { tipo: 'imagen', hash: a.hash })
     return {
       editable: true,
@@ -276,8 +273,7 @@ export function contentOf(creative) {
         variantes: { textos: [], titulos: [], descripciones: [] },
         ...chatOf(feed.additional_data?.page_welcome_message),
       },
-      medio: toMedia(feedAsset),
-      vertical: verticalAsset ? toMedia(verticalAsset) : null,
+      versiones: formatsOfAssets(feed, assets, video).map((formato, i) => ({ formato, medio: toMedia(assets[i]) })),
       miniaturas: video ? assets.filter((a) => a.thumbnail_hash).map((a) => [String(a.video_id), a.thumbnail_hash]) : [],
     }
   }
@@ -290,8 +286,7 @@ export function contentOf(creative) {
       editable: true,
       motivo: null,
       ajustes: { ...base, ...fromVariants(texts({ texto: link.message, titular: link.name, descripcion: link.description })), ...chatOf(link.page_welcome_message) },
-      medio: { tipo: 'imagen', hash: link.image_hash },
-      vertical: null,
+      versiones: [{ formato: '4:5', medio: { tipo: 'imagen', hash: link.image_hash } }],
       miniaturas: [],
     }
   }
@@ -302,12 +297,47 @@ export function contentOf(creative) {
       editable: true,
       motivo: null,
       ajustes: { ...base, ...fromVariants(texts({ texto: video.message, titular: video.title, descripcion: video.link_description })), ...chatOf(video.page_welcome_message) },
-      medio: { tipo: 'video', id: String(video.video_id) },
-      vertical: null,
+      versiones: [{ formato: '4:5', medio: { tipo: 'video', id: String(video.video_id) } }],
       miniaturas: video.image_hash ? [[String(video.video_id), video.image_hash]] : [],
     }
   }
   return no('Este anuncio tiene un formato que Tablero no edita.')
+}
+
+/** Lo que dicen las posiciones de una regla del formato de lo que enseña. */
+function formatOfPositions(spec) {
+  const positions = Object.keys(spec ?? {})
+    .filter((key) => key.endsWith('_positions'))
+    .flatMap((key) => spec[key])
+  if (!positions.length) return null
+  if (positions.every((p) => /story|reels/.test(p))) return '9:16'
+  if (positions.every((p) => p === 'instream_video')) return '16:9'
+  if (positions.every((p) => ['marketplace', 'search', 'right_hand_column', 'notification', 'messenger_home', 'explore_home'].includes(p))) return '1:1'
+  return '4:5'
+}
+
+/**
+ * El formato de cada versión de un anuncio con varias: por su etiqueta (las de Tablero lo llevan; las de antes,
+ * «feed» y «vertical») o por las ubicaciones de su regla. Sin repetir: si dos salen igual, la segunda toma otro libre.
+ */
+function formatsOfAssets(feed, assets, video) {
+  const rules = feed.asset_customization_rules ?? []
+  const used = new Set()
+  return assets.map((asset) => {
+    const name = asset.adlabels?.[0]?.name ?? ''
+    const ours = /^tablero_(\d+)x(\d+)_/.exec(name)
+    const rule = rules.find((r) => r[video ? 'video_label' : 'image_label']?.name === name)
+    let formato = ours ? `${ours[1]}:${ours[2]}` : /tablero_vertical/.test(name) ? '9:16' : /tablero_feed/.test(name) ? '4:5' : formatOfPositions(rule?.customization_spec)
+    if (!FORMATS.includes(formato) || used.has(formato)) formato = FORMATS.find((f) => !used.has(f))
+    used.add(formato)
+    return formato
+  })
+}
+
+/** El formato de una imagen por su proporción (la más cercana de las de Tablero). */
+function formatOfRatio(ratio) {
+  if (!ratio) return null
+  return ratio < 0.7 ? '9:16' : ratio < 0.9 ? '4:5' : ratio < 1.25 ? '1:1' : '16:9'
 }
 
 /** Dónde se ve cada imagen o vídeo (para enseñarlos en el formulario): su dirección y su proporción. */
@@ -338,6 +368,31 @@ function cleanVariants(raw) {
   return { textos: list(raw?.textos, 3000), titulos: list(raw?.titulos, 255), descripciones: list(raw?.descripciones, 255) }
 }
 
+/** Las versiones de un anuncio que llegan del formulario: de 1 a 4, cada una de un formato, todas del mismo tipo. */
+function cleanVersions(raw) {
+  const versions = []
+  for (const version of (Array.isArray(raw) ? raw : []).slice(0, FORMATS.length)) {
+    const medio = cleanMedia(version?.medio)
+    if (!medio || !FORMATS.includes(version?.formato)) throw new HttpError(400, 'Versión del anuncio no válida.')
+    if (versions.some((v) => v.formato === version.formato)) throw new HttpError(400, `Hay dos versiones ${version.formato}.`)
+    versions.push({ formato: version.formato, medio })
+  }
+  if (!versions.length) throw new HttpError(400, 'Falta la imagen o el vídeo del anuncio.')
+  if (versions.some((v) => v.medio.tipo !== versions[0].medio.tipo)) throw new HttpError(400, 'Todas las versiones tienen que ser imágenes o todas vídeos.')
+  return versions
+}
+
+/** Las ubicaciones de un conjunto, como las usa `creativeBody` (para saber qué versión va en cada una). */
+function placementsForAds(targeting) {
+  const { ubicaciones, posiciones } = placementsOf(targeting)
+  return ubicaciones === 'manual' ? { ubicaciones, posiciones } : { ubicaciones: 'auto', posiciones: [] }
+}
+
+async function adSetPlacements(meta, adSetId) {
+  const { targeting } = await meta.graph(String(adSetId), { params: { fields: 'targeting' } })
+  return placementsForAds(targeting)
+}
+
 const CONTENT_KEYS = ['instagram', 'texto', 'titular', 'descripcion', 'bienvenida', 'tipoMensaje', 'saludo', 'preguntas', 'mejoras', 'multianunciante']
 
 // ── Leer ──
@@ -347,7 +402,7 @@ const ADSET_FIELDS =
   'name,status,account_id,daily_budget,lifetime_budget,start_time,end_time,targeting,promoted_object,optimization_goal,destination_type,' +
   'bid_strategy,bid_amount,campaign{id,name,daily_budget,lifetime_budget,bid_strategy}'
 const AD_FIELDS =
-  'name,status,account_id,adset_id,creative{id,object_story_spec,asset_feed_spec,degrees_of_freedom_spec,contextual_multi_ads,instagram_user_id,object_story_id,effective_object_story_id}'
+  'name,status,account_id,adset_id,adset{targeting},creative{id,object_story_spec,asset_feed_spec,degrees_of_freedom_spec,contextual_multi_ads,instagram_user_id,object_story_id,effective_object_story_id}'
 
 /** Cómo está ahora una campaña, un conjunto o un anuncio, para el formulario de editar. */
 export async function details(meta, raw, { now = Date.now() } = {}) {
@@ -401,14 +456,27 @@ export async function details(meta, raw, { now = Date.now() } = {}) {
   const ad = await meta.graph(id, { params: { fields: AD_FIELDS } })
   own(ad, cuenta)
   const content = contentOf(ad.creative)
-  const [medio, vertical] = content.editable ? await previews(meta, cuenta, [content.medio, content.vertical]) : [null, null]
+  const shown = content.editable ? await previews(meta, cuenta, content.versiones.map((v) => v.medio)) : []
+  // Con una sola imagen, su formato es el de su proporción (con varias, el de su sitio en el anuncio).
+  const versiones = content.versiones.map((v, i) => ({
+    formato: content.versiones.length === 1 ? (formatOfRatio(shown[i]?.ratio) ?? v.formato) : v.formato,
+    medio: shown[i],
+  }))
   return {
     nivel,
     id,
     nombre: ad.name ?? '',
     estado: stateOf(ad),
     moneda: currency,
-    anuncio: { conjunto: String(ad.adset_id), editable: content.editable, motivo: content.motivo, contenido: content.ajustes, medio, vertical },
+    anuncio: {
+      conjunto: String(ad.adset_id),
+      // Las del conjunto: dónde va cada versión.
+      ubicaciones: placementsOf(ad.adset?.targeting),
+      editable: content.editable,
+      motivo: content.motivo,
+      contenido: content.ajustes,
+      versiones,
+    },
   }
 }
 
@@ -483,28 +551,27 @@ export async function update(meta, raw, options = {}) {
   } else {
     const ad = await meta.graph(id, { params: { fields: AD_FIELDS } })
     own(ad, cuenta)
-    if (cambios.contenido !== undefined || cambios.medio !== undefined || cambios.vertical !== undefined) {
+    if (cambios.contenido !== undefined || cambios.versiones !== undefined) {
       const current = contentOf(ad.creative)
       if (!current.editable) throw new HttpError(400, current.motivo)
       const settings = cleanSettings({ ...current.ajustes, ...pick(cambios.contenido ?? {}, CONTENT_KEYS) })
-      const medio = cambios.medio !== undefined ? cleanMedia(cambios.medio) : current.medio
-      if (!medio) throw new HttpError(400, 'Falta la imagen o el vídeo del anuncio.')
-      const vertical = cambios.vertical === null ? null : cambios.vertical !== undefined ? cleanMedia(cambios.vertical) : current.vertical
-      if (vertical && vertical.tipo !== medio.tipo) throw new HttpError(400, 'La vertical y la del feed tienen que ser las dos imágenes o los dos vídeos.')
+      const versiones = cambios.versiones !== undefined ? cleanVersions(cambios.versiones) : current.versiones
       if (!settings.texto) throw new HttpError(400, 'Falta el texto del anuncio.')
       const plan = {
         ...settings,
+        // Las ubicaciones del conjunto, para saber dónde va cada versión.
+        ...(await adSetPlacements(meta, ad.adset_id)),
         variantes: cleanVariants(cambios.contenido?.variantes ?? current.ajustes.variantes),
         cuenta,
         pagina: current.ajustes.pagina,
-        anuncios: [{ nombre: body.name ?? ad.name, medio, ...(vertical ? { vertical } : {}) }],
+        anuncios: [{ nombre: body.name ?? ad.name, medio: versiones[0].medio, versiones }],
       }
-      if (vertical && Object.values(plan.variantes).some((list) => list.length)) {
-        throw new HttpError(400, 'Con versión vertical, cada texto va uno solo: quita las otras opciones de texto o la vertical.')
+      if (versiones.length > 1 && Object.values(plan.variantes).some((list) => list.length)) {
+        throw new HttpError(400, 'Con varias versiones (cuadrada, vertical…), cada texto va uno solo: quita las otras opciones de texto o deja una versión.')
       }
       // Las miniaturas de los vídeos que ya tenía se reutilizan; las de los nuevos se suben.
       const thumbs = new Map(current.miniaturas)
-      const missing = plan.anuncios.flatMap((a) => [a.medio, a.vertical]).filter((m) => m?.tipo === 'video' && !thumbs.has(m.id))
+      const missing = versiones.map((v) => v.medio).filter((m) => m.tipo === 'video' && !thumbs.has(m.id))
       if (missing.length) {
         for (const [videoId, hash] of await thumbnailsOf(meta, { cuenta, anuncios: missing.map((m) => ({ medio: m })) }, options)) thumbs.set(videoId, hash)
       }
@@ -576,14 +643,15 @@ export async function remove(meta, raw) {
 }
 
 /**
- * Anuncios nuevos en un conjunto que ya existe (uno por imagen o vídeo, o por pareja feed + vertical), con la
+ * Anuncios nuevos en un conjunto que ya existe (uno por pieza, con sus versiones de cada formato), con la
  * página del conjunto. Se crean en pausa: se encienden con su interruptor.
  */
 export async function addAds(meta, raw, options = {}) {
   const adSetId = typeof raw?.conjunto === 'string' && ID.test(raw.conjunto) ? raw.conjunto : null
   if (!adSetId) throw new HttpError(400, 'Conjunto no válido')
-  const adSet = await meta.graph(adSetId, { params: { fields: 'name,account_id,promoted_object' } })
-  const plan = cleanPlan({ ...raw, nombre: adSet.name ?? 'Conjunto', pagina: adSet.promoted_object?.page_id ?? raw?.pagina })
+  const adSet = await meta.graph(adSetId, { params: { fields: 'name,account_id,promoted_object,targeting' } })
+  // Con las ubicaciones del conjunto, para saber dónde va cada versión.
+  const plan = { ...cleanPlan({ ...raw, nombre: adSet.name ?? 'Conjunto', pagina: adSet.promoted_object?.page_id ?? raw?.pagina }), ...placementsForAds(adSet.targeting) }
   own(adSet, plan.cuenta)
   const thumbs = await thumbnailsOf(meta, plan, options)
   return { conjunto: adSetId, anuncios: await createAds(meta, plan, adSetId, thumbs, 'PAUSED') }
