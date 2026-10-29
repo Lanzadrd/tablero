@@ -8,6 +8,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startUpdates, installedVersion } from './actualizador.mjs'
 import { createApi, DATA_DIR, subscriptionReminders } from './api.mjs'
+import { createGoogle } from './google.mjs'
+import { createMeta } from './meta.mjs'
+import { createSummaries } from './resumenes.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(ROOT, 'dist')
@@ -17,6 +20,9 @@ const PORT = Number(process.env.PORT ?? 4747)
 const REMINDERS_FIRST = 5_000
 const REMINDERS_EVERY = 15 * 60_000
 const REMINDERS_AFTER_SAVE = 3_000
+// Resúmenes por WhatsApp: se mira cada 5 minutos si toca mandar alguno (al minuto de arrancar, la primera vez).
+const SUMMARIES_FIRST = 60_000
+const SUMMARIES_EVERY = 5 * 60_000
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -86,7 +92,27 @@ const remindSoon = () => {
   remindTimer.unref()
 }
 
-const api = createApi({ version, appVersion: (await installedVersion(ROOT)) ?? 'dev', guardado: remindSoon })
+// Resúmenes diarios por WhatsApp (resumenes.mjs), cada uno a su hora. TABLERO_SIN_RESUMENES=1 los desactiva.
+const meta = createMeta()
+const google = createGoogle()
+const resumenes = createSummaries({ meta, google })
+const summariesOn = !process.env.TABLERO_SIN_RESUMENES
+let summariesRunning = false
+const sendSummaries = async () => {
+  if (summariesRunning) return
+  summariesRunning = true
+  try {
+    for (const r of await resumenes.runDue()) {
+      console.log(`${new Date().toISOString()}  Resumen «${r.nombre}»: ${r.ok ? `enviado a ${r.enviados.length}` : `no enviado (${r.error})`}`)
+    }
+  } catch (err) {
+    console.error('[tablero] resúmenes por WhatsApp:', err)
+  } finally {
+    summariesRunning = false
+  }
+}
+
+const api = createApi({ version, appVersion: (await installedVersion(ROOT)) ?? 'dev', guardado: remindSoon, meta, google, resumenes })
 const server = http.createServer((req, res) => {
   api(req, res, () =>
     serveStatic(req, res).catch((err) => {
@@ -114,5 +140,9 @@ server.listen(PORT, HOST, () => {
   if (remindersOn) {
     setTimeout(remind, REMINDERS_FIRST).unref()
     setInterval(remind, REMINDERS_EVERY).unref()
+  }
+  if (summariesOn) {
+    setTimeout(sendSummaries, SUMMARIES_FIRST).unref()
+    setInterval(sendSummaries, SUMMARIES_EVERY).unref()
   }
 })

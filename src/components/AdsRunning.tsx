@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   budgetText,
   ENHANCEMENTS,
@@ -6,6 +6,7 @@ import {
   money,
   type AdAccount,
   type AdPath,
+  type AdRef,
   type AdRow,
   type Launch,
   type Level,
@@ -216,9 +217,23 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
   }
   const bigMetrics = pickMetrics(storedBig)
   const metrics = pickMetrics(storedColumns)
-  const [path, setPath] = useState<AdPath>({})
-  const level: Level = path.nivel ?? (path.conjunto ? 'anuncio' : path.campana ? 'conjunto' : 'campana')
-  const route = `${level}/${path.campana?.id ?? ''}/${path.conjunto?.id ?? ''}`
+  const [level, setLevel] = useState<Level>('campana')
+  /**
+   * Lo elegido con las casillas (o abierto), como en el Administrador de anuncios: las campañas filtran los conjuntos
+   * y los anuncios; los conjuntos, los anuncios.
+   */
+  const [campaigns, setCampaigns] = useState<AdRef[]>([])
+  const [adSets, setAdSets] = useState<AdRef[]>([])
+  // Lo que filtra este nivel: los conjuntos elegidos (en los anuncios) o las campañas; y de qué nivel es.
+  const scopeLevel: Level | null = level === 'anuncio' && adSets.length ? 'conjunto' : level !== 'campana' && campaigns.length ? 'campana' : null
+  const scope = scopeLevel === 'conjunto' ? adSets : scopeLevel === 'campana' ? campaigns : []
+  /** Uno solo elegido arriba: el que se nombra, del que se ve si entrega y dentro del que se crea. */
+  const single = scope.length === 1 ? scope[0] : null
+  const path = useMemo<AdPath>(
+    () => ({ nivel: level, campanas: level !== 'campana' ? campaigns : undefined, conjuntos: level === 'anuncio' ? adSets : undefined }),
+    [level, campaigns, adSets],
+  )
+  const route = `${level}/${scopeLevel ?? ''}/${scope.map((s) => s.id).join(',')}`
   const [data, setData] = useState<(RunningRows & { ruta: string }) | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -251,7 +266,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
         .then(
           (list) => {
             if (n !== latest.current) return
-            setData({ ...list, ruta: `${path.nivel ?? (path.conjunto ? 'anuncio' : path.campana ? 'conjunto' : 'campana')}/${path.campana?.id ?? ''}/${path.conjunto?.id ?? ''}` })
+            setData({ ...list, ruta: route })
             setError(null)
           },
           (err) => {
@@ -262,7 +277,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
           if (n === latest.current) setLoading(false)
         })
     },
-    [account.id, period, path, source],
+    [account.id, period, path, route, source],
   )
 
   useEffect(() => {
@@ -273,9 +288,11 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
     return () => window.removeEventListener('focus', onFocus)
   }, [load])
 
-  /** Baja a los conjuntos de una campaña o a los anuncios de un conjunto, sube, o cambia de nivel. */
-  const go = (next: AdPath) => {
-    setPath(next)
+  /** Cambia de nivel (con lo elegido, o con otra elección: al abrir una campaña o un conjunto). */
+  const show = (nextLevel: Level, nextCampaigns = campaigns, nextAdSets = adSets) => {
+    setLevel(nextLevel)
+    setCampaigns(nextCampaigns)
+    setAdSets(nextAdSets)
     setShowPaused(false)
     setError(null)
     setNotice('')
@@ -306,9 +323,25 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
     }
   }
 
-  /** Cambiar de nivel con los botones de la barra: con el filtro que haya (la campaña, el conjunto). */
-  const toLevel = (nivel: Level) =>
-    go(nivel === 'campana' ? {} : nivel === 'conjunto' ? { campana: path.campana, nivel } : { campana: path.campana, conjunto: path.conjunto, nivel })
+  /**
+   * Marca o desmarca una fila (campañas o conjuntos): filtra el nivel de debajo. Cambiar las campañas olvida los
+   * conjuntos elegidos (eran de las otras).
+   */
+  const check = (rows: AdRow[], on: boolean) => {
+    const ids = new Set(rows.map((r) => r.id))
+    const next = (list: AdRef[]) => [...list.filter((x) => !ids.has(x.id)), ...(on ? rows.map((r) => ({ id: r.id, nombre: r.nombre })) : [])]
+    if (level === 'campana') {
+      setCampaigns(next)
+      setAdSets([])
+    } else if (level === 'conjunto') setAdSets(next)
+  }
+  const chosen = level === 'campana' ? campaigns : level === 'conjunto' ? adSets : []
+
+  /** Quita lo elegido en un nivel (la × de su pestaña); sin campañas, tampoco quedan conjuntos. */
+  const clear = (l: Level) => {
+    if (l === 'campana') setCampaigns([])
+    setAdSets([])
+  }
 
   /** Duplicar, archivar o borrar, ya confirmado. */
   const act = async ({ kind, row }: Confirm) => {
@@ -377,10 +410,10 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
     })
   }
 
-  if (addingAd && path.conjunto && source.adder) {
+  if (addingAd && scopeLevel === 'conjunto' && single && source.adder) {
     return source.adder({
       account,
-      adSet: path.conjunto,
+      adSet: single,
       template: rows[0] ?? null,
       onCancel: () => setAddingAd(false),
       onSaved: (message) => {
@@ -392,7 +425,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
     })
   }
 
-  if (adding && path.campana && meta) {
+  if (adding && level === 'conjunto' && single && meta) {
     return (
       <AdsComposer
         account={account}
@@ -401,9 +434,10 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
         onTemplates={meta.onTemplates}
         onLaunch={meta.onLaunch}
         adSetIn={{
-          ...path.campana,
+          ...single,
           presupuesto: current?.padre?.presupuesto ?? null,
           pagina: rows.find((r) => r.pagina)?.pagina ?? null,
+          pausada: current?.padre?.estado === 'pausada',
         }}
         onCancel={() => {
           setAdding(false)
@@ -412,7 +446,11 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
         onAdSet={(adSet) => {
           setAdding(false)
           setTouched((ids) => new Set(ids).add(adSet.id))
-          setBanner(`Conjunto «${adSet.nombre}» creado en pausa. Enciéndelo con su interruptor cuando quieras que empiece.`)
+          setBanner(
+            adSet.activo
+              ? `Conjunto «${adSet.nombre}» publicado: empezará a gastar en cuanto Meta apruebe los anuncios${current?.padre?.estado === 'pausada' ? ' y actives la campaña' : ''}.`
+              : `Conjunto «${adSet.nombre}» creado en pausa. Enciéndelo con su interruptor cuando quieras que empiece.`,
+          )
           load(true)
           requestAnimationFrame(() => here.current?.focus())
         }}
@@ -489,12 +527,12 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
       )}
 
       <div className="ads-folder">
-        <LevelTabs source={source} level={level} path={path} onLevel={toLevel} onClear={go} />
+        <LevelTabs source={source} level={level} campaigns={campaigns} adSets={adSets} onLevel={(l) => show(l)} onClear={clear} />
         <section className="ads-card ads-campaigns" role="tabpanel" aria-label={words.plural.charAt(0).toUpperCase() + words.plural.slice(1)}>
-          {(path.campana || path.conjunto) && (
+          {scopeLevel && (
             <div className="ads-panel-head">
               <span ref={here} tabIndex={-1} className="ads-panel-name">
-                {(path.conjunto ?? path.campana)!.nombre}
+                {single ? single.nombre : `${scope.length} ${source.levels[scopeLevel].plural}: ${scope.map((s) => s.nombre).join(' · ')}`}
               </span>
               {current?.padre && (
                 <span className="ads-crumbs-info">
@@ -514,7 +552,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
                   )}
                 </span>
               )}
-              {level === 'conjunto' && path.campana && meta && (
+              {level === 'conjunto' && single && meta && (
                 <button
                   ref={newAdSet}
                   type="button"
@@ -528,7 +566,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
                   Nuevo conjunto
                 </button>
               )}
-              {level === 'anuncio' && path.conjunto && source.adder && (
+              {level === 'anuncio' && scopeLevel === 'conjunto' && single && source.adder && (
                 <button
                   type="button"
                   className="btn ads-new-adset"
@@ -572,7 +610,16 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
                   <table className="ads-table">
                     <thead>
                       <tr>
-                        <th scope="col">{words.nombre}</th>
+                        <th scope="col">
+                          {level !== 'anuncio' ? (
+                            <span className="ads-head-name">
+                              <CheckAll rows={visible} chosen={chosen} label={`Elegir ${visible.length === 1 ? words.el : `los ${visible.length} ${words.plural}`}`} onCheck={check} />
+                              {words.nombre}
+                            </span>
+                          ) : (
+                            words.nombre
+                          )}
+                        </th>
                         {source.budgets.includes(level) && <th scope="col">Presupuesto</th>}
                         {metrics.map((m) => (
                           <th key={m.key} scope="col" title={m.hint}>
@@ -592,19 +639,21 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
                           currency={currency}
                           parentStopped={stopped(current.padre)}
                           busy={busy === r.id}
+                          checked={level !== 'anuncio' ? chosen.some((c) => c.id === r.id) : undefined}
+                          onCheck={level !== 'anuncio' ? (on) => check([r], on) : undefined}
                           onOpen={
                             r.sinHijos
                               ? undefined
                               : level === 'campana'
-                                ? () => go({ campana: { id: r.id, nombre: r.nombre }, nivel: 'conjunto' })
+                                ? () => show('conjunto', [{ id: r.id, nombre: r.nombre }], [])
                                 : level === 'conjunto'
-                                  ? () => go({ campana: path.campana ?? r.padres?.campana ?? undefined, conjunto: { id: r.id, nombre: r.nombre }, nivel: 'anuncio' })
+                                  ? () => show('anuncio', campaigns, [{ id: r.id, nombre: r.nombre }])
                                   : undefined
                           }
                           context={
-                            level === 'conjunto' && !path.campana
+                            level === 'conjunto' && !single
                               ? (r.padres?.campana?.nombre ?? null)
-                              : level === 'anuncio' && !path.conjunto
+                              : level === 'anuncio' && !(scopeLevel === 'conjunto' && single)
                                 ? (r.padres?.conjunto?.nombre ?? null)
                                 : null
                           }
@@ -754,29 +803,34 @@ function MetricsPicker({
 const LEVEL_ICONS: Record<Level, () => ReactNode> = { campana: Icon.Folder, conjunto: Icon.Grid, anuncio: Icon.Window }
 
 /**
- * Las pestañas de nivel, como las del Administrador de anuncios: carpetas sobre la tabla. Con una campaña (o un
- * conjunto) elegida, su pestaña lo dice («1 seleccionada ×», que quita el filtro) y las de debajo, de qué son.
+ * Las pestañas de nivel, como las del Administrador de anuncios: carpetas sobre la tabla. Con campañas (o
+ * conjuntos) elegidos, su pestaña lo dice («2 seleccionadas ×», que quita el filtro) y las de debajo, de qué son.
  */
 function LevelTabs({
   source,
   level,
-  path,
+  campaigns,
+  adSets,
   onLevel,
   onClear,
 }: {
   source: RunningSource
   level: Level
-  path: AdPath
+  campaigns: AdRef[]
+  adSets: AdRef[]
   onLevel: (level: Level) => void
-  onClear: (path: AdPath) => void
+  onClear: (level: Level) => void
 }) {
   const words = source.levels
   const female = (l: Level) => words[l].activado.endsWith('a')
-  const of = (l: Level) => `de 1 ${words[l].nombre.toLowerCase()}`
+  const of = (n: number, l: Level) => `de ${n} ${n === 1 ? words[l].nombre.toLowerCase() : words[l].plural}`
   const label = (l: Level) =>
-    l === 'conjunto' && path.campana ? `${words.conjunto.pestana} ${of('campana')}` : l === 'anuncio' && (path.conjunto || path.campana) ? `${words.anuncio.pestana} ${of(path.conjunto ? 'conjunto' : 'campana')}` : words[l].pestana
-  const selected = (l: Level) => (l === 'campana' ? path.campana : l === 'conjunto' ? path.conjunto : undefined)
-  const clear = (l: Level) => onClear(l === 'campana' ? { nivel: level } : { campana: path.campana, nivel: level })
+    l === 'conjunto' && campaigns.length
+      ? `${words.conjunto.pestana} ${of(campaigns.length, 'campana')}`
+      : l === 'anuncio' && (adSets.length || campaigns.length)
+        ? `${words.anuncio.pestana} ${adSets.length ? of(adSets.length, 'conjunto') : of(campaigns.length, 'campana')}`
+        : words[l].pestana
+  const selected = (l: Level) => (l === 'campana' ? campaigns : l === 'conjunto' ? adSets : [])
   return (
     <div className="ads-tabs" role="tablist" aria-label="Nivel">
       {(['campana', 'conjunto', 'anuncio'] as const).map((l) => {
@@ -787,10 +841,16 @@ function LevelTabs({
               <LevelIcon />
               <span>{label(l)}</span>
             </button>
-            {selected(l) && (
-              <span className="ads-tab-chip" title={selected(l)!.nombre}>
-                1 seleccionad{female(l) ? 'a' : 'o'}
-                <button type="button" aria-label={`Quitar el filtro de «${selected(l)!.nombre}»`} title="Quitar el filtro" onClick={() => clear(l)}>
+            {selected(l).length > 0 && (
+              <span className="ads-tab-chip" title={selected(l).map((s) => s.nombre).join(' · ')}>
+                {selected(l).length} seleccionad{female(l) ? 'a' : 'o'}
+                {selected(l).length > 1 ? 's' : ''}
+                <button
+                  type="button"
+                  aria-label={`Quitar el filtro de ${selected(l).length === 1 ? `«${selected(l)[0].nombre}»` : `${selected(l).length} ${words[l].plural}`}`}
+                  title="Quitar el filtro"
+                  onClick={() => onClear(l)}
+                >
                   <Icon.Close />
                 </button>
               </span>
@@ -800,6 +860,17 @@ function LevelTabs({
       })}
     </div>
   )
+}
+
+/** La casilla de la cabecera: marca o desmarca todas las filas a la vista (a medias si solo algunas). */
+function CheckAll({ rows, chosen, label, onCheck }: { rows: AdRow[]; chosen: AdRef[]; label: string; onCheck: (rows: AdRow[], on: boolean) => void }) {
+  const ref = useRef<HTMLInputElement>(null)
+  const marked = rows.filter((r) => chosen.some((c) => c.id === r.id)).length
+  const all = rows.length > 0 && marked === rows.length
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = marked > 0 && !all
+  }, [marked, all])
+  return <input ref={ref} type="checkbox" className="ads-row-check" checked={all} aria-label={label} onChange={(e) => onCheck(rows, e.target.checked)} />
 }
 
 /** Lo que Meta hace por su cuenta en un anuncio (mejoras automáticas, multianunciante), si hace algo. */
@@ -855,6 +926,8 @@ function Row({
   currency,
   parentStopped,
   busy,
+  checked = false,
+  onCheck,
   onOpen,
   onChange,
   context,
@@ -867,6 +940,9 @@ function Row({
   currency: string
   parentStopped: boolean
   busy: boolean
+  /** La casilla: marcada, filtra el nivel de debajo (campañas y conjuntos). */
+  checked?: boolean
+  onCheck?: (on: boolean) => void
   onOpen?: () => void
   onChange: (estado: AdRow['estado']) => Promise<void>
   /** De qué campaña o conjunto es (en las listas de toda la cuenta). */
@@ -883,9 +959,18 @@ function Row({
   // La última palabra va pegada a la flecha: que no quede sola en otra línea.
   const cut = r.nombre.lastIndexOf(' ') + 1
   return (
-    <tr className={cx(!active && 'is-paused')}>
+    <tr className={cx(!active && 'is-paused', checked && 'is-checked')}>
       <th ref={cell} scope="row">
         <div className="ads-row-name">
+          {onCheck && (
+            <input
+              type="checkbox"
+              className="ads-row-check"
+              checked={checked}
+              aria-label={`Elegir «${r.nombre}» para ver ${words.abrir?.replace(/^ver /, '') ?? 'lo de debajo'}`}
+              onChange={(e) => onCheck(e.target.checked)}
+            />
+          )}
           <Switch
             checked={active}
             label={r.nombre}

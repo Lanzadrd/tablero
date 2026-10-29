@@ -14,6 +14,7 @@ import { DATA_DIR, exclusive, HttpError, localDay, localTime, readArchive, readS
 import { addAds, details, duplicate, remove, update } from './edicion.mjs'
 import { createGoogle } from './google.mjs'
 import { createMeta } from './meta.mjs'
+import { cleanSummary, createSummaries } from './resumenes.mjs'
 import { applyOperations } from './operaciones.mjs'
 import { claudeUrl, openOnMac, projectFolder, taskPrompt } from './proyectos.mjs'
 import { applyReminders } from './suscripciones.mjs'
@@ -190,6 +191,9 @@ function findTaskWithColumn(board, taskId) {
   throw new HttpError(404, 'Esa tarea no existe', 'tarea-no-existe')
 }
 
+/** «10,11» → ['10', '11'] (las campañas o conjuntos elegidos con las casillas); sin nada, []. */
+const idList = (value) => (value ? value.split(',').filter(Boolean) : [])
+
 /** Anuncios en Meta (meta.mjs, anuncios.mjs). */
 async function metaRoute(req, res, url, meta, options) {
   const { pathname } = url
@@ -202,7 +206,8 @@ async function metaRoute(req, res, url, meta, options) {
       return send(res, 200, await meta.saveApp(await readJson(req)))
     case '/api/meta/conectar': {
       only(req, 'GET')
-      res.writeHead(302, { location: await meta.connectUrl(req.headers.host), 'cache-control': 'no-store' })
+      const location = await meta.connectUrl(req.headers.host, { whatsapp: url.searchParams.has('whatsapp') })
+      res.writeHead(302, { location, 'cache-control': 'no-store' })
       return res.end()
     }
     case '/api/meta/token': {
@@ -234,8 +239,8 @@ async function metaRoute(req, res, url, meta, options) {
         200,
         await meta.performance(query.get('cuenta'), {
           period: query.get('periodo') ?? '7d',
-          campaign: query.get('campana'),
-          adSet: query.get('conjunto'),
+          campaigns: idList(query.get('campana')),
+          adSets: idList(query.get('conjunto')),
           level: query.get('nivel'),
           fresh: query.has('actualizar'),
         }),
@@ -321,6 +326,32 @@ async function metaRoute(req, res, url, meta, options) {
   }
 }
 
+/** Resúmenes diarios por WhatsApp (resumenes.mjs). */
+async function summariesRoute(req, res, url, resumenes) {
+  switch (url.pathname) {
+    case '/api/resumenes':
+      if (req.method === 'GET') return send(res, 200, { resumenes: await resumenes.list() })
+      only(req, 'PUT')
+      return send(res, 200, { resumenes: await resumenes.save((await readJson(req))?.resumenes) })
+    case '/api/resumenes/numeros':
+      only(req, 'GET')
+      return send(res, 200, { empresas: await resumenes.numbers() })
+    case '/api/resumenes/plantilla':
+      only(req, 'POST')
+      const body = await readJson(req)
+      return send(res, 200, { plantilla: await resumenes.createTemplate(body?.cuenta, body?.tipo) })
+    case '/api/resumenes/vista':
+      // El resumen como está en la app (aunque no se haya guardado): solo lee, no manda nada.
+      only(req, 'POST')
+      return send(res, 200, await resumenes.preview(cleanSummary((await readJson(req))?.resumen)))
+    case '/api/resumenes/enviar':
+      only(req, 'POST')
+      return send(res, 200, { envio: await resumenes.send((await readJson(req))?.id, { manual: true }) })
+    default:
+      throw new HttpError(404, 'No encontrado')
+  }
+}
+
 /** Anuncios en Google Ads (google.mjs): la conexión, las cuentas y «En marcha». */
 async function googleRoute(req, res, url, google) {
   switch (url.pathname) {
@@ -348,8 +379,8 @@ async function googleRoute(req, res, url, google) {
         200,
         await google.performance(query.get('cuenta'), {
           period: query.get('periodo') ?? '7d',
-          campaign: query.get('campana'),
-          adGroup: query.get('conjunto'),
+          campaigns: idList(query.get('campana')),
+          adGroups: idList(query.get('conjunto')),
           level: query.get('nivel'),
           fresh: query.has('actualizar'),
         }),
@@ -507,6 +538,7 @@ export function createApi({
   guardado = () => {},
   meta = createMeta(),
   google = createGoogle(),
+  resumenes = createSummaries({ meta, google }),
   anuncios = {},
 } = {}) {
   return async function tableroApi(req, res, next) {
@@ -621,6 +653,7 @@ export function createApi({
         return await metaRoute(req, res, url, meta, anuncios)
       }
       if (pathname.startsWith('/api/google/')) return await googleRoute(req, res, url, google)
+      if (pathname === '/api/resumenes' || pathname.startsWith('/api/resumenes/')) return await summariesRoute(req, res, url, resumenes)
 
       if (pathname !== '/api/board') throw new HttpError(404, 'No encontrado')
 

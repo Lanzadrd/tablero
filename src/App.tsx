@@ -5,6 +5,7 @@ import { BoardView } from './components/Board'
 import { CalendarView } from './components/Calendar'
 import { AdsView } from './components/Ads'
 import { GoogleAdsView } from './components/Google'
+import { SummariesView } from './components/Summaries'
 import { Palette, type CommandId } from './components/Palette'
 import { SelectionBar } from './components/SelectionBar'
 import { Sidebar } from './components/Sidebar'
@@ -365,7 +366,7 @@ export default function App() {
   const viewRef = useRef(view)
   viewRef.current = view
   const newTaskHere = () => {
-    if (viewRef.current === 'subscriptions' || viewRef.current === 'ads' || viewRef.current === 'google') setView('board')
+    if (['subscriptions', 'ads', 'google', 'summaries'].includes(viewRef.current)) setView('board')
     setNewTaskPending(true)
   }
 
@@ -435,6 +436,8 @@ export default function App() {
               <AdsView />
             ) : view === 'google' ? (
               <GoogleAdsView />
+            ) : view === 'summaries' ? (
+              <SummariesView />
             ) : (
               <SubscriptionsView />
             )}

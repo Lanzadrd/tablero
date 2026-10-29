@@ -839,6 +839,23 @@ test('crear: campaña, conjunto y un anuncio por imagen o vídeo, todo en pausa,
   assert.equal((await request('POST', '/api/meta/activar', { body: { id: 'otra' } })).status, 404)
 })
 
+test('publicar ya: campaña, conjunto y anuncios se crean activos, y se apunta como activada', async () => {
+  await connect()
+  launchRoutes()
+  const res = await request('POST', '/api/meta/lanzar', { body: plan({ publicar: true }) })
+  assert.equal(res.status, 200, res.text)
+  assert.equal(res.body.lanzamiento.estado, 'activa')
+  assert.equal(res.body.lanzamiento.activada, true)
+  const posts = calls.filter((c) => c.method === 'POST')
+  assert.equal(posts.find((c) => c.path === 'act_111/campaigns').body.status, 'ACTIVE')
+  assert.equal(posts.find((c) => c.path === 'act_111/adsets').body.status, 'ACTIVE')
+  for (const ad of posts.filter((c) => c.path === 'act_111/ads')) assert.equal(ad.body.status, 'ACTIVE')
+  // Solo con true: cualquier otra cosa, en pausa.
+  calls.length = 0
+  await request('POST', '/api/meta/lanzar', { body: plan({ publicar: 'sí' }) })
+  assert.equal(calls.find((c) => c.method === 'POST' && c.path === 'act_111/campaigns').body.status, 'PAUSED')
+})
+
 test('crear: si algo falla a medias, se borra la campaña y se dice', async () => {
   await connect()
   launchRoutes()
@@ -868,7 +885,7 @@ test('nuevo conjunto: en una campaña que ya existe, en pausa y con sus anuncios
   }
   const res = await request('POST', '/api/meta/conjuntos', { body: plan({ campana: '10', nombre: 'Comercial 2' }) })
   assert.equal(res.status, 200, res.text)
-  assert.deepEqual(res.body.conjunto, { id: 's1', nombre: 'Comercial 2', campana: '10', anuncios: ['ad1'] })
+  assert.deepEqual(res.body.conjunto, { id: 's1', nombre: 'Comercial 2', campana: '10', anuncios: ['ad1'], activo: false })
   const posts = calls.filter((c) => c.method === 'POST')
   assert.ok(!posts.some((c) => c.path === 'act_111/campaigns'), 'no crea otra campaña')
   const created = posts.find((c) => c.path === 'act_111/adsets').body
@@ -1052,6 +1069,38 @@ test('en marcha: de la campaña a sus conjuntos y de un conjunto a sus anuncios'
   assert.deepEqual(ad.automaticas, { mejoras: [], multianunciante: false })
   assert.match(calls.find((c) => c.path === '30/ads').params.fields, /degrees_of_freedom_spec/)
   assert.equal(ad.metricas.gasto, 12.5)
+})
+
+test('en marcha: con varias campañas o varios conjuntos elegidos, lo de debajo de todos (filtrado en Meta) y sin padre', async () => {
+  await connect()
+  campaignRoutes()
+  routes['GET act_111/adsets'] = { data: [] }
+  routes['GET act_111/ads'] = { data: [] }
+  const sets = await request('GET', '/api/meta/campanas?cuenta=act_111&periodo=7d&nivel=conjunto&campana=10,11')
+  assert.equal(sets.status, 200, sets.text)
+  assert.equal(sets.body.nivel, 'conjunto')
+  assert.equal(sets.body.padre, null)
+  const filter = [{ field: 'campaign.id', operator: 'IN', value: ['10', '11'] }]
+  assert.deepEqual(JSON.parse(calls.find((c) => c.path === 'act_111/adsets').params.filtering), filter)
+  const insights = calls.filter((c) => c.path === 'act_111/insights')
+  assert.equal(insights.length, 2)
+  for (const c of insights) assert.deepEqual(JSON.parse(c.params.filtering), filter)
+  assert.ok(!calls.some((c) => c.path === '10' || c.path === '11'))
+
+  // Los anuncios de varios conjuntos (las campañas elegidas ya no cuentan).
+  calls.length = 0
+  const ads = await request('GET', '/api/meta/campanas?cuenta=act_111&periodo=7d&nivel=anuncio&campana=10&conjunto=30,31')
+  assert.equal(ads.status, 200, ads.text)
+  assert.deepEqual(JSON.parse(calls.find((c) => c.path === 'act_111/ads').params.filtering), [{ field: 'adset.id', operator: 'IN', value: ['30', '31'] }])
+
+  // Uno solo, como antes: los suyos, sin filtro.
+  calls.length = 0
+  await request('GET', '/api/meta/campanas?cuenta=act_111&periodo=7d&nivel=conjunto&campana=10')
+  assert.equal(calls.find((c) => c.path === '10/adsets').params.filtering, undefined)
+
+  assert.equal((await request('GET', '/api/meta/campanas?cuenta=act_111&nivel=conjunto&campana=10,x')).status, 400)
+  const many = Array.from({ length: 51 }, (_, i) => String(100 + i)).join(',')
+  assert.equal((await request('GET', `/api/meta/campanas?cuenta=act_111&nivel=conjunto&campana=${many}`)).status, 400)
 })
 
 test('en marcha: pausar y activar cualquier campaña; lo guardado de la cuenta se olvida', async () => {

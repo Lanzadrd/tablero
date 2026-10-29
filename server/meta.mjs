@@ -23,6 +23,11 @@ const META_FILE = path.join(DATA_DIR, 'meta.json')
 export const SCOPES = ['ads_management', 'ads_read', 'business_management', 'pages_show_list', 'pages_read_engagement', 'pages_manage_ads']
 /** Sin estos no se puede crear nada. */
 const REQUIRED = ['ads_management', 'business_management', 'pages_show_list', 'pages_manage_ads']
+/**
+ * Los de los resúmenes por WhatsApp (resumenes.mjs): solo se piden al darlos desde Resúmenes (la app de Meta
+ * necesita el caso de uso de WhatsApp) y, desde entonces, en cada conexión.
+ */
+export const WHATSAPP_SCOPES = ['whatsapp_business_management', 'whatsapp_business_messaging']
 
 /** Un enlace de conexión vale 10 minutos. */
 const STATE_TTL = 10 * 60_000
@@ -30,6 +35,9 @@ const STATE_TTL = 10 * 60_000
 const CACHE_TTL = 10 * 60_000
 /** Las campañas y sus números, un minuto: lo justo para no pedirlos otra vez al cambiar de cuenta y volver. */
 const METRICS_TTL = 60_000
+
+/** Cuántas campañas o conjuntos se pueden elegir a la vez para ver lo de debajo. */
+export const MAX_FILTER = 50
 
 /** Los periodos de «En marcha», con su nombre en Meta (en la zona horaria de la cuenta). */
 export const PERIODS = { hoy: 'today', ayer: 'yesterday', '7d': 'last_7d', '30d': 'last_30d' }
@@ -104,8 +112,17 @@ async function writeStore(data) {
   await rename(tmp, META_FILE)
 }
 
-/** Los errores de Meta, en algo que se pueda enseñar (con locale=es_ES, error_user_msg ya viene en español). */
+/**
+ * Los errores de Meta, en algo que se pueda enseñar (con locale=es_ES, error_user_msg ya viene en español). El
+ * código de Meta va aparte, en `meta` (lo usan los resúmenes por WhatsApp para explicar sus errores).
+ */
 export function metaError(error, status) {
+  const err = explain(error, status)
+  err.meta = { code: error?.code ?? null, subcode: error?.error_subcode ?? null }
+  return err
+}
+
+function explain(error, status) {
   // El 190 también sale cuando una llamada pide el token de una página en vez del de la persona: eso no es
   // que la conexión haya caducado.
   if (error?.code === 190 && !/page access token/i.test(error.message ?? '')) {
@@ -224,6 +241,7 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
       usuario: connected ? (store.usuario ?? null) : null,
       caduca: connected ? (store.caduca ?? null) : null,
       faltan: connected ? REQUIRED.filter((p) => !permisos.includes(p)) : [],
+      whatsapp: connected && WHATSAPP_SCOPES.every((p) => permisos.includes(p)),
       version: META_VERSION,
     }
   }
@@ -270,10 +288,13 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
 
   /**
    * Dónde empieza la conexión: el diálogo de Meta, que vuelve a /api/meta/volver en este mismo puerto. Meta
-   * acepta «localhost» sin darlo de alta mientras la app está en modo desarrollo.
+   * acepta «localhost» sin darlo de alta mientras la app está en modo desarrollo. Con `whatsapp` (o si ya se
+   * dieron), también los permisos de WhatsApp.
    */
-  async function connectUrl(host) {
+  async function connectUrl(host, { whatsapp = false } = {}) {
     const store = await requireApp()
+    const granted = Array.isArray(store.permisos) && WHATSAPP_SCOPES.every((p) => store.permisos.includes(p))
+    const scopes = whatsapp || granted ? [...SCOPES, ...WHATSAPP_SCOPES] : SCOPES
     const port = /:(\d+)$/.exec(host ?? '')?.[1]
     const redirect = `http://localhost${port ? `:${port}` : ''}/api/meta/volver`
     const state = randomBytes(16).toString('hex')
@@ -285,7 +306,7 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
       redirect_uri: redirect,
       state,
       response_type: 'code',
-      ...(store.app.configuracion ? { config_id: store.app.configuracion } : { scope: SCOPES.join(',') }),
+      ...(store.app.configuracion ? { config_id: store.app.configuracion } : { scope: scopes.join(',') }),
     }).toString()
     return url.href
   }
@@ -476,34 +497,41 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
   }
 
   /**
-   * «En marcha»: las campañas, los conjuntos o los anuncios (`level`; sin él, el que toca bajo `campaign` o
-   * `adSet`), activos y en pausa, con sus métricas del periodo, y el total (de Meta: el alcance no se puede sumar).
-   * Los conjuntos, de toda la cuenta o de `campaign`; los anuncios, de la cuenta, de `campaign` o de `adSet`. Con
-   * campaña o conjunto, también ese de arriba (`padre`), para saber si está entregando.
+   * «En marcha»: las campañas, los conjuntos o los anuncios (`level`; sin él, el que toca bajo `campaigns` o
+   * `adSets`), activos y en pausa, con sus métricas del periodo, y el total (de Meta: el alcance no se puede sumar).
+   * Los conjuntos, de toda la cuenta o de las campañas elegidas; los anuncios, de la cuenta, de las campañas o de los
+   * conjuntos (como las casillas del Administrador de anuncios). Con una sola campaña o un solo conjunto, también ese
+   * de arriba (`padre`), para saber si está entregando. `campaign` y `adSet`: uno solo (como antes).
    */
-  function performance(account, { period = '7d', campaign = null, adSet = null, level: wanted = null, fresh = false } = {}) {
+  function performance(account, { period = '7d', campaign = null, adSet = null, campaigns = null, adSets = null, level: wanted = null, fresh = false } = {}) {
     if (!/^act_\d+$/.test(account ?? '')) throw new HttpError(400, 'Cuenta publicitaria no válida')
     if (!Object.hasOwn(PERIODS, period)) throw new HttpError(400, 'Periodo no válido')
-    for (const objectId of [campaign, adSet]) {
-      if (objectId !== null && !/^\d{1,32}$/.test(objectId)) throw new HttpError(400, 'Campaña o conjunto no válido')
+    const campaignIds = campaigns ?? (campaign === null ? [] : [campaign])
+    const adSetIds = adSets ?? (adSet === null ? [] : [adSet])
+    for (const objectId of [...campaignIds, ...adSetIds]) {
+      if (!/^\d{1,32}$/.test(objectId ?? '')) throw new HttpError(400, 'Campaña o conjunto no válido')
     }
-    const level = wanted ?? (adSet ? 'anuncio' : campaign ? 'conjunto' : 'campana')
+    if (campaignIds.length > MAX_FILTER || adSetIds.length > MAX_FILTER) throw new HttpError(400, `Como mucho ${MAX_FILTER} a la vez`)
+    const level = wanted ?? (adSetIds.length ? 'anuncio' : campaignIds.length ? 'conjunto' : 'campana')
     if (!Object.hasOwn(LEVELS, level)) throw new HttpError(400, 'Nivel no válido')
-    // Lo que filtra: el conjunto (solo en los anuncios) o la campaña (en conjuntos y anuncios); si no, la cuenta.
-    const scope = level === 'anuncio' ? (adSet ?? campaign) : level === 'conjunto' ? campaign : null
-    const parentLevel = !scope ? null : scope === adSet ? 'conjunto' : 'campana'
-    const parent = scope ?? account
+    // Lo que filtra: los conjuntos (solo en los anuncios) o las campañas (en conjuntos y anuncios); si no, la cuenta.
+    const [scopeLevel, ids] =
+      level === 'anuncio' && adSetIds.length ? ['conjunto', adSetIds] : level !== 'campana' && campaignIds.length ? ['campana', campaignIds] : [null, []]
+    // Uno: se piden los suyos (y él, el padre). Varios: los de la cuenta, filtrados.
+    const parent = ids.length === 1 ? ids[0] : account
+    const parentLevel = ids.length === 1 ? scopeLevel : null
+    const filtering = ids.length > 1 ? [{ field: `${scopeLevel === 'conjunto' ? 'adset' : 'campaign'}.id`, operator: 'IN', value: ids }] : undefined
     const { edge, insights: insightsLevel, states, fields } = LEVELS[level]
     const datePreset = PERIODS[period]
     return cached(
-      `campanas:${account}:${period}:${level}:${parent}`,
+      `campanas:${account}:${period}:${level}:${ids.length ? [...ids].sort().join(',') : parent}`,
       fresh,
       async () => {
         const [info, list, insights, totals, parentObject] = await Promise.all([
           graph(account, { params: { fields: 'currency,business{id}' } }),
-          all(`${parent}/${edge}`, { fields, effective_status: states, limit: 50 }, 300),
-          all(`${parent}/insights`, { level: insightsLevel, date_preset: datePreset, fields: `${insightsLevel}_id,${INSIGHT_FIELDS}` }, 1000),
-          graph(`${parent}/insights`, { params: { date_preset: datePreset, fields: INSIGHT_FIELDS } }),
+          all(`${parent}/${edge}`, { fields, effective_status: states, filtering, limit: 50 }, 300),
+          all(`${parent}/insights`, { level: insightsLevel, date_preset: datePreset, filtering, fields: `${insightsLevel}_id,${INSIGHT_FIELDS}` }, 1000),
+          graph(`${parent}/insights`, { params: { date_preset: datePreset, filtering, fields: INSIGHT_FIELDS } }),
           parentLevel ? graph(parent, { params: { fields: LEVELS[parentLevel].fields } }) : null,
         ])
         const options = { account, currency: info.currency, businessId: info.business?.id, now: now() }

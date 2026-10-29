@@ -343,6 +343,17 @@ export const GoogleAdsLogo = () => (
   </svg>
 )
 
+/** Logo de WhatsApp: el bocadillo verde con el teléfono. */
+export const WhatsAppLogo = () => (
+  <svg {...logo}>
+    <path d="M12 2.6a9.4 9.4 0 0 0-8.1 14.2L2.6 21.4l4.7-1.2A9.4 9.4 0 1 0 12 2.6Z" fill="#25D366" />
+    <path
+      d="M8.7 7.1c.3-.3.8-.25 1 .12l.95 1.9c.15.3.1.66-.14.9l-.6.6a6.3 6.3 0 0 0 2.86 2.86l.6-.6c.24-.24.6-.29.9-.14l1.9.95c.37.2.43.7.12 1l-.78.82c-.5.52-1.25.72-1.93.47a9.6 9.6 0 0 1-5.6-5.6c-.25-.68-.05-1.43.47-1.93l.25-.25Z"
+      fill="#fff"
+    />
+  </svg>
+)
+
 /** Logo de Tablero: una T (una columna con su cabecera) con dos ondas, como un megáfono. */
 export const TableroLogo = ({ size = 24 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 88 88" aria-hidden focusable={false}>

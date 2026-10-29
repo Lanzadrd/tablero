@@ -3,7 +3,7 @@ import type { Board } from './model'
 import type { Actions } from './state'
 import type { AvisosStatus } from './sync'
 
-export type View = 'today' | 'board' | 'calendar' | 'subscriptions' | 'ads' | 'google'
+export type View = 'today' | 'board' | 'calendar' | 'subscriptions' | 'ads' | 'google' | 'summaries'
 
 /**
  * Lo que la vista Suscripciones abre en cuanto está en pantalla: la ficha de una, «Nueva suscripción» o

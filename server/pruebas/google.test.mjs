@@ -441,6 +441,32 @@ test('en marcha: los grupos de una campaña y los anuncios de un grupo, con lo d
   assert.deepEqual(ads.body.filas.map((f) => [f.id, f.nombre, f.entrega.texto, f.metricas.clics]), [['21~31', 'Tour en Asunción', 'Grupo en pausa', 4]])
 })
 
+test('en marcha: los grupos de varias campañas y los anuncios de varios grupos (sin padre)', async () => {
+  await connect()
+  accountRoutes()
+  const queries = []
+  searches['2220000000'] = {
+    ...searches['2220000000'],
+    'FROM ad_group_ad': (query) => {
+      queries.push(query)
+      return { results: [] }
+    },
+    'FROM ad_group': (query) => {
+      queries.push(query)
+      return { results: [] }
+    },
+  }
+  const groups = await request('GET', '/api/google/campanas?cuenta=2220000000&nivel=conjunto&campana=11,12')
+  assert.equal(groups.status, 200, groups.text)
+  assert.equal(groups.body.padre, null)
+  assert.ok(queries.length >= 2 && queries.every((q) => q.includes('campaign.id IN (11, 12)')))
+  queries.length = 0
+  const ads = await request('GET', '/api/google/campanas?cuenta=2220000000&nivel=anuncio&campana=11&conjunto=21,22')
+  assert.equal(ads.status, 200, ads.text)
+  assert.ok(queries.length >= 2 && queries.every((q) => q.includes('ad_group.id IN (21, 22)') && !/WHERE.*campaign\.id/.test(q)))
+  assert.equal((await request('GET', '/api/google/campanas?cuenta=2220000000&nivel=conjunto&campana=11,1%3D1')).status, 400)
+})
+
 test('pausar y activar: campañas, grupos y anuncios, y lo guardado se olvida', async () => {
   await connect()
   accountRoutes()

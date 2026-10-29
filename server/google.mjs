@@ -311,6 +311,8 @@ export function googleRowsOf(entities, metricRows, level) {
 // ── Las consultas (GAQL) ──
 
 const ACTIVE = "IN ('ENABLED', 'PAUSED')"
+/** Cuántas campañas o grupos se pueden elegir a la vez para ver lo de debajo. */
+const MAX_FILTER = 50
 const LEVEL_QUERIES = {
   campana: {
     entities:
@@ -659,23 +661,31 @@ export function createGoogle({ fetch: fetchImpl = globalThis.fetch, now = () => 
    * `campaign`; los anuncios, de la cuenta, de `campaign` o de `adGroup`. Con campaña o grupo, también ese de arriba
    * (`padre`), para saber si está entregando.
    */
-  async function performance(customer, { period = '7d', campaign = null, adGroup = null, level: wanted = null, fresh = false } = {}) {
+  async function performance(
+    customer,
+    { period = '7d', campaign = null, adGroup = null, campaigns = null, adGroups = null, level: wanted = null, fresh = false } = {},
+  ) {
     if (!Object.hasOwn(GOOGLE_PERIODS, period)) throw new HttpError(400, 'Periodo no válido')
-    for (const objectId of [campaign, adGroup]) {
-      if (objectId !== null && !/^\d{1,20}$/.test(objectId)) throw new HttpError(400, 'Campaña o grupo no válido')
+    const campaignIds = campaigns ?? (campaign === null ? [] : [campaign])
+    const adGroupIds = adGroups ?? (adGroup === null ? [] : [adGroup])
+    for (const objectId of [...campaignIds, ...adGroupIds]) {
+      if (!/^\d{1,20}$/.test(objectId ?? '')) throw new HttpError(400, 'Campaña o grupo no válido')
     }
+    if (campaignIds.length > MAX_FILTER || adGroupIds.length > MAX_FILTER) throw new HttpError(400, `Como mucho ${MAX_FILTER} a la vez`)
     const { account, login } = await accountOf(customer)
-    const level = wanted ?? (adGroup ? 'anuncio' : campaign ? 'conjunto' : 'campana')
+    const level = wanted ?? (adGroupIds.length ? 'anuncio' : campaignIds.length ? 'conjunto' : 'campana')
     if (!Object.hasOwn(LEVEL_QUERIES, level)) throw new HttpError(400, 'Nivel no válido')
-    // Lo que filtra: el grupo (solo en los anuncios) o la campaña (en grupos y anuncios); si no, toda la cuenta.
-    const scope = level === 'anuncio' && adGroup ? ['ad_group.id', adGroup] : level !== 'campana' && campaign ? ['campaign.id', campaign] : null
-    const parentLevel = !scope ? null : scope[0] === 'ad_group.id' ? 'conjunto' : 'campana'
-    const parent = scope?.[1] ?? null
+    // Lo que filtra: los grupos (solo en los anuncios) o las campañas (en grupos y anuncios); si no, toda la cuenta.
+    const [field, ids] =
+      level === 'anuncio' && adGroupIds.length ? ['ad_group.id', adGroupIds] : level !== 'campana' && campaignIds.length ? ['campaign.id', campaignIds] : [null, []]
+    // Con uno solo, también él (el padre), para saber si está entregando.
+    const parentLevel = ids.length === 1 ? (field === 'ad_group.id' ? 'conjunto' : 'campana') : null
+    const parent = parentLevel ? ids[0] : null
     const q = LEVEL_QUERIES[level]
-    const within = scope ? `${scope[0]} = ${scope[1]}` : null
+    const within = ids.length ? (ids.length === 1 ? `${field} = ${ids[0]}` : `${field} IN (${ids.join(', ')})`) : null
     const during = `segments.date DURING ${GOOGLE_PERIODS[period]}`
     return cached(
-      `campanas:${customer}:${period}:${level}:${parent ?? 'cuenta'}`,
+      `campanas:${customer}:${period}:${level}:${ids.length ? [...ids].sort().join(',') : 'cuenta'}`,
       fresh,
       async () => {
         const [entities, metrics, parentRows] = await Promise.all([

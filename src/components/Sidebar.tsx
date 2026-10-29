@@ -18,7 +18,7 @@ interface Item {
   accounts?: { store: AccountStore; openKey: string }
 }
 
-/** Las vistas, en grupos: las tareas y lo que se gestiona fuera (Meta, Google Ads). */
+/** Las vistas, en grupos: las tareas y lo que se gestiona fuera (Meta, Google Ads y sus resúmenes por WhatsApp). */
 const SECTIONS: Array<{ title: string | null; items: Item[] }> = [
   {
     title: null,
@@ -34,6 +34,7 @@ const SECTIONS: Array<{ title: string | null; items: Item[] }> = [
     items: [
       { view: 'ads', label: 'Meta Ads', hint: 'P', icon: Icon.MetaLogo, accounts: { store: metaAccounts, openKey: 'tablero.lateral.cuentas' } },
       { view: 'google', label: 'Google Ads', hint: 'G', icon: Icon.GoogleAdsLogo, accounts: { store: googleAccounts, openKey: 'tablero.lateral.google' } },
+      { view: 'summaries', label: 'Resúmenes', hint: 'R', icon: Icon.WhatsAppLogo },
     ],
   },
 ]

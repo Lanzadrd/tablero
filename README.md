@@ -120,7 +120,11 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
   gestionar anuncios con la API de marketing»; sin revisión, pero publicada: en modo desarrollo Meta no deja
   crear anuncios, y para publicarla pide una URL de política de privacidad: sirve [PRIVACIDAD.md](PRIVACIDAD.md)).
   En su inicio de sesión con Facebook, añade `http://localhost:4747/api/meta/volver` a las URI de
-  redireccionamiento (en desarrollo, también la del puerto 5173). Tablero pide su identificador y su clave
+  redireccionamiento (en desarrollo, también la del puerto 5173). Ojo: Meta solo deja volver a `localhost` con la
+  app en modo desarrollo; publicada, la ventana dice «Can't load URL» (y en las apps de empresa no se puede volver a
+  desarrollo). Entonces, **Pegar un token** (al conectar, en el botón de la conexión y en Resúmenes): uno de usuario
+  del [Explorador de la API Graph](https://developers.facebook.com/tools/explorer/) con la app y los permisos que
+  dice; Tablero lo cambia por uno de 60 días. Tablero pide su identificador y su clave
   secreta y abre la ventana de Meta; si la app usa «Inicio de sesión con Facebook para empresas», también el
   identificador de una configuración con token de usuario. La conexión dura unos 60 días (avisa una semana antes); «Volver a conectar» la renueva.
 - **En marcha**: las campañas activas de la cuenta con su presupuesto y sus métricas de hoy, ayer, 7 o 30
@@ -129,9 +133,11 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
   impresiones, frecuencia, CPM, clics, CTR, CPC y bloqueos. Al pulsar
   una campaña se ven sus conjuntos, y al pulsar un conjunto, sus anuncios (con miniatura); las pestañas llevan de
   vuelta. Las pestañas **Campañas · Conjuntos · Anuncios**, como carpetas sobre la tabla, cambian de nivel como
-  en el Administrador de anuncios: sin filtro, todos los de la cuenta, con su campaña o conjunto al lado; con una
-  campaña o un conjunto elegido, su pestaña dice «1 seleccionada ×» (la cruz quita el filtro) y las de al lado,
-  «Conjuntos de 1 campaña», «Anuncios de 1 conjunto». Debajo de
+  en el Administrador de anuncios: sin filtro, todos los de la cuenta, con su campaña o conjunto al lado. Las
+  **casillas** de las campañas y los conjuntos (y la de la cabecera, para todos los que se ven) filtran el nivel
+  siguiente: con dos campañas marcadas, «Conjuntos de 2 campañas» enseña solo los suyos (y sus totales); con
+  conjuntos marcados, «Anuncios de 3 conjuntos». La pestaña de lo elegido dice «2 seleccionadas ×» (la cruz
+  quita el filtro); pulsar un nombre elige solo ese y abre lo de debajo. Igual en Google Ads. Debajo de
   cada nombre sale lo que pasa de verdad (conjuntos en pausa, terminada, rechazado…). El
   interruptor pausa enseguida o activa (pide confirmación) campañas, conjuntos y anuncios; lo que está en pausa
   sin gasto en el periodo va plegado. Las campañas creadas desde Tablero se encienden enteras la primera vez y
@@ -153,13 +159,16 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
 - **Nuevo conjunto**: dentro de una campaña (de interacción, clientes potenciales o ventas), el mismo formulario
   que una campaña nueva crea un conjunto de mensajes a WhatsApp con sus anuncios. Usa la página de los demás
   conjuntos y, si mandan los mensajes a un número concreto, ese número; si la campaña reparte su presupuesto,
-  el conjunto no lleva. Se crea en pausa con los anuncios listos: se enciende con su interruptor.
+  el conjunto no lleva. Se crea en pausa con los anuncios listos (se enciende con su interruptor) o, con
+  «Publicar ya», activo.
 - **Nueva campaña**: eliges la cuenta (agrupadas por portfolio), una **plantilla** (página, Instagram,
   presupuesto diario, lugares, edad, sexo, Advantage+, ubicaciones, textos, chat de WhatsApp y mejoras de Meta)
   y arrastras imágenes o vídeos: cada pieza es un anuncio del mismo conjunto. Se empieza con el botón verde
   **+ Crear**, a la izquierda de las fechas (como en el Administrador). «Crear en pausa» sube todo y crea
   campaña, conjunto y anuncios **en pausa**; si algo falla a medias, borra lo creado. Luego, «Revisar en Meta»
-  (Administrador de anuncios) o «Activar» (pide confirmación: desde ahí gasta).
+  (Administrador de anuncios) o «Activar» (pide confirmación: desde ahí gasta). **Publicar ya** lo crea todo
+  activo de una vez (también pide confirmación, con lo que gastará al día): empieza en cuanto Meta apruebe los
+  anuncios.
 - **Orden del formulario**: nombre de la campaña (o del conjunto) arriba del todo; luego plantilla, quién
   anuncia, presupuesto, público (sin plantilla, **Ciudad del Este**), imágenes y vídeos con sus ubicaciones,
   texto, chat y mejoras. Con sitio, a la derecha va la **vista previa**, todas a la vez: feed de Facebook y de
@@ -220,11 +229,35 @@ quita (no se puede deshacer).
 - El cliente OAuth y el token de refresco se guardan en `datos/google.json` (solo en este Mac, permisos 600) y
   nunca llegan a la web. Versión de la API: v26 (`TABLERO_GOOGLE_VERSION` la cambia).
 
+### Resúmenes por WhatsApp
+
+La vista **Resúmenes** (`R`) manda cada día, a la hora que elijas, un WhatsApp por empresa: el gasto de ayer
+en Meta y en Google con sus conversaciones (o conversiones) y lo que costó cada una, las campañas con más
+gasto, lo que hay que revisar y las tareas del día de su columna (y los cobros de sus suscripciones de los
+próximos dos días). En «Para revisar» salen las cuentas con problemas (pago pendiente…), los anuncios
+rechazados, las campañas activas que no entregan o que ayer no gastaron, las que terminan en dos días, las de
+Google limitadas, y las que ayer costaron por resultado 1,5 veces su media de 7 días o más (o gastaron lo de
+dos resultados sin ninguno).
+
+- Cada resumen: nombre (sale en el mensaje), número de WhatsApp de la empresa desde el que sale, a quién (con
+  prefijo de país), hora, cuentas de Meta y de Google que entran y columna de las tareas. «Vista previa» enseña
+  el mensaje con los datos de ahora, sin mandarlo; «Enviar ahora» lo manda (no cuenta como el del día).
+- Sale por la API de WhatsApp de Meta con la conexión de Meta Ads, que necesita los permisos de WhatsApp: en la
+  app de Meta, el caso de uso «Conectar con clientes a través de WhatsApp» y, en Resúmenes, **Dar permiso de
+  WhatsApp** (vuelve a abrir la ventana de Meta). Fuera de una conversación abierta, WhatsApp solo deja mandar
+  plantillas: **Pedir la plantilla a Meta** crea `tablero_resumen_diario` (de utilidad, en español) en la cuenta
+  de WhatsApp del número; Meta la revisa (de minutos a unas horas). Cada mensaje lo cobra Meta como una plantilla
+  de utilidad, y la cuenta de WhatsApp necesita forma de pago.
+- El servidor mira cada 5 minutos si toca alguno (si el Mac dormía a esa hora, sale al despertar). Si falla, lo
+  reintenta a la media hora (tres veces al día como mucho) solo a quien no lo recibió. Lo que se configura y
+  cómo fue el último envío se guarda en `datos/resumenes.json`; `TABLERO_SIN_RESUMENES=1` los desactiva.
+  WhatsApp no deja más de 1024 caracteres: si no cabe, se quitan las últimas de la lista más larga («y 3 más»).
+
 ## Atajos
 
 | Tecla | Acción |
 | --- | --- |
-| `D` / `T` / `C` / `U` / `P` / `G` | Hoy / Tablero / Calendario / Suscripciones / Meta Ads / Google Ads |
+| `D` / `T` / `C` / `U` / `P` / `G` / `R` | Hoy / Tablero / Calendario / Suscripciones / Meta Ads / Google Ads / Resúmenes |
 | `⌃⌘S` | Mostrar u ocultar el menú lateral |
 | `N` · `1`–`9` · `⇧N` | Nueva tarea (en Suscripciones, nueva suscripción) · en esa columna · nueva columna |
 | `⌘K` o `/` | Buscar (también completadas y archivadas) |
@@ -282,8 +315,8 @@ npm run build  # comprueba tipos y compila a dist/
   compartidas por la app, el servidor y el MCP.
 - `server/` — servidor sin dependencias: web, API `/api/board`, eventos en vivo `/api/eventos`
   y actualizaciones automáticas (`actualizador.mjs`). Anuncios: la conexión con Meta en `meta.mjs` y lo
-  que se manda para crear campañas en `anuncios.mjs`; la de Google Ads en `google.mjs` (probados con una Meta y
-  un Google de mentira, sin internet).
+  que se manda para crear campañas en `anuncios.mjs`; la de Google Ads en `google.mjs`; los resúmenes por
+  WhatsApp en `resumenes.mjs` (probados con una Meta y un Google de mentira, sin internet).
 - `avisos/` — el ayudante de Recordatorios (Swift + EventKit): `Modelo.swift` (fusión, sin
   EventKit) y `Avisos.swift`. Pruebas: `swiftc -parse-as-library avisos/Modelo.swift
   avisos/Pruebas.swift -o /tmp/pruebas && /tmp/pruebas`. Solo se recompila si cambia,

@@ -45,6 +45,7 @@ const VIEWS: Record<string, View> = {
   suscripciones: 'subscriptions',
   anuncios: 'ads',
   google: 'google',
+  resumenes: 'summaries',
 }
 
 export function readLaunch(url: URL): Launch | null {

@@ -137,7 +137,6 @@ function Setup({ status, onChange }: { status: MetaStatus; onChange: (status: Me
   const [appId, setAppId] = useState(status.appId ?? '')
   const [secret, setSecret] = useState('')
   const [config, setConfig] = useState(status.configuracion ?? '')
-  const [token, setToken] = useState('')
   const [pasting, setPasting] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -165,10 +164,6 @@ function Setup({ status, onChange }: { status: MetaStatus; onChange: (status: Me
     }
   }
 
-  const saveToken = async (e: FormEvent) => {
-    e.preventDefault()
-    if (await run(() => metaApi.saveToken(token.trim()))) setToken('')
-  }
 
   return (
     <section className="ads-setup" aria-labelledby={`${ids}-title`}>
@@ -294,28 +289,7 @@ function Setup({ status, onChange }: { status: MetaStatus; onChange: (status: Me
                 </button>
               )}
             </div>
-            {pasting && status.app && (
-              <form className="ads-token-form" onSubmit={saveToken}>
-                <label className="field-note" htmlFor={`${ids}-token`}>
-                  Un token de usuario de la Graph API Explorer de esta app, con ads_management, business_management,
-                  pages_show_list y pages_manage_ads. Tablero lo cambia por uno de 60 días.
-                </label>
-                <textarea
-                  id={`${ids}-token`}
-                  className="input ads-token"
-                  rows={3}
-                  spellCheck={false}
-                  autoComplete="off"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                />
-                <div className="ads-form-foot">
-                  <button type="submit" className="btn" disabled={busy || token.trim().length < 20}>
-                    Usar este token
-                  </button>
-                </div>
-              </form>
-            )}
+            {pasting && status.app && <TokenForm permissions={AD_PERMISSIONS} onSaved={onChange} />}
           </li>
         </ol>
         {error && (
@@ -353,10 +327,69 @@ export function CopyLine({ value }: { value: string }) {
   )
 }
 
+/** Los permisos de anuncios que tiene que llevar un token pegado. */
+export const AD_PERMISSIONS = 'ads_management, ads_read, business_management, pages_show_list, pages_read_engagement y pages_manage_ads'
+
+/**
+ * Pegar un token de usuario del Explorador de la API Graph: para cuando la ventana de Meta no puede volver a
+ * Tablero (con la app publicada, Meta no deja volver a localhost). Tablero lo cambia por uno de 60 días.
+ */
+export function TokenForm({ permissions, onSaved }: { permissions: string; onSaved: (status: MetaStatus) => void }) {
+  const id = useId()
+  const [token, setToken] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      onSaved(await metaApi.saveToken(token.trim()))
+      setToken('')
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form className="ads-token-form" onSubmit={(e) => void save(e)}>
+      <label className="field-note" htmlFor={id}>
+        Un token de usuario de esta app del{' '}
+        <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer">
+          Explorador de la API Graph
+        </a>{' '}
+        (elige la app, «Token de usuario», añade los permisos {permissions} y «Generate Access Token»). Tablero lo cambia por uno de 60
+        días.
+      </label>
+      <textarea
+        id={id}
+        className="input ads-token"
+        rows={3}
+        spellCheck={false}
+        autoComplete="off"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+      />
+      {error && (
+        <p className="ads-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="ads-form-foot">
+        <button type="submit" className="btn" disabled={busy || token.trim().length < 20}>
+          {busy ? 'Comprobando…' : 'Usar este token'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
 /** «Lanza · 58 días», con lo que se puede hacer con la conexión. */
 function ConnectionButton({ status, onChange }: { status: MetaStatus; onChange: (status: MetaStatus) => void }) {
   const button = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
+  const [pasting, setPasting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const connect = useConnect(META_CONNECTION, onChange, setError)
   const days = daysLeft(status.caduca)
@@ -402,6 +435,9 @@ function ConnectionButton({ status, onChange }: { status: MetaStatus; onChange: 
               <button type="button" className="btn" onClick={() => connect(status.caduca)}>
                 Volver a conectar
               </button>
+              <button type="button" className="link-btn" aria-expanded={pasting} onClick={() => setPasting(!pasting)}>
+                Pegar un token
+              </button>
               <button
                 type="button"
                 className="danger-btn"
@@ -412,6 +448,15 @@ function ConnectionButton({ status, onChange }: { status: MetaStatus; onChange: 
                 Desconectar
               </button>
             </div>
+            {pasting && (
+              <TokenForm
+                permissions={status.whatsapp ? `${AD_PERMISSIONS.replace(' y ', ', ')}, whatsapp_business_management y whatsapp_business_messaging` : AD_PERMISSIONS}
+                onSaved={(s) => {
+                  setPasting(false)
+                  onChange(s)
+                }}
+              />
+            )}
             <p className="ads-version">API de Meta {status.version}</p>
           </div>
         </Popover>

@@ -31,6 +31,7 @@ export type CommandId =
   | 'subscriptions'
   | 'ads'
   | 'google'
+  | 'summaries'
   | 'sidebar'
   | 'shortcuts'
   | 'avisos'
@@ -55,6 +56,7 @@ const COMMANDS: Command[] = [
   { id: 'subscriptions', label: 'Suscripciones', keys: ['U'], icon: Icon.Card },
   { id: 'ads', label: 'Meta Ads', keys: ['P'], icon: Icon.MetaLogo },
   { id: 'google', label: 'Google Ads', keys: ['G'], icon: Icon.GoogleAdsLogo },
+  { id: 'summaries', label: 'Resúmenes por WhatsApp', keys: ['R'], icon: Icon.WhatsAppLogo },
   { id: 'sidebar', label: 'Mostrar u ocultar el menú lateral', keys: ['⌃', '⌘', 'S'], icon: Icon.SidebarLeft },
   { id: 'shortcuts', label: 'Atajos de teclado', keys: ['?'], icon: Icon.Keyboard },
   { id: 'avisos', label: 'Avisos en el iPhone', keys: [], icon: Icon.Bell },

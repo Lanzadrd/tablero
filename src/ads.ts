@@ -15,6 +15,8 @@ export interface MetaStatus {
   caduca: string | null
   /** Permisos imprescindibles que no se concedieron al conectar. */
   faltan: string[]
+  /** ¿Se dieron los permisos de WhatsApp (los de los resúmenes)? */
+  whatsapp: boolean
   version: string
 }
 
@@ -336,8 +338,8 @@ export interface GoogleEditChanges {
 /** La consulta de «En marcha»: periodo, nivel y filtro. */
 function rowsQuery(account: string, period: Period, path: AdPath, fresh: boolean) {
   const query = new URLSearchParams({ cuenta: account, periodo: period })
-  if (path.campana) query.set('campana', path.campana.id)
-  if (path.conjunto) query.set('conjunto', path.conjunto.id)
+  if (path.campanas?.length) query.set('campana', path.campanas.map((c) => c.id).join(','))
+  if (path.conjuntos?.length) query.set('conjunto', path.conjuntos.map((c) => c.id).join(','))
   if (path.nivel) query.set('nivel', path.nivel)
   if (fresh) query.set('actualizar', '1')
   return query
@@ -386,15 +388,24 @@ export interface NewAdSet {
   nombre: string
   campana: string
   anuncios: string[]
+  /** Creado activo («Publicar ya»). */
+  activo?: boolean
+}
+
+/** Una campaña o un conjunto elegido, con su nombre (para decirlo en las pestañas). */
+export interface AdRef {
+  id: string
+  nombre: string
 }
 
 /**
- * Dónde se está: qué se ve (`nivel`: campañas, conjuntos o anuncios; sin él, el de debajo del filtro) y de qué
- * campaña (y conjunto). Los conjuntos y los anuncios, sin filtro, son los de toda la cuenta.
+ * Dónde se está: qué se ve (`nivel`: campañas, conjuntos o anuncios; sin él, el de debajo del filtro) y lo elegido
+ * arriba, como con las casillas del Administrador de anuncios: las campañas filtran los conjuntos y los anuncios;
+ * los conjuntos, los anuncios. Sin nada elegido, los de toda la cuenta.
  */
 export interface AdPath {
-  campana?: { id: string; nombre: string }
-  conjunto?: { id: string; nombre: string }
+  campanas?: AdRef[]
+  conjuntos?: AdRef[]
   nivel?: Level
 }
 
@@ -408,6 +419,8 @@ export interface LaunchPlan extends AdSettings {
   fin: string | null
   /** Uno por pieza: sus versiones (1:1, 4:5, 9:16, 16:9), cada una en sus ubicaciones. */
   anuncios: Array<{ nombre: string; versiones: AdVersion[] }>
+  /** «Publicar ya»: se crea todo activo en vez de en pausa. */
+  publicar?: boolean
 }
 
 /** Lo primero que ve la persona en el chat si no se escribe otra cosa (el de Meta, en anuncios.mjs igual). */
@@ -616,6 +629,83 @@ export const metaApi = {
   writeCopy: (request: CopyRequest) => call<{ textos: Copy }>('POST', '/api/anuncios/textos', request).then((r) => r.textos),
   saveTemplates: (plantillas: Template[]) =>
     call<{ plantillas: Template[] }>('PUT', '/api/anuncios/plantillas', { plantillas }).then((r) => r.plantillas),
+}
+
+// ── Resúmenes diarios por WhatsApp (server/resumenes.mjs) ──
+
+/** Cómo fue un envío (el de cada día o el de «Enviar ahora»). */
+export interface SummarySend {
+  dia: string
+  en: string
+  ok: boolean
+  enviados: string[]
+  error: string | null
+  intentos: number
+  texto: string | null
+}
+
+export interface DailySummary {
+  id: string
+  nombre: string
+  activo: boolean
+  /** 'HH:MM', hora de este Mac. */
+  hora: string
+  /** Cuentas publicitarias de Meta (act_…) y de Google Ads que entran. */
+  meta: string[]
+  google: string[]
+  /** La columna de sus tareas. */
+  columna: string | null
+  /** Desde qué número de WhatsApp sale (`cuenta`: su cuenta de WhatsApp, la de la plantilla). */
+  numero: { id: string; cuenta: string; telefono: string; nombre: string } | null
+  /** A quién: números con el prefijo del país. */
+  destinos: string[]
+  ultimoEnvio: SummarySend | null
+  prueba: SummarySend | null
+}
+
+/** La plantilla en una cuenta de WhatsApp: APPROVED, PENDING, REJECTED… o null si no se ha pedido. */
+export interface WhatsappTemplate {
+  estado: string | null
+  motivo?: string | null
+  categoria?: string | null
+  error?: string
+}
+
+/** Las plantillas del resumen: con Meta, con Google o con los dos (server/resumenes.mjs). */
+export type TemplateKind = 'meta' | 'google' | 'meta_google'
+
+/** La que necesita un resumen (sin Meta ni Google, la de Meta), como en el servidor. */
+export const templateKind = (s: Pick<DailySummary, 'meta' | 'google'>): TemplateKind =>
+  s.meta.length && s.google.length ? 'meta_google' : s.google.length ? 'google' : 'meta'
+
+/** Un portfolio con sus cuentas de WhatsApp y sus números. */
+export interface WhatsappBusiness {
+  id: string
+  nombre: string
+  error: string | null
+  cuentas: Array<{
+    id: string
+    nombre: string | null
+    plantillas: Record<TemplateKind, WhatsappTemplate>
+    numeros: Array<{ id: string; telefono: string; nombre: string; estado: string | null }>
+  }>
+}
+
+export const summariesApi = {
+  list: () => call<{ resumenes: DailySummary[] }>('GET', '/api/resumenes').then((r) => r.resumenes),
+  save: (resumenes: DailySummary[]) => call<{ resumenes: DailySummary[] }>('PUT', '/api/resumenes', { resumenes }).then((r) => r.resumenes),
+  numbers: () => call<{ empresas: WhatsappBusiness[] }>('GET', '/api/resumenes/numeros').then((r) => r.empresas),
+  createTemplate: (cuenta: string, tipo: TemplateKind) =>
+    call<{ plantilla: WhatsappTemplate }>('POST', '/api/resumenes/plantilla', { cuenta, tipo }).then((r) => r.plantilla),
+  /** El mensaje como está ahora (aunque no se haya guardado), sin mandarlo. */
+  preview: (resumen: DailySummary) => call<{ texto: string }>('POST', '/api/resumenes/vista', { resumen }).then((r) => r.texto),
+  send: (id: string) => call<{ envio: SummarySend }>('POST', '/api/resumenes/enviar', { id }).then((r) => r.envio),
+}
+
+/** «+34 600 11 22 33» → «+34600112233»; null si no parece un número con prefijo de país (como en el servidor). */
+export function phoneOf(value: string) {
+  const clean = value.trim().replace(/^00/, '+').replace(/[\s().-]/g, '')
+  return /^\+[1-9]\d{7,14}$/.test(clean) ? clean : null
 }
 
 /**

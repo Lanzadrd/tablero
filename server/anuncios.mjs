@@ -53,7 +53,7 @@ export function campaignBody(plan) {
   return {
     name: plan.nombre,
     objective: 'OUTCOME_ENGAGEMENT',
-    status: 'PAUSED',
+    status: plan.publicar ? 'ACTIVE' : 'PAUSED',
     special_ad_categories: [],
     buying_type: 'AUCTION',
     // El presupuesto va en el conjunto (desde la v24 hay que decir si se comparte entre conjuntos).
@@ -162,7 +162,7 @@ export function adSetBody(plan, { campaignId, currency, today = localDay(), shar
   const body = {
     name: plan.nombre,
     campaign_id: campaignId,
-    status: 'PAUSED',
+    status: plan.publicar ? 'ACTIVE' : 'PAUSED',
     destination_type: 'WHATSAPP',
     optimization_goal: 'CONVERSATIONS',
     billing_event: 'IMPRESSIONS',
@@ -548,6 +548,20 @@ export function budgetOf(object, currency, now = Date.now(), level = 'campana') 
   return total ? { cantidad: majorUnits(total, currency), tipo: 'total' } : null
 }
 
+/**
+ * Cuándo termina (ISO), si tiene fin: la campaña, por su fecha de fin o, si no, cuando acaba el último de los
+ * conjuntos que gastarían (si todos tienen fin); el conjunto, por la suya. Los anuncios no tienen.
+ */
+export function endOf(object, now = Date.now(), level = 'campana') {
+  const iso = (time) => (time && Number.isFinite(Date.parse(time)) ? new Date(Date.parse(time)).toISOString() : null)
+  if (level === 'conjunto') return iso(object.end_time)
+  if (level !== 'campana') return null
+  if (object.stop_time) return iso(object.stop_time)
+  const live = liveAdSets(object, now)
+  if (!live.length || live.some((s) => !s.end_time)) return null
+  return iso(live.map((s) => s.end_time).sort((a, b) => Date.parse(b) - Date.parse(a))[0])
+}
+
 /** El campo de las filas de insights que dice de qué campaña, conjunto o anuncio son. */
 const INSIGHT_KEY = { campana: 'campaign_id', conjunto: 'adset_id', anuncio: 'ad_id' }
 
@@ -560,6 +574,7 @@ export function rowOf(object, { level = 'campana', account, currency, businessId
     estado: object.status === 'ACTIVE' ? 'activa' : 'pausada',
     entrega: deliveryOf(object, now, level),
     presupuesto: budgetOf(object, currency, now, level),
+    termina: endOf(object, now, level),
     enlace: adsManagerLink(account, id, businessId, level),
     miniatura: level === 'anuncio' ? (object.creative?.thumbnail_url ?? null) : null,
     automaticas: level === 'anuncio' ? automaticOf(object.creative) : null,
@@ -648,6 +663,8 @@ export function cleanPlan(raw) {
     ...cleanSettings(raw),
     nombre: text(raw?.nombre, 200),
     plantilla: text(raw?.plantilla, 120) || null,
+    // «Publicar ya»: todo se crea activo (gasta en cuanto Meta apruebe los anuncios).
+    publicar: raw?.publicar === true,
     inicio: DAY.test(raw?.inicio ?? '') ? raw.inicio : null,
     fin: DAY.test(raw?.fin ?? '') ? raw.fin : null,
     anuncios: (Array.isArray(raw?.anuncios) ? raw.anuncios : []).slice(0, 50).map((ad, i) => {
@@ -814,8 +831,9 @@ const removeObject = (meta, objectId) =>
   )
 
 /**
- * Crea la campaña, el conjunto y un anuncio por imagen o vídeo, todo en pausa, y lo apunta. Si algo falla a
- * medias, borra la campaña recién creada (con lo que cuelga de ella) para no dejar nada a medio hacer.
+ * Crea la campaña, el conjunto y un anuncio por imagen o vídeo, todo en pausa (o todo activo, con `publicar`), y lo
+ * apunta. Si algo falla a medias, borra la campaña recién creada (con lo que cuelga de ella) para no dejar nada a
+ * medio hacer.
  */
 export async function launch(meta, raw, options = {}) {
   const plan = cleanPlan(raw)
@@ -828,7 +846,7 @@ export async function launch(meta, raw, options = {}) {
       method: 'POST',
       body: adSetBody(plan, { campaignId: campaign.id, currency: account.currency }),
     })
-    const ads = await createAds(meta, plan, adSet.id, thumbs, 'PAUSED')
+    const ads = await createAds(meta, plan, adSet.id, thumbs, plan.publicar ? 'ACTIVE' : 'PAUSED')
     const record = {
       id: randomUUID(),
       creadoEn: new Date().toISOString(),
@@ -841,7 +859,8 @@ export async function launch(meta, raw, options = {}) {
       anuncios: ads,
       presupuesto: plan.presupuesto,
       moneda: account.currency,
-      estado: 'pausada',
+      estado: plan.publicar ? 'activa' : 'pausada',
+      ...(plan.publicar ? { activada: true } : {}),
       enlace: adsManagerLink(plan.cuenta, String(campaign.id), account.business?.id),
     }
     await changeAds((data) => {
@@ -850,7 +869,7 @@ export async function launch(meta, raw, options = {}) {
     return record
   } catch (err) {
     const removed = await removeObject(meta, campaign.id)
-    throw halfDone(err, removed, `Ha quedado la campaña «${plan.nombre}» en pausa y a medias: bórrala en el Administrador de anuncios.`)
+    throw halfDone(err, removed, `Ha quedado la campaña «${plan.nombre}» ${plan.publicar ? 'activa' : 'en pausa'} y a medias: bórrala en el Administrador de anuncios.`)
   }
 }
 
@@ -861,7 +880,8 @@ const WHATSAPP_NUMBER = ['whats_app_business_phone_number_id', 'whatsapp_phone_n
 
 /**
  * Un conjunto nuevo, con un anuncio por imagen o vídeo, en una campaña que ya existe. El conjunto se crea en
- * pausa y sus anuncios no: se encienden todos con el interruptor del conjunto (y, mientras, Meta los revisa).
+ * pausa (activo, con `publicar`) y sus anuncios no: se encienden todos con el interruptor del conjunto (y,
+ * mientras, Meta los revisa).
  * Si la campaña reparte su presupuesto, el conjunto no lleva; si otro conjunto de la campaña, con la misma
  * página, manda los mensajes a un número concreto, este también. Si algo falla a medias, se borra el conjunto.
  */
@@ -891,10 +911,10 @@ export async function addAdSet(meta, raw, options = {}) {
   })
   try {
     const ads = await createAds(meta, plan, adSet.id, thumbs, 'ACTIVE')
-    return { id: String(adSet.id), nombre: plan.nombre, campana: campaignId, anuncios: ads }
+    return { id: String(adSet.id), nombre: plan.nombre, campana: campaignId, anuncios: ads, activo: plan.publicar }
   } catch (err) {
     const removed = await removeObject(meta, adSet.id)
-    throw halfDone(err, removed, `Ha quedado el conjunto «${plan.nombre}» en pausa y a medias: bórralo en el Administrador de anuncios.`)
+    throw halfDone(err, removed, `Ha quedado el conjunto «${plan.nombre}» ${plan.publicar ? 'activo' : 'en pausa'} y a medias: bórralo en el Administrador de anuncios.`)
   }
 }
 

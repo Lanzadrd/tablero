@@ -1681,6 +1681,12 @@
   color: var(--text-2);
 }
 
+.ads-launch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .ads-result {
   display: flex;
   flex-wrap: wrap;
@@ -2140,6 +2146,27 @@
 
 .ads-row-name .switch {
   flex: none;
+}
+
+/* Las casillas, como en el Administrador de anuncios: lo marcado filtra el nivel de debajo. */
+.ads-row-check {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.ads-head-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ads-table tbody tr.is-checked > *,
+.ads-table tbody tr.is-checked > :first-child {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
 }
 
 .ads-nowrap {

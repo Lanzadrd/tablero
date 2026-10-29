@@ -42,7 +42,7 @@ import { Switch } from './Switch'
 const MAX_IMAGE = 30 * 1024 * 1024
 const MAX_VIDEO = 1024 * 1024 * 1024
 
-type Phase = { kind: 'idle' } | { kind: 'uploading'; done: number; total: number } | { kind: 'creating' } | { kind: 'done'; launch: Launch }
+type Phase = { kind: 'idle' } | { kind: 'uploading'; done: number; total: number } | { kind: 'creating'; publish: boolean } | { kind: 'done'; launch: Launch }
 
 export const GENDERS: Array<{ value: Gender; label: string }> = [
   { value: 'todos', label: 'Todos' },
@@ -87,11 +87,13 @@ export interface AdSetTarget {
   presupuesto: AdRow['presupuesto']
   /** La página de sus conjuntos. */
   pagina: string | null
+  /** La campaña está en pausa: lo que se publique en ella no gasta hasta activarla. */
+  pausada?: boolean
 }
 
 /**
  * Nueva campaña de mensajes a WhatsApp en una cuenta publicitaria: las opciones (de una plantilla o a mano),
- * las imágenes o vídeos (uno por anuncio) y «Crear en pausa». Debajo, las últimas creadas en la cuenta.
+ * las imágenes o vídeos (uno por anuncio) y «Crear en pausa» o «Publicar ya». Debajo, las últimas creadas en la cuenta.
  * Con `adSetIn`, lo mismo para un conjunto nuevo en esa campaña.
  */
 export function AdsComposer({
@@ -293,7 +295,8 @@ export function AdsComposer({
   })
   const busy = phase.kind === 'uploading' || phase.kind === 'creating'
 
-  const create = async () => {
+  /** Crea todo en pausa o, con `publish` («Publicar ya»), activo. */
+  const create = async (publish: boolean) => {
     if (blocked || busy || !settings.pagina) return
     setError(null)
     try {
@@ -311,7 +314,7 @@ export function AdsComposer({
           )
         }
       }
-      setPhase({ kind: 'creating' })
+      setPhase({ kind: 'creating', publish })
       const plan = {
         ...settings,
         cuenta: account.id,
@@ -320,6 +323,7 @@ export function AdsComposer({
         plantilla: template?.nombre ?? null,
         inicio: start || null,
         fin: end || null,
+        publicar: publish,
         // Cada versión con su formato: Meta pone cada una en sus ubicaciones.
         anuncios: drafts.map(({ nombre, items }) => ({
           nombre,
@@ -745,17 +749,28 @@ export function AdsComposer({
                   {phase.kind === 'uploading'
                     ? `Subiendo ${phase.done + 1} de ${phase.total}…`
                     : phase.kind === 'creating'
-                      ? adSetIn
-                        ? 'Creando el conjunto y los anuncios…'
-                        : 'Creando la campaña y los anuncios…'
+                      ? `${phase.publish ? 'Publicando' : 'Creando'} ${adSetIn ? 'el conjunto' : 'la campaña'} y los anuncios…`
                       : (blocked ??
                         (adSetIn
-                          ? `Mensajes a WhatsApp · ${shared ? 'con el presupuesto de la campaña' : `${money(settings.presupuesto, account.moneda)} al día`} · ${adsCount(drafts.length)} · ${automaticSummary(settings)} · el conjunto, en pausa`
-                          : `Mensajes a WhatsApp · ${money(settings.presupuesto, account.moneda)} al día · ${adsCount(drafts.length)} · ${automaticSummary(settings)} · todo en pausa`))}
+                          ? `Mensajes a WhatsApp · ${shared ? 'con el presupuesto de la campaña' : `${money(settings.presupuesto, account.moneda)} al día`} · ${adsCount(drafts.length)} · ${automaticSummary(settings)}`
+                          : `Mensajes a WhatsApp · ${money(settings.presupuesto, account.moneda)} al día · ${adsCount(drafts.length)} · ${automaticSummary(settings)}`))}
                 </p>
-                <button type="button" className="btn is-accent" disabled={Boolean(blocked) || busy} onClick={() => void create()}>
-                  {busy ? 'Creando…' : 'Crear en pausa'}
-                </button>
+                <div className="ads-launch-actions">
+                  <button type="button" className="btn" disabled={Boolean(blocked) || busy} onClick={() => void create(false)}>
+                    {phase.kind === 'creating' && !phase.publish ? 'Creando…' : 'Crear en pausa'}
+                  </button>
+                  <PublishButton
+                    disabled={Boolean(blocked) || busy}
+                    busy={phase.kind === 'creating' && phase.publish}
+                    spend={
+                      adSetIn && shared
+                        ? `${adSetIn ? 'El conjunto' : 'La campaña'} empezará a gastar del presupuesto de la campaña`
+                        : `${adSetIn ? 'El conjunto' : 'La campaña'} empezará a gastar hasta ${money(settings.presupuesto, account.moneda)} al día`
+                    }
+                    paused={Boolean(adSetIn?.pausada)}
+                    onPublish={() => void create(true)}
+                  />
+                </div>
               </div>
             </>
           )}
@@ -1081,9 +1096,10 @@ function LaunchResult({ launch, onLaunch, onAnother }: { launch: Launch; onLaunc
         <Icon.Check />
       </span>
       <div className="ads-result-text">
-        <h5>{launch.estado === 'activa' ? 'Campaña activa' : 'Campaña creada en pausa'}</h5>
+        <h5>{launch.estado === 'activa' ? 'Campaña publicada' : 'Campaña creada en pausa'}</h5>
         <p>
           {launch.nombre} · {launch.anuncios.length === 1 ? '1 anuncio' : `${launch.anuncios.length} anuncios`}
+          {launch.estado === 'activa' && ' · empieza a gastar en cuanto Meta apruebe los anuncios'}
         </p>
       </div>
       <div className="ads-result-actions">
@@ -1097,6 +1113,56 @@ function LaunchResult({ launch, onLaunch, onAnother }: { launch: Launch; onLaunc
         </button>
       </div>
     </div>
+  )
+}
+
+/** «Publicar ya» pide confirmación: se crea todo activo y gasta en cuanto Meta apruebe los anuncios. */
+function PublishButton({
+  disabled,
+  busy,
+  spend,
+  paused,
+  onPublish,
+}: {
+  disabled: boolean
+  busy: boolean
+  /** «La campaña empezará a gastar hasta 10 € al día». */
+  spend: string
+  /** La campaña de un conjunto nuevo está en pausa. */
+  paused: boolean
+  onPublish: () => void
+}) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  return (
+    <>
+      <button type="button" className="btn is-accent" disabled={disabled} aria-expanded={anchor !== null} onClick={(e) => setAnchor(e.currentTarget)}>
+        {busy ? 'Publicando…' : 'Publicar ya'}
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} placement="below-end" width={300} label="Publicar ya" onClose={() => setAnchor(null)}>
+          <div className="ads-confirm">
+            <p>
+              {spend} en cuanto Meta apruebe los anuncios{paused ? ' y actives la campaña, que está en pausa' : ''}.
+            </p>
+            <div className="ads-form-foot">
+              <button type="button" className="link-btn" onClick={() => setAnchor(null)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn is-accent"
+                onClick={() => {
+                  setAnchor(null)
+                  onPublish()
+                }}
+              >
+                Publicar
+              </button>
+            </div>
+          </div>
+        </Popover>
+      )}
+    </>
   )
 }
 
