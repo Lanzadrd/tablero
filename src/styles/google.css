@@ -1,0 +1,429 @@
+/* ─────────── Google Ads: anuncios dibujados como salen, su calidad y las pestañas de palabras, términos y recursos ─────────── */
+
+/* Un anuncio de búsqueda: como sale en Google (Patrocinado, la web, el título azul, la descripción y los enlaces). */
+.g-serp {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px var(--separator);
+  font-family: Arial, 'Helvetica Neue', sans-serif;
+}
+
+.g-serp-sponsored {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.g-serp-site {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.g-serp-site img,
+.g-serp-initial {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: contain;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px var(--separator);
+}
+
+.g-serp-initial {
+  display: grid;
+  place-items: center;
+  background: var(--fill);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.g-serp-site span {
+  display: grid;
+  min-width: 0;
+}
+
+.g-serp-site strong {
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.g-serp-site small {
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+
+.g-serp-title {
+  margin: 4px 0 0;
+  font-size: 18px;
+  line-height: 1.3;
+  color: #1a0dab;
+}
+
+.g-serp-desc {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.g-serp-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 2px;
+  font-size: 13.5px;
+  color: #1a0dab;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .g-serp-title,
+  :root:not([data-theme='light']) .g-serp-links {
+    color: #99c3ff;
+  }
+}
+
+:root[data-theme='dark'] .g-serp-title,
+:root[data-theme='dark'] .g-serp-links {
+  color: #99c3ff;
+}
+
+/* Un anuncio con imagen (Demand Gen, display): la imagen, la marca, el texto y el botón. */
+.g-visual {
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px var(--separator);
+}
+
+.g-visual-main {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1.91;
+  object-fit: cover;
+}
+
+.g-visual-main.is-empty {
+  display: grid;
+  place-items: center;
+  background: var(--fill);
+  color: var(--text-2);
+}
+
+.g-visual-body {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px 12px;
+}
+
+.g-visual-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.g-visual-brand img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: contain;
+  background: #fff;
+}
+
+.g-visual-brand span {
+  display: grid;
+  min-width: 0;
+}
+
+.g-visual-brand strong {
+  font-size: 14px;
+}
+
+.g-visual-brand small,
+.g-visual-body p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.g-visual-cta {
+  justify-self: start;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #1a73e8;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.g-visual-more {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px 12px;
+  overflow-x: auto;
+}
+
+.g-visual-more img {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+/* La calidad del anuncio: su palabra y la barra de cuatro (como en Google Ads). */
+.g-ad-details {
+  display: grid;
+  gap: 8px;
+}
+
+.g-strength {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.g-strength b {
+  font-weight: 600;
+}
+
+.g-strength-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  max-width: 120px;
+}
+
+.g-strength-bar i {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--fill);
+}
+
+.is-ok {
+  --tone: var(--ads-ok);
+}
+
+.is-warning {
+  --tone: var(--ads-warning);
+}
+
+.is-bad {
+  --tone: var(--overdue);
+}
+
+.g-strength b.is-ok,
+.g-strength b.is-warning,
+.g-strength b.is-bad {
+  color: var(--tone);
+}
+
+.g-strength-bar i.is-ok,
+.g-strength-bar i.is-warning,
+.g-strength-bar i.is-bad {
+  background: var(--tone);
+}
+
+.g-texts {
+  font-size: 12.5px;
+}
+
+.g-texts summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+
+.g-texts ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.g-texts li {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--fill);
+}
+
+.g-texts ul.is-descriptions li {
+  flex-basis: 100%;
+  border-radius: 6px;
+}
+
+.g-final-url {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.g-final-url svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+/* Palabras clave y términos de búsqueda: la tabla de Google Ads, con su total abajo. */
+.g-tab-note {
+  margin: 10px 16px 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.g-table tbody th {
+  min-width: 220px;
+}
+
+.g-cell-main {
+  display: block;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.g-cell-text {
+  text-align: left;
+  color: var(--text-2);
+}
+
+.g-table tfoot th,
+.g-table tfoot td {
+  font-weight: 600;
+  box-shadow: inset 0 0.5px 0 var(--separator);
+}
+
+.g-quality {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--tone);
+}
+
+/* Recursos: imágenes y logos en mosaico; enlaces de sitio y textos destacados, en lista. */
+.g-assets {
+  display: grid;
+  gap: 18px;
+  padding: 12px 16px 16px;
+}
+
+.g-asset-group h5 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.g-asset-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.g-asset-images li {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.g-asset-images img {
+  width: 100%;
+  aspect-ratio: 1.3;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--fill);
+}
+
+.g-asset-images img.is-logo {
+  padding: 12px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.g-asset-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.g-asset-links li {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--fill);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.g-asset-links strong {
+  font-weight: 500;
+  color: #1a0dab;
+}
+
+:root[data-theme='dark'] .g-asset-links strong {
+  color: #99c3ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .g-asset-links strong {
+    color: #99c3ff;
+  }
+}
+
+.g-asset-links .ads-row-type,
+.g-asset-images .ads-row-type {
+  justify-self: start;
+  margin-top: 2px;
+}
+
+.g-asset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.g-asset-chips li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--fill);
+  font-size: 12.5px;
+}
+
+.g-asset-chips small {
+  font-size: 11px;
+  color: var(--text-2);
+}

@@ -1,0 +1,325 @@
+/* ─────────── Menú lateral: las vistas (Hoy, Tablero, Calendario, Suscripciones, Anuncios) ─────────── */
+/* Este archivo va en el bundle antes que styles.css: para ganarle, los selectores llevan una clase más. */
+
+:root {
+  --side-full: 216px;
+  --side-rail: 56px;
+  --side-bg: #ebebee;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --side-bg: #19191b;
+  }
+}
+
+:root[data-theme='dark'] {
+  --side-bg: #19191b;
+}
+
+/* App (src/App.tsx) pone .has-sidebar en <html> mientras el menú está a la vista. */
+:root.has-sidebar {
+  --side-w: var(--side-full);
+}
+
+.sidebar {
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--side-w);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 10px 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--side-bg);
+  box-shadow: inset -0.5px 0 0 var(--separator);
+}
+
+/* A la altura de la barra superior: ahí van los botones de la ventana en la app instalada. */
+.sidebar-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: env(titlebar-area-height, var(--bar-h));
+  margin-right: -2px;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.sidebar-head .icon-btn {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* El logo y el nombre; en la app instalada, después de los botones de la ventana. */
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: max(2px, calc(env(titlebar-area-x, 0px) - 10px));
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.sidebar-brand svg {
+  flex: none;
+}
+
+/* Con el nombre en el menú, la barra de arriba no lo repite. */
+:root.has-sidebar .topbar h1 {
+  display: none;
+}
+
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sidebar .sidebar-section {
+  margin: 0 0 4px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.sidebar .sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--text);
+  transition: background-color 120ms;
+}
+
+.sidebar-item svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.sidebar .sidebar-item:hover {
+  background: var(--hover);
+}
+
+.sidebar .sidebar-item[aria-current='page'] {
+  background: var(--fill-hover);
+}
+
+.sidebar-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sidebar-count {
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+
+/* El botón de la barra superior: solo con el menú oculto (con el menú abierto está en su cabecera). */
+.topbar .topbar-sidebar-btn {
+  margin: 0 -4px 0 -6px;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.topbar .topbar-sidebar-btn.is-sidebar-open {
+  display: none;
+}
+
+/* Con poco ancho, el menú se queda en una franja de iconos y se oculta desde la barra superior. */
+@media (max-width: 900px) {
+  :root.has-sidebar {
+    --side-w: var(--side-rail);
+  }
+
+  .sidebar {
+    padding: 0 8px 16px;
+  }
+
+  .sidebar-head .icon-btn,
+  .sidebar-brand,
+  .sidebar .sidebar-section,
+  .sidebar-count {
+    display: none;
+  }
+
+  .sidebar .sidebar-item {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .sidebar-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .sidebar-group + .sidebar-group {
+    padding-top: 12px;
+    box-shadow: inset 0 0.5px 0 var(--separator);
+  }
+
+  .topbar .topbar-sidebar-btn.is-sidebar-open {
+    display: inline-grid;
+  }
+
+  /* El menú queda en iconos: el nombre vuelve arriba. */
+  :root.has-sidebar .topbar h1 {
+    display: block;
+  }
+}
+
+/* ─────────── Bajo «Anuncios»: los portfolios con sus cuentas publicitarias ─────────── */
+
+.sidebar-row {
+  position: relative;
+}
+
+.sidebar .sidebar-row:has(.sidebar-row-actions) .sidebar-item {
+  padding-right: 58px;
+}
+
+.sidebar-row-actions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+  transform: translateY(-50%);
+}
+
+.sidebar .sidebar-mini-btn {
+  width: 24px;
+  height: 24px;
+  color: var(--text-2);
+}
+
+.sidebar .sidebar-mini-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.sidebar-disclosure svg {
+  transition: transform 160ms var(--ease);
+}
+
+.sidebar-disclosure[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+
+/* «Actualizar» solo al pasar por encima (o con el teclado). */
+.sidebar-row:not(:hover, :focus-within) .sidebar-mini-btn:not(.sidebar-disclosure) {
+  opacity: 0;
+}
+
+.sidebar-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.sidebar-portfolio {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sidebar-portfolio-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 10px 0 18px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sidebar-portfolio-name span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sidebar .sidebar-portfolio-name .ads-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+
+.sidebar .sidebar-account {
+  height: 28px;
+  padding: 0 10px 0 44px;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+/* Cerrada, con un pago pendiente…: más apagada (el motivo, al pasar por encima y en la vista). */
+.sidebar .sidebar-account.is-inactive {
+  color: var(--text-2);
+}
+
+@media (max-width: 900px) {
+  .sidebar-row-actions,
+  .sidebar-accounts {
+    display: none;
+  }
+
+  .sidebar .sidebar-row:has(.sidebar-row-actions) .sidebar-item {
+    padding: 0;
+  }
+
+  .sidebar .sidebar-item.is-within {
+    background: var(--fill-hover);
+  }
+}
+
+.sidebar .sidebar-disclosure[aria-expanded='true']:not(:hover, :active) {
+  background: none;
+  color: var(--text-2);
+}
+
+/* ─────────── Abajo: la apariencia ─────────── */
+
+.sidebar-foot {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.sidebar .sidebar-theme {
+  color: var(--text-2);
+}
+
+.sidebar .sidebar-theme svg {
+  color: var(--text-2);
+}

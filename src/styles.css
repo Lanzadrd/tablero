@@ -5,6 +5,8 @@
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
   --bar-h: 52px;
   --col-w: 296px;
+  /* Ancho del menú lateral (src/styles/lateral.css): 0 si está oculto. Todas las vistas lo dejan libre. */
+  --side-w: 0px;
 
   --bg: #f5f5f7;
   --surface: #ffffff;
@@ -20,6 +22,8 @@
   --pop-bg: rgba(255, 255, 255, 0.86);
   --toast-bg: rgba(29, 29, 31, 0.9);
   --seg-thumb: #ffffff;
+  /* Opciones no elegidas del control segmentado: 4,5:1 sobre su relleno */
+  --seg-text: #5e5e63;
   --shadow-col: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-lift: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 16px 36px rgba(0, 0, 0, 0.16), 0 3px 8px rgba(0, 0, 0, 0.06);
   --shadow-pop: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 22px 60px rgba(0, 0, 0, 0.18), 0 4px 14px rgba(0, 0, 0, 0.06);
@@ -47,8 +51,9 @@
   --ease-pop: cubic-bezier(0.34, 1.5, 0.64, 1);
 }
 
+/* Oscuro: el del sistema, salvo que se elija «Claro»; o elegido a mano (src/theme.ts). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #111113;
     --surface: #1c1c1e;
     --hover: rgba(255, 255, 255, 0.055);
@@ -63,6 +68,7 @@
     --pop-bg: rgba(44, 44, 46, 0.86);
     --toast-bg: rgba(58, 58, 60, 0.92);
     --seg-thumb: #636366;
+    --seg-text: #98989d;
     --shadow-col: 0 0 0 0.5px rgba(255, 255, 255, 0.07);
     --shadow-lift: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 16px 36px rgba(0, 0, 0, 0.55);
     --shadow-pop: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 22px 60px rgba(0, 0, 0, 0.6);
@@ -87,6 +93,53 @@
   }
 }
 
+:root[data-theme='dark'] {
+  --bg: #111113;
+  --surface: #1c1c1e;
+  --hover: rgba(255, 255, 255, 0.055);
+  --press: rgba(255, 255, 255, 0.09);
+  --fill: rgba(118, 118, 128, 0.24);
+  --fill-hover: rgba(118, 118, 128, 0.34);
+  --text: #f5f5f7;
+  --text-2: #98989d;
+  --text-3: #7c7c80;
+  --separator: rgba(84, 84, 88, 0.5);
+  --check-ring: rgba(235, 235, 245, 0.32);
+  --pop-bg: rgba(44, 44, 46, 0.86);
+  --toast-bg: rgba(58, 58, 60, 0.92);
+  --seg-thumb: #636366;
+  --seg-text: #98989d;
+  --shadow-col: 0 0 0 0.5px rgba(255, 255, 255, 0.07);
+  --shadow-lift: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 16px 36px rgba(0, 0, 0, 0.55);
+  --shadow-pop: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 22px 60px rgba(0, 0, 0, 0.6);
+  --accent: #0a84ff;
+  --accent-text: #409cff;
+  --ring: rgba(10, 132, 255, 0.7);
+  --overdue: #ff6961;
+  --today: #409cff;
+
+  --c-blue: #0a84ff;
+  --c-indigo: #5e5ce6;
+  --c-purple: #bf5af2;
+  --c-pink: #ff375f;
+  --c-red: #ff453a;
+  --c-orange: #ff9f0a;
+  --c-yellow: #ffd60a;
+  --c-green: #30d158;
+  --c-mint: #63e6e2;
+  --c-teal: #40c8e0;
+  --c-brown: #ac8e68;
+  --c-gray: #98989d;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
 @media (prefers-contrast: more) {
   :root {
     --separator: rgba(0, 0, 0, 0.3);
@@ -108,6 +161,8 @@ html {
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  /* Lo que se enseña con el teclado no se queda debajo del menú lateral. */
+  scroll-padding-left: var(--side-w);
   background: var(--bg);
 }
 
@@ -256,13 +311,15 @@ code {
   position: fixed;
   z-index: 20;
   top: env(titlebar-area-y, 0);
-  left: env(titlebar-area-x, 0);
-  width: env(titlebar-area-width, 100%);
+  /* Desde el menú lateral (o desde los botones de la ventana, si llegan más lejos) hasta la derecha. */
+  left: max(env(titlebar-area-x, 0px), var(--side-w));
+  width: calc(env(titlebar-area-x, 0px) + env(titlebar-area-width, 100%) - max(env(titlebar-area-x, 0px), var(--side-w)));
   height: env(titlebar-area-height, var(--bar-h));
+  /* El nombre a la izquierda y la búsqueda en el centro (de la barra, no del título). */
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 520px) minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   padding: 0 16px 0 26px;
   background: var(--bg);
   -webkit-app-region: drag;
@@ -270,9 +327,11 @@ code {
 }
 
 .topbar-title {
+  /* Con poco sitio se encoge el título (primero se va la fecha), no la búsqueda. */
   min-width: 0;
+  overflow: hidden;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
 }
 
@@ -291,13 +350,41 @@ code {
   text-overflow: ellipsis;
 }
 
-.topbar-actions {
-  justify-self: end;
+/* La búsqueda (⌘K), como un campo: al pulsarla se abre la de verdad, con los comandos. */
+.topbar .topbar-search {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 7px 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--fill);
+  font-size: 13.5px;
+  text-align: left;
+  color: var(--text-2);
+  transition: background-color 120ms;
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+.topbar .topbar-search:hover {
+  background: var(--fill-hover);
+}
+
+.topbar-search svg {
+  flex: none;
+}
+
+.topbar-search-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.topbar .topbar-search kbd {
+  flex: none;
+  font-size: 11.5px;
 }
 
 /* ───────────────────────── Tablero ───────────────────────── */
@@ -308,7 +395,7 @@ code {
   width: max-content;
   min-width: 100%;
   height: 100dvh;
-  padding: calc(env(titlebar-area-height, var(--bar-h)) + 6px) 26px 20px;
+  padding: calc(env(titlebar-area-height, var(--bar-h)) + 6px) 26px 20px calc(var(--side-w) + 26px);
 }
 
 .board.is-dragging-task .task:hover {
@@ -451,6 +538,7 @@ code {
 }
 
 .column-body {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -489,6 +577,8 @@ code {
 
 .task-clip {
   min-height: 0;
+  /* Sin esto, una línea de notas larga (que no se parte) ensancha la fila más allá de la columna. */
+  min-width: 0;
 }
 
 .task-collapse.is-leaving {
@@ -500,7 +590,9 @@ code {
   overflow: hidden;
 }
 
+/* relative: los textos .sr-only de dentro quedan en la fila y no alargan la página. */
 .task {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -737,6 +829,10 @@ code {
 .popover {
   position: fixed;
   z-index: 100;
+  /* Nunca más alto que la ventana: si no cabe, se desplaza por dentro (p. ej. un detalle largo). */
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 14px;
   background: var(--pop-bg);
   -webkit-backdrop-filter: blur(28px) saturate(180%);
@@ -891,6 +987,11 @@ code {
   flex-direction: column;
   gap: 10px;
   padding: 14px 14px 10px;
+}
+
+/* Si no cabe en la ventana, se desplaza el panel entero (nada se encoge). */
+.sheet > * {
+  flex-shrink: 0;
 }
 
 .sheet-head {
@@ -1098,7 +1199,7 @@ select.input {
 .status-pill {
   position: fixed;
   z-index: 150;
-  left: 20px;
+  left: calc(var(--side-w) + 20px);
   bottom: 20px;
   padding: 7px 12px;
   border-radius: 999px;
@@ -1199,7 +1300,7 @@ select.input {
   background: none;
   font-size: 12.5px;
   font-weight: 500;
-  color: var(--text-2);
+  color: var(--seg-text);
   white-space: nowrap;
   transition: color 160ms;
 }
@@ -1209,6 +1310,18 @@ select.input {
   color: var(--text);
 }
 
+/* Con poco ancho, las cuatro vistas caben sin montarse: primero se va la fecha y luego se estrechan
+   los segmentos. */
+@media (max-width: 980px) {
+  .topbar-date {
+    display: none;
+  }
+
+  .segmented button {
+    padding: 0 10px;
+  }
+}
+
 /* ───────────────────────── Calendario ───────────────────────── */
 
 .calendar {
@@ -1216,9 +1329,9 @@ select.input {
   flex-direction: column;
   gap: 12px;
   width: 100vw;
-  min-width: 640px;
+  min-width: calc(640px + var(--side-w));
   height: 100dvh;
-  padding: calc(env(titlebar-area-height, var(--bar-h)) + 2px) 26px 20px;
+  padding: calc(env(titlebar-area-height, var(--bar-h)) + 2px) 26px 20px calc(var(--side-w) + 26px);
 }
 
 .cal-header {
@@ -1558,27 +1671,6 @@ select.input {
   background: color-mix(in srgb, var(--tint) 16%, transparent);
 }
 
-.time-preview {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  height: 20px;
-  padding: 0 7px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  font-size: 11.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--accent-text);
-  animation: fade-in 150ms ease;
-}
-
-.time-preview svg {
-  width: 11px;
-  height: 11px;
-}
-
 /* Popover de un día */
 
 .day-pop {
@@ -1607,31 +1699,6 @@ select.input {
 }
 
 /* ───────────────────────── Avisos ───────────────────────── */
-
-.avisos-btn {
-  position: relative;
-}
-
-.avisos-btn::after {
-  content: '';
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1.5px var(--bg);
-}
-
-.avisos-btn.is-activo::after {
-  background: var(--c-green);
-}
-
-.avisos-btn.is-sin-permiso::after,
-.avisos-btn.is-error::after,
-.avisos-btn.is-desconectado::after {
-  background: var(--c-orange);
-}
 
 .avisos {
   display: grid;

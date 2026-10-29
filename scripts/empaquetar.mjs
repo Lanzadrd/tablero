@@ -10,13 +10,15 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buscarIdentidad, NOMBRE_FIRMA } from './firma.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PAQUETE = path.join(ROOT, 'build', 'Tablero')
@@ -26,31 +28,48 @@ const run = (cmd, args) => execFileSync(cmd, args, { cwd: ROOT, stdio: 'inherit'
 const quiet = (cmd, args) => execFileSync(cmd, args, { cwd: ROOT, stdio: 'ignore' })
 
 /**
- * «Tablero Avisos.app»: el ayudante que copia las tareas con hora a Recordatorios.
- * Se compila universal (Apple Silicon e Intel) y solo cuando cambia su código: cada
- * compilación nueva hace que macOS vuelva a pedir permiso para Recordatorios.
+ * «Tablero Avisos.app»: el ayudante de Recordatorios y de la captura rápida (barra de menús).
+ * Se compila universal (Apple Silicon e Intel) y solo cuando cambia su código o el modo de
+ * firma. Se firma con la identidad «Tablero (firma propia)» si existe (npm run firma): así
+ * macOS recuerda el permiso de Recordatorios entre versiones. Si no, ad hoc, y entonces cada
+ * compilación nueva hace que macOS lo vuelva a pedir.
  */
 function buildAvisos() {
-  const swift = ['avisos/Modelo.swift', 'avisos/Avisos.swift'].map((f) => path.join(ROOT, f))
-  const sources = [...swift, path.join(ROOT, 'avisos', 'Info.plist'), path.join(ROOT, 'assets', 'icono-1024.png')]
-  const hash = createHash('sha256')
-  for (const file of sources) hash.update(readFileSync(file))
-  const app = path.join(ROOT, 'build', 'cache', `avisos-${hash.digest('hex').slice(0, 12)}`, 'Tablero Avisos.app')
-  if (existsSync(app)) return app
+  const carpeta = path.join(ROOT, 'avisos')
+  const swift = readdirSync(carpeta)
+    .filter((f) => f.endsWith('.swift') && f !== 'Pruebas.swift')
+    .sort()
+    .map((f) => path.join(carpeta, f))
+  const huella = createHash('sha256')
+  for (const file of [...swift, path.join(carpeta, 'Info.plist'), path.join(ROOT, 'assets', 'icono-1024.png')]) {
+    huella.update(`${path.basename(file)}\n`)
+    huella.update(readFileSync(file))
+  }
+  const fuentes = huella.digest('hex')
+  const enCache = (modo) => {
+    const clave = createHash('sha256').update(`${fuentes}\n${modo}`).digest('hex').slice(0, 12)
+    return path.join(ROOT, 'build', 'cache', `avisos-${clave}`, 'Tablero Avisos.app')
+  }
 
-  console.log('Compilando Tablero Avisos…')
-  const tmp = mkdtempSync(path.join(os.tmpdir(), 'tablero-avisos-'))
+  const firma = buscarIdentidad()
+  let destino = enCache(firma ? `firma-${firma.sha1}` : 'adhoc')
+  if (existsSync(destino)) return destino
+
+  console.log(`Compilando Tablero Avisos (${firma ? `firma «${NOMBRE_FIRMA}»` : 'firma ad hoc'})…`)
+  mkdirSync(path.join(ROOT, 'build', 'cache'), { recursive: true })
+  const tmp = mkdtempSync(path.join(ROOT, 'build', 'cache', '.compilando-'))
   try {
     const binaries = ['arm64', 'x86_64'].map((arch) => {
       const out = path.join(tmp, arch)
       run('swiftc', ['-O', '-parse-as-library', '-swift-version', '5', '-target', `${arch}-apple-macos14.0`, '-o', out, ...swift])
       return out
     })
+    const app = path.join(tmp, 'Tablero Avisos.app')
     const contents = path.join(app, 'Contents')
     mkdirSync(path.join(contents, 'MacOS'), { recursive: true })
     mkdirSync(path.join(contents, 'Resources'), { recursive: true })
     run('lipo', ['-create', '-output', path.join(contents, 'MacOS', 'Tablero Avisos'), ...binaries])
-    copyFileSync(path.join(ROOT, 'avisos', 'Info.plist'), path.join(contents, 'Info.plist'))
+    copyFileSync(path.join(carpeta, 'Info.plist'), path.join(contents, 'Info.plist'))
 
     const iconset = path.join(tmp, 'AppIcon.iconset')
     mkdirSync(iconset)
@@ -61,14 +80,50 @@ function buildAvisos() {
       }
     }
     run('iconutil', ['-c', 'icns', iconset, '-o', path.join(contents, 'Resources', 'AppIcon.icns')])
-    run('codesign', ['--force', '--sign', '-', '--identifier', 'com.tablero.avisos', app])
-  } catch (err) {
-    rmSync(path.dirname(app), { recursive: true, force: true })
-    throw err
+
+    const firmar = (identidad) =>
+      run('codesign', [
+        '--force',
+        '--sign',
+        identidad ? identidad.sha1 : '-',
+        '--timestamp=none',
+        '--identifier',
+        'com.tablero.avisos',
+        ...(identidad?.llavero ? ['--keychain', identidad.llavero] : []),
+        app,
+      ])
+    try {
+      firmar(firma)
+    } catch (err) {
+      if (!firma) throw err
+      // Mejor un ayudante firmado ad hoc (pedirá permiso otra vez) que ninguno.
+      console.warn(`\n⚠︎  No se pudo firmar con «${NOMBRE_FIRMA}»: se firma ad hoc (macOS volverá a pedir el permiso de Recordatorios). ¿Está el llavero desbloqueado y en la lista de búsqueda?\n`)
+      destino = enCache('adhoc')
+      if (existsSync(destino)) return destino
+      firmar(null)
+    }
+    mkdirSync(path.dirname(destino), { recursive: true })
+    renameSync(app, destino)
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
-  return app
+  return destino
+}
+
+// node scripts/empaquetar.mjs --solo-avisos: compila (o reutiliza) solo el ayudante y dice dónde está.
+if (process.argv.includes('--solo-avisos')) {
+  console.log(buildAvisos())
+  process.exit(0)
+}
+
+/** Un paquete de node_modules (y, por orden, sus dependencias) en el node_modules del paquete. */
+function copyPackage(name, seen = new Set()) {
+  const dir = path.join(ROOT, 'node_modules', name)
+  if (seen.has(name) || !existsSync(dir)) return
+  seen.add(name)
+  cpSync(dir, path.join(APP, 'node_modules', name), { recursive: true, dereference: true })
+  const { dependencies = {} } = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))
+  for (const dependency of Object.keys(dependencies)) copyPackage(dependency, seen)
 }
 
 run('npm', ['run', 'build'])
@@ -77,6 +132,8 @@ rmSync(PAQUETE, { recursive: true, force: true })
 mkdirSync(path.join(APP, 'bin'), { recursive: true })
 
 cpSync(path.join(ROOT, 'server'), path.join(APP, 'server'), { recursive: true })
+// El servidor no lleva más dependencias que el SDK de Anthropic (los textos con Claude) y lo que este necesita.
+copyPackage('@anthropic-ai/sdk')
 const { version } = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
 writeFileSync(path.join(APP, 'version.json'), `${JSON.stringify({ version }, null, 2)}\n`)
 cpSync(path.join(ROOT, 'dist'), path.join(APP, 'dist'), { recursive: true })
@@ -113,11 +170,23 @@ PARA INSTALAR (o actualizar sin perder tus tareas)
      Vuelve a abrir el instalador y confirma.
   2. Se abre la Terminal (si pregunta si puede acceder a Descargas, pulsa
      «Permitir»), instala Tablero y luego lo abre en Chrome.
-     Pulsa «Instalar» (arriba a la derecha) para tenerlo en el Dock.
+     Pulsa el icono de instalar a la derecha de la barra de direcciones
+     de Chrome para tenerlo en el Dock.
   3. Si macOS pregunta si «Tablero Avisos» puede acceder a Recordatorios,
-     pulsa «Permitir»: así las tareas con fecha te avisan en el iPhone.
+     pulsa «Permitir»: así tus tareas llegan al iPhone y te avisan.
      También puede avisarte de que se han añadido elementos que se ejecutan
      en segundo plano («node» y «Tablero Avisos»): es Tablero, déjalos activados.
+
+EN EL IPHONE Y EN LA BARRA DE MENÚS
+
+  · Cada columna de Tablero es una lista de Recordatorios («Tablero · Casa»,
+    «Tablero · Trabajo»…). Lo que cambies en el iPhone llega a Tablero y al revés.
+  · Arriba a la derecha, en la barra de menús, está el icono de Tablero:
+    ⌥Espacio apunta una tarea desde cualquier app y ⌥⇧Espacio la apunta con la
+    página abierta en Chrome. La primera vez, macOS pedirá permiso para que
+    «Tablero Avisos» lea Chrome (Ajustes › Privacidad › Automatización).
+  · Los atajos se cambian en ~/Library/Application Support/Tablero/datos/ajustes.json
+    (por ejemplo {"atajoCaptura": "option+space"}; "" lo desactiva).
 
 REQUISITOS
 
@@ -125,8 +194,8 @@ REQUISITOS
     Lo ves en  › Acerca de este Mac.
   · Google Chrome.
 
-Tus tareas se quedan en tu Mac (~/Library/Application Support/Tablero/datos);
-las que tienen fecha se copian a la lista «Tablero» de Recordatorios.
+Tus tareas se quedan en tu Mac (~/Library/Application Support/Tablero/datos)
+y en Recordatorios (una lista por columna, con iCloud si lo tienes activado).
 Para quitarlo: «Desinstalar Tablero.command» (tus tareas no se borran).
 `,
 )

@@ -1,0 +1,3062 @@
+/* ─────────── Anuncios: conexión con Meta, cuentas por portfolio y nueva campaña a WhatsApp ─────────── */
+/* Este archivo va en el bundle antes que styles.css: para ganarle, los selectores llevan una clase más. */
+
+:root {
+  --ads-ok: #248a3d;
+  --ads-warning: #a85d00;
+  /* El chat de WhatsApp de la vista previa, con sus colores. */
+  --wa-head: #008069;
+  --wa-wall: #efeae2;
+  --wa-in: #ffffff;
+  --wa-out: #d9fdd3;
+  --wa-text: #111b21;
+  --wa-who: #54656f;
+  --wa-chip: #008069;
+  /* «Crear», en verde (con letra blanca que se lee). */
+  --create: #1d8c3f;
+  --create-hover: #187a36;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --ads-ok: #30d158;
+    --ads-warning: #ffb340;
+    --wa-head: #202c33;
+    --wa-wall: #0b141a;
+    --wa-in: #202c33;
+    --wa-out: #005c4b;
+    --wa-text: #e9edef;
+    --wa-who: #8696a0;
+    --wa-chip: #00a884;
+  }
+}
+
+:root[data-theme='dark'] {
+  --ads-ok: #30d158;
+  --ads-warning: #ffb340;
+  --wa-head: #202c33;
+  --wa-wall: #0b141a;
+  --wa-in: #202c33;
+  --wa-out: #005c4b;
+  --wa-text: #e9edef;
+  --wa-who: #8696a0;
+  --wa-chip: #00a884;
+}
+
+/* ───────── Página ───────── */
+
+.ads {
+  width: 100vw;
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(env(titlebar-area-height, var(--bar-h)) + 14px) 26px 64px calc(var(--side-w) + 26px);
+}
+
+.ads-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 0 2px 0 4px;
+}
+
+.ads-head h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.028em;
+}
+
+.ads .ads-error,
+.ads-connection-panel .ads-error,
+.ads-confirm .ads-error,
+.ads-save-template .ads-error {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--overdue);
+  text-wrap: pretty;
+}
+
+.ads-loading,
+.ads-empty {
+  padding: 0 4px;
+  color: var(--text-2);
+}
+
+.ads-error-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 640px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-col);
+}
+
+.ads-error-box p {
+  flex: 1;
+  margin: 0;
+  color: var(--overdue);
+}
+
+.btn:disabled,
+.link-btn:disabled,
+.icon-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.link-btn.is-danger {
+  color: var(--overdue);
+}
+
+.ads a.btn {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ads-note {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.ads-note.is-error {
+  color: var(--overdue);
+}
+
+/* ───────── Conectar ───────── */
+
+.ads-setup {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  max-width: 720px;
+  padding: 20px 22px 22px 18px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-col);
+}
+
+.ads-setup-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-text);
+}
+
+.ads-setup-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.ads-setup-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.ads-setup h3 {
+  margin: 2px 0 4px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+}
+
+.ads-setup-lead {
+  max-width: 560px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.ads-steps {
+  display: grid;
+  gap: 18px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: paso;
+}
+
+.ads-steps > li {
+  position: relative;
+  padding-left: 34px;
+  counter-increment: paso;
+}
+
+.ads-steps > li::before {
+  content: counter(paso);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--fill);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ads-steps > li.is-done::before {
+  content: '✓';
+  background: var(--accent);
+  color: #fff;
+}
+
+.ads-steps h4 {
+  margin: 1px 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ads-steps p {
+  max-width: 560px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.ads-steps p b {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ads-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+
+.ads-copy code {
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.ads-app-form,
+.ads-token-form {
+  display: grid;
+  gap: 8px;
+  max-width: 500px;
+}
+
+.ads-app-form .field {
+  grid-template-columns: 100px minmax(0, 1fr);
+}
+
+.ads-app-form .input {
+  width: 100%;
+}
+
+.ads-app-form .field-label {
+  white-space: nowrap;
+}
+
+.ads-form-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ads-saved-app {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ads-steps .ads-saved-app svg {
+  color: var(--ads-ok);
+}
+
+.ads-connect-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.ads-token-form {
+  margin-top: 10px;
+}
+
+.input.ads-token {
+  width: 100%;
+  height: auto;
+  padding: 6px 8px;
+  font: 12px/1.4 ui-monospace, 'SF Mono', Menlo, monospace;
+  resize: vertical;
+}
+
+/* ───────── Conexión (arriba a la derecha) ───────── */
+
+.ads-connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 11px 0 10px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--fill);
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background-color 120ms;
+}
+
+.ads-connection:hover,
+.ads-connection[aria-expanded='true'] {
+  background: var(--fill-hover);
+}
+
+.ads-connection-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-green);
+}
+
+.ads-connection.is-warning .ads-connection-dot {
+  background: var(--c-orange);
+}
+
+.ads-connection-days {
+  color: var(--text-2);
+}
+
+.ads-connection-panel {
+  padding: 14px 16px;
+}
+
+.ads-connection-panel h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ads-connection-panel p {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.ads-connection-panel p b {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ads-connection-panel .is-warning {
+  color: var(--ads-warning);
+}
+
+.ads-connection-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.ads-connection-panel .ads-version {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+}
+
+/* ───────── Cuentas y formulario ───────── */
+
+/* Las cuentas están en el menú lateral; esta lista es la del selector del título (en un popover). */
+.ads-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 8px 8px;
+}
+
+.ads-accounts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 0 8px;
+}
+
+.ads-accounts-head h3 {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ads-portfolio {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ads-portfolio-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ads-portfolio-name span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ads-avatar {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--fill);
+}
+
+.ads-avatar.is-initial {
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.ads-accounts .ads-account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px 4px 38px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-size: 13px;
+  text-align: left;
+  transition: background-color 120ms;
+}
+
+.ads-accounts .ads-account:hover {
+  background: var(--hover);
+}
+
+.ads-accounts .ads-account[aria-current='true'] {
+  background: var(--selected);
+}
+
+.ads-account-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ads-account.is-inactive .ads-account-name {
+  color: var(--text-2);
+}
+
+.ads-account-meta {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.ads-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  /* Para que el formulario ponga la vista previa al lado solo si cabe. */
+  container: ads-main / inline-size;
+}
+
+/* El formulario y, con sitio, la vista previa a su derecha (quieta al bajar); sin sitio, debajo. */
+.ads-composer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+@container ads-main (min-width: 960px) {
+  .ads-composer-layout {
+    grid-template-columns: minmax(0, 700px) minmax(380px, 1fr);
+    align-items: start;
+  }
+
+  /* Quieta al bajar; si no cabe entera, baja por dentro. */
+  .ads-preview-column {
+    position: sticky;
+    top: 0;
+    max-height: calc(100dvh - var(--bar-h) - 40px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 14px;
+  }
+}
+
+.ads-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.ads-card-head h4 {
+  margin-right: auto;
+}
+
+.ads-claude-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.ads-claude {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.ads-claude h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.ads-claude .ads-note,
+.ads-claude .ads-error {
+  margin: 0;
+}
+
+.ads-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 740px;
+  min-width: 0;
+}
+
+/* ───────── Vista previa del anuncio ───────── */
+
+.ads-preview {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-col);
+}
+
+.ads-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ads-preview-head h4 {
+  margin: 0;
+  color: var(--ads-ok);
+}
+
+.ads-preview-head select.input {
+  min-width: 0;
+  max-width: 60%;
+}
+
+/* Todas las vistas a la vez, en dos columnas si caben (las altas no dejan huecos). */
+.ads-preview-grid {
+  columns: 2 180px;
+  column-gap: 14px;
+}
+
+.ads-preview-item {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 16px;
+  break-inside: avoid;
+}
+
+.ads-preview-item figcaption {
+  display: grid;
+  gap: 1px;
+}
+
+.ads-preview-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.ads-preview-where {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.ads-preview-fit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--ads-warning);
+}
+
+.ads-preview-fit.is-ok {
+  color: var(--ads-ok);
+}
+
+.ads-preview-fit svg {
+  width: 12px;
+  height: 12px;
+}
+
+.ads-preview .ads-note {
+  margin: 0;
+}
+
+/* Un anuncio de mentira, siempre en claro como en el móvil. */
+.ads-mock {
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  background: #fff;
+  color: #1c1e21;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.ads-mock-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 8px;
+}
+
+.ads-mock-header .ads-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+.ads-mock-header div {
+  display: grid;
+  min-width: 0;
+}
+
+.ads-mock-header strong {
+  overflow: hidden;
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ads-mock-header span {
+  font-size: 11px;
+  color: #65676b;
+}
+
+.ads-mock-text {
+  margin: 0;
+  padding: 0 10px 8px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.ads-mock-text.is-clamped,
+.ads-mock-text.is-clamped-2 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+
+.ads-mock-text.is-clamped {
+  -webkit-line-clamp: 3;
+}
+
+.ads-mock-text.is-clamped-2 {
+  -webkit-line-clamp: 2;
+}
+
+.ads-mock-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #e4e6eb;
+  color: #65676b;
+  font-size: 12px;
+}
+
+.ads-mock-media img,
+.ads-mock-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ads-mock-media .is-backdrop {
+  position: absolute;
+  inset: 0;
+  filter: blur(18px) brightness(0.7);
+  transform: scale(1.15);
+}
+
+.ads-mock-media .is-contained {
+  position: relative;
+  height: auto;
+  object-fit: contain;
+}
+
+.ads-mock-cta-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #f0f2f5;
+}
+
+.ads-mock-cta-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.ads-mock-cta-text strong,
+.ads-mock-cta-text span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ads-mock-cta-text span {
+  color: #65676b;
+  font-size: 11.5px;
+}
+
+.ads-mock-domain {
+  font-size: 10.5px;
+  text-transform: uppercase;
+}
+
+.ads-mock-button {
+  flex: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #e4e6eb;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ads-mock-button.is-wide {
+  display: block;
+  text-align: center;
+  background: #fff;
+  color: #1c1e21;
+}
+
+.ads-mock-ig-cta {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 10px;
+  border-bottom: 1px solid #dbdbdb;
+  color: #0095f6;
+  font-weight: 600;
+}
+
+.ads-mock-ig-cta + .ads-mock-text {
+  padding-top: 8px;
+}
+
+/* Stories y Reels: la imagen ocupa todo; el nombre arriba y el texto y el botón abajo, encima. */
+.ads-mock-story {
+  position: relative;
+  justify-self: center;
+  width: min(100%, 270px);
+  border: 0;
+  background: #000;
+  color: #fff;
+}
+
+.ads-mock-story-top,
+.ads-mock-story-bottom {
+  position: absolute;
+  inset-inline: 0;
+}
+
+.ads-mock-story-top {
+  top: 0;
+  background: linear-gradient(rgba(0, 0, 0, 0.45), transparent);
+}
+
+.ads-mock-story-top .ads-mock-header span {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.ads-mock-story-bottom {
+  bottom: 0;
+  display: grid;
+  gap: 8px;
+  padding: 24px 10px 12px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+}
+
+.ads-mock-story-bottom .ads-mock-text {
+  padding: 0;
+}
+
+.ads-mock-chat {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.ads-mock-chat span {
+  display: block;
+  font-weight: 600;
+}
+
+/* Un conjunto nuevo en una campaña: de qué campaña es y cómo salir. */
+.ads-composer-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 0 4px;
+}
+
+.ads-composer-head h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+}
+
+.ads-composer-head h3:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ads-account-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px 4px;
+}
+
+/* Con poco ancho, el selector de sección baja a otra línea en vez de aplastar el nombre. */
+.ads-account-title-text {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.ads-account-title .segmented {
+  flex: none;
+}
+
+.ads-account-title .ads-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  font-size: 15px;
+}
+
+.ads-account-title h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+}
+
+/* El nombre de la cuenta abre la lista para cambiar a otra. */
+.ads-account-title .ads-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  margin: 0 0 0 -6px;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  color: inherit;
+  transition: background-color 120ms;
+}
+
+.ads-switcher span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ads-account-title .ads-switcher:hover,
+.ads-account-title .ads-switcher[aria-expanded='true'] {
+  background: var(--hover);
+}
+
+.ads-switcher svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--text-2);
+  transform: rotate(90deg);
+}
+
+.ads-account-title p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.ads-inactive {
+  color: var(--ads-warning);
+}
+
+.ads-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-col);
+}
+
+.ads-card h4 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.ads-count {
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.ads-hint {
+  margin: -6px 0 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.ads-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.field.ads-field {
+  grid-template-columns: 96px minmax(0, 1fr);
+}
+
+.ads-field .field-controls {
+  min-height: 26px;
+}
+
+.ads-field .ads-note {
+  flex-basis: 100%;
+}
+
+.ads-field select.input {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.input.ads-wide {
+  width: 100%;
+}
+
+.input.ads-textarea {
+  width: 100%;
+  height: auto;
+  min-height: 84px;
+  padding: 6px 8px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.ads-money {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.input.ads-amount {
+  width: 90px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ads-age {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+
+.ads-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ads-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.ads-template-actions:empty {
+  display: none;
+}
+
+/* ───────── Mejoras automáticas de Meta ───────── */
+
+.ads-enhancements {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
+  gap: 6px 16px;
+}
+
+.ads-enhancement-group {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ads-enhancement-group legend {
+  padding: 0 10px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* En «En marcha»: lo que Meta tiene activado en un anuncio. */
+.ads .ads-auto-badge {
+  padding: 1px 7px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ads-warning) 14%, transparent);
+  color: var(--ads-warning);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.ads .ads-auto-badge:hover {
+  background: color-mix(in srgb, var(--ads-warning) 22%, transparent);
+}
+
+.ads-auto-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  font-size: 13px;
+}
+
+.ads-auto-list p {
+  margin: 0;
+}
+
+.ads-auto-list ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ads-auto-list small {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+/* ───────── Lugares ───────── */
+
+.ads-places {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.ads-place {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 3px 0 10px;
+  border-radius: 13px;
+  background: var(--fill);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.ads-place-kind {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-2);
+}
+
+.ads-place button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-2);
+}
+
+.ads-place button:hover {
+  background: var(--fill-hover);
+  color: var(--text);
+}
+
+.ads-place button svg {
+  width: 11px;
+  height: 11px;
+}
+
+.ads-place-search {
+  position: relative;
+  flex: 1 1 200px;
+}
+
+.ads-place-search .input {
+  width: 100%;
+}
+
+.ads-place-results {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 264px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border-radius: 10px;
+  background: var(--pop-bg);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: var(--shadow-pop);
+}
+
+.ads-place-results li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.ads-place-results li.is-active {
+  background: var(--selected);
+}
+
+/* ───────── Imágenes y vídeos ───────── */
+
+.ads-drop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 6px;
+  padding: 18px 16px;
+  border: 1.5px dashed color-mix(in srgb, var(--text-3) 55%, transparent);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--text-2);
+  transition: background-color 120ms, border-color 120ms;
+}
+
+.ads-drop svg {
+  color: var(--accent);
+}
+
+.ads-drop.is-over {
+  border-color: var(--accent);
+  background: var(--selected);
+}
+
+.ads-drop.is-disabled {
+  opacity: 0.5;
+}
+
+.ads-creatives {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ads-creative {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.ads-thumb {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--fill);
+}
+
+.ads-thumb img,
+.ads-thumb video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ads-thumb-kind {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+}
+
+.ads-thumb-kind svg {
+  width: 11px;
+  height: 11px;
+}
+
+.ads .ads-creative {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.ads-creative-media {
+  display: flex;
+  gap: 4px;
+}
+
+.ads-creative-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 3px;
+}
+
+.ads-creative-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.ads-creative-note .link-btn {
+  font-size: 12px;
+}
+
+.ads-creative-note select.input {
+  height: 26px;
+  font-size: 12px;
+}
+
+/* El formato, en la esquina de la miniatura. */
+.ads-thumb-ratio {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.input.ads-creative-name {
+  flex: 1;
+  min-width: 0;
+}
+
+/* El nombre del anuncio y, a su lado, los formatos que tiene. */
+.ads-creative-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ads-formats {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.ads-format {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--fill);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ads-subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ───────── Ubicaciones: cada una con su tamaño y, si hay versión que le va, un check ───────── */
+
+.ads-placements {
+  display: grid;
+  gap: 10px;
+}
+
+.ads-placements-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.ads-placements-head > span {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.ads-placements-head small {
+  font-size: 12px;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.ads-placements .ads-hint {
+  margin: 0;
+}
+
+.ads-placement-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 6px 16px;
+}
+
+.ads-placement-group {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ads-placement-group legend {
+  padding: 0 8px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ads-placement-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.ads-placement-all input,
+.ads-placement input {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* Casilla · nombre · tamaño recomendado · check. */
+.ads-placement {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.ads-placement:has(input:not(:disabled)):hover {
+  background: var(--hover);
+}
+
+.ads-placement-group.is-read-only .ads-placement {
+  grid-template-columns: minmax(0, 1fr) auto 18px;
+}
+
+.ads-placement-name {
+  min-width: 0;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.ads-placement-name small {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.ads-placement.is-disabled,
+.ads-placement.is-off {
+  color: var(--text-3);
+}
+
+.ads-placement.is-disabled .ads-placement-name,
+.ads-placement-group.is-read-only .ads-placement-name,
+.ads-placement-group:disabled .ads-placement-name {
+  cursor: default;
+}
+
+.ads-placement-size {
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ads-placement.is-off .ads-placement-size {
+  color: var(--text-3);
+}
+
+.ads-placement-ok {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ads-ok);
+  color: #fff;
+}
+
+.ads-placement-ok svg {
+  width: 11px;
+  height: 11px;
+}
+
+.ads-placement-some {
+  justify-self: center;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ads-warning);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sin versión de su tamaño: Meta adapta la del feed. */
+.ads-placement-none {
+  justify-self: center;
+  width: 12px;
+  height: 12px;
+  border: 1.5px dashed var(--text-3);
+  border-radius: 50%;
+}
+
+/* ───────── Chat de WhatsApp ───────── */
+
+.input.ads-textarea.is-short {
+  min-height: 52px;
+}
+
+.ads-chat {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.ads-chat > .ads-fields {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.ads-questions {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  width: 100%;
+}
+
+.ads-question {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+/* Un chat de WhatsApp de mentira: la empresa arriba, su mensaje a la izquierda y lo del cliente, a la derecha en verde. */
+.ads-wa {
+  flex: 0 1 270px;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--wa-wall);
+  box-shadow: 0 0 0 0.5px var(--separator);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.ads-wa-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--wa-head);
+  color: #fff;
+}
+
+.ads-wa-head .ads-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+}
+
+.ads-wa-head span {
+  display: grid;
+  min-width: 0;
+}
+
+.ads-wa-head strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.ads-wa-head small {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.ads-wa-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 10px 12px;
+}
+
+.ads-wa-who {
+  margin: 6px 4px 1px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--wa-who);
+}
+
+.ads-wa-who.is-me {
+  align-self: flex-end;
+}
+
+.ads-wa-bubble {
+  max-width: 88%;
+  margin: 0;
+  padding: 6px 9px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--wa-text);
+  box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
+}
+
+.ads-wa-bubble.is-them {
+  align-self: flex-start;
+  border-radius: 2px 10px 10px 10px;
+  background: var(--wa-in);
+}
+
+.ads-wa-bubble.is-me {
+  align-self: flex-end;
+  border-radius: 10px 2px 10px 10px;
+  background: var(--wa-out);
+}
+
+.ads-wa-questions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.ads-wa-questions span {
+  max-width: 88%;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--wa-chip);
+  background: var(--wa-in);
+  color: var(--wa-chip);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.ads-wa-foot {
+  padding: 6px 10px 8px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--wa-who);
+}
+
+/* ───────── Crear ───────── */
+
+.ads-launch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.ads-launch-note {
+  flex: 1 1 260px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.ads-launch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ads-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.ads-result-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--c-green) 18%, transparent);
+  color: var(--ads-ok);
+}
+
+.ads-result-text {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.ads-result h5 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ads-result p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.ads-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ads-save-template,
+.ads-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+}
+
+.ads-save-template label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ads-save-template .input {
+  width: 100%;
+}
+
+.ads-save-template p,
+.ads-confirm p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.ads-confirm p b {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ads-confirm p.ads-confirm-note {
+  color: var(--ads-warning);
+}
+
+/* ───────── Creadas desde Tablero ───────── */
+
+.ads-recent {
+  margin-top: 10px;
+}
+
+.ads-recent h4 {
+  margin: 0 0 6px;
+  padding: 0 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.ads-recent ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-col);
+}
+
+.ads-recent li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px 9px 16px;
+}
+
+.ads-recent li + li {
+  box-shadow: inset 0 0.5px 0 var(--separator);
+}
+
+.ads-recent-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ads-recent-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ads-recent-meta {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.ads-status {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--fill);
+  color: var(--text-2);
+}
+
+.ads-status.is-activa {
+  background: color-mix(in srgb, var(--c-green) 18%, transparent);
+  color: var(--ads-ok);
+}
+
+/* ───────── En marcha: totales y campañas, conjuntos o anuncios ───────── */
+
+.ads-running {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ads-running .ads-stats,
+.ads-running .ads-campaigns {
+  transition: opacity 160ms;
+}
+
+.ads-running.is-loading .ads-stats,
+.ads-running.is-loading .ads-campaigns {
+  opacity: 0.6;
+}
+
+.ads-running-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.ads-updated,
+.ads-running-bar .ads-reload-alone {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.ads-metrics-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ads-metrics-picker {
+  display: grid;
+  margin: 0;
+  padding: 6px 6px 2px;
+  border: 0;
+}
+
+.ads-metrics-picker legend {
+  padding: 6px 10px 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ads-metric-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.ads-metric-option:hover {
+  background: var(--hover);
+}
+
+.ads-metric-option input {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+
+.ads-metric-option small {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.ads-metric-option:has(input:disabled) {
+  cursor: default;
+}
+
+.ads-metrics-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 10px 10px;
+}
+
+.ads-metrics-foot .link-btn:disabled {
+  color: var(--text-3);
+  background: none;
+}
+
+/* Dónde se está: Campañas › campaña › conjunto, y cómo va lo de arriba */
+.ads-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 0 4px;
+}
+
+.ads-crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.ads-crumbs li {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.ads-crumbs li + li::before {
+  content: '›';
+  padding: 0 4px;
+  color: var(--text-3);
+}
+
+.ads-crumbs .link-btn {
+  font-size: 13px;
+}
+
+.ads-crumbs [aria-current] {
+  padding: 0 6px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+}
+
+.ads-crumbs [aria-current]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ads-crumbs .ads-new-adset {
+  margin-left: auto;
+}
+
+.ads-new-adset svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ads-created {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 0 4px;
+  font-size: 12.5px;
+  color: var(--ads-ok);
+  text-wrap: pretty;
+}
+
+.ads-created svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+}
+
+.ads-crumbs-info {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Filas iguales: hasta 6 cifras por fila con mucho ancho, 4 con menos y 2 con poco (--cols-6/4/2). */
+.ads-stats-box {
+  container-type: inline-size;
+}
+
+.ads-stats {
+  display: grid;
+  grid-template-columns: repeat(var(--cols-4, 4), minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+@container (min-width: 960px) {
+  .ads-stats {
+    grid-template-columns: repeat(var(--cols-6, 6), minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 600px) {
+  .ads-stats {
+    grid-template-columns: repeat(var(--cols-2, 2), minmax(0, 1fr));
+  }
+}
+
+.ads-stat {
+  padding: 12px 16px 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-col);
+}
+
+.ads-stat dt {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ads-stat dd {
+  margin: 2px 0 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ads-card.ads-campaigns {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  padding: 4px 0 8px;
+}
+
+/* Con poco ancho, la tabla se desplaza de lado dentro de la tarjeta (sin ensanchar la página). */
+.ads-table-wrap {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.ads-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ads-table th,
+.ads-table td {
+  padding: 9px 10px;
+  text-align: right;
+  vertical-align: middle;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ads-table thead th {
+  padding-top: 8px;
+  padding-bottom: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-2);
+  white-space: normal;
+  vertical-align: bottom;
+}
+
+.ads-table tr > :first-child {
+  padding-left: 16px;
+  text-align: left;
+}
+
+.ads-table tr > :last-child {
+  padding-right: 16px;
+}
+
+.ads-table tbody tr {
+  box-shadow: inset 0 0.5px 0 var(--separator);
+}
+
+.ads-table tbody th {
+  min-width: 230px;
+  max-width: 340px;
+  font-weight: 500;
+  white-space: normal;
+}
+
+/* La primera columna se queda quieta al desplazar la tabla de lado. */
+.ads-table tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.ads-table thead tr > :first-child {
+  box-shadow: inset -0.5px 0 0 var(--separator);
+}
+
+.ads-table tbody tr > :first-child {
+  box-shadow:
+    inset 0 0.5px 0 var(--separator),
+    inset -0.5px 0 0 var(--separator);
+}
+
+.ads-row-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ads-row-name .switch {
+  flex: none;
+}
+
+/* Las casillas, como en el Administrador de anuncios: lo marcado filtra el nivel de debajo. */
+.ads-row-check {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.ads-head-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ads-table tbody tr.is-checked > *,
+.ads-table tbody tr.is-checked > :first-child {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.ads-nowrap {
+  white-space: nowrap;
+}
+
+.ads-thumb {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+  object-fit: cover;
+  background: var(--fill);
+}
+
+.ads-row-text {
+  display: grid;
+  justify-items: start;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ads .ads-campaign-name {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.ads .ads-campaign-name.is-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ads .ads-campaign-name.is-button svg {
+  width: 12px;
+  height: 12px;
+  margin-left: 3px;
+  vertical-align: -1px;
+  color: var(--text-3);
+}
+
+.ads .ads-campaign-name.is-button:hover,
+.ads .ads-campaign-name.is-button:hover svg {
+  color: var(--accent);
+}
+
+.ads .ads-campaign-name.is-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.ads-row-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* El enlace al Administrador de anuncios: pequeño a la vista, con 24 px para pulsar. */
+.ads .ads-row-link {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -4px 0;
+  border-radius: 6px;
+  color: var(--text-3);
+}
+
+.ads .ads-row-link svg {
+  width: 13px;
+  height: 13px;
+}
+
+.ads .ads-row-link:hover {
+  background: var(--hover);
+  color: var(--accent);
+}
+
+.ads-delivery {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.ads-delivery::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ads-delivery.is-ok {
+  color: var(--ads-ok);
+}
+
+.ads-delivery.is-warning {
+  color: var(--ads-warning);
+}
+
+.ads-table tr.is-paused td,
+.ads-table tr.is-paused .ads-campaign-name {
+  color: var(--text-2);
+}
+
+.ads-table .switch:disabled {
+  opacity: 0.5;
+}
+
+/* Área de toque de 44 px de alto en la fila */
+.ads-table .switch::before {
+  inset: -11px -6px;
+}
+
+.ads-campaigns-none {
+  margin: 10px 16px 4px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.ads-campaigns .ads-show-paused {
+  justify-self: start;
+  margin: 6px 16px 2px;
+}
+
+.ads-card.ads-running-empty {
+  justify-items: start;
+}
+
+.ads-running-empty p {
+  margin: 0;
+  color: var(--text-2);
+}
+
+/* ───────── Con poco ancho ───────── */
+
+@media (max-width: 820px) {
+  .ads {
+    padding-left: calc(var(--side-w) + 16px);
+    padding-right: 16px;
+  }
+}
+
+@media (max-width: 560px) {
+  .field.ads-field,
+  .ads-app-form .field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .ads-setup {
+    flex-direction: column;
+  }
+
+  .ads-stats {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    border-radius: 14px;
+    background: var(--surface);
+    box-shadow: var(--shadow-col);
+  }
+
+  .ads-stat {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  .ads-stat + .ads-stat {
+    box-shadow: inset 0 0.5px 0 var(--separator);
+  }
+
+  .ads-stat dd {
+    margin: 0;
+    font-size: 17px;
+  }
+
+  /* Que se vea algo de las cifras junto al nombre fijo */
+  .ads-table tbody th {
+    min-width: 190px;
+    max-width: 220px;
+  }
+}
+
+/* El tipo de campaña de Google Ads (Búsqueda, Display…), junto a su estado. */
+.ads-row-type {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.ads-row-type::before {
+  content: '·';
+  margin-right: 6px;
+}
+
+/* ───────── Editar lo publicado ───────── */
+
+/* El menú «…» de cada fila: como el enlace, pequeño a la vista y con 24 px para pulsar. */
+.ads .ads-row-more {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -4px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-3);
+}
+
+.ads .ads-row-more svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ads .ads-row-more:hover,
+.ads .ads-row-more[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ads-row-type {
+  max-width: 220px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ads-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ads-edit > .ads-card,
+.ads-edit > .ads-launch {
+  max-width: 740px;
+}
+
+.ads-edit-lead {
+  margin: 0;
+  padding: 0 4px;
+}
+
+/* Una imagen o un vídeo por formato, cada uno con su miniatura. */
+.ads-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 12px 16px;
+}
+
+.ads-slot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Cada hueco, con la forma de su formato dentro de un cuadrado (todos alineados). */
+.ads-slot-frame {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+}
+
+.ads-slot-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--fill);
+  color: var(--text-3);
+}
+
+.ads-slot-media img,
+.ads-slot-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ads-slot.is-empty .ads-slot-media {
+  border: 1px dashed var(--separator);
+  background: none;
+}
+
+.ads-slot-ratio {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ads-slot-text strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.ads-slot-text .ads-note.is-warning {
+  color: var(--ads-warning);
+}
+
+.ads-slot-badge {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.6);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.ads-slot-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ads-slot-text .ads-note {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ads-slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Las otras opciones de un texto, y los títulos y descripciones de Google Ads. */
+.ads-variants .field-controls,
+.ads-assets {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ads-variant {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ads-variant .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ads .ads-variant-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ads-variant-add svg {
+  width: 13px;
+  height: 13px;
+}
+
+.ads-chars {
+  flex: none;
+  min-width: 38px;
+  padding-top: 7px;
+  font-size: 11.5px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.ads-chars.is-over {
+  color: var(--overdue);
+  font-weight: 600;
+}
+
+.ads-pinned {
+  flex: none;
+  margin-top: 5px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--fill);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.ads-end,
+.ads-paths {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  color: var(--text-2);
+}
+
+.ads-paths .input {
+  width: 130px;
+}
+
+.ads-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* ───────── Pestañas de nivel, como carpetas sobre la tabla (como en el Administrador de anuncios) ───────── */
+
+.ads-folder {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ads-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+/* Con pestañas de más (Google Ads: palabras clave, términos, recursos), las de nivel algo más anchas. */
+.ads-tabs.has-extra {
+  grid-template-columns: repeat(3, minmax(0, 1.35fr)) repeat(var(--extra), minmax(0, 1fr));
+}
+
+/* ───────── Tarjetas (Google Ads): cada fila con su imagen, o su anuncio dibujado ───────── */
+
+.ads-card-list {
+  container-type: inline-size;
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px 14px;
+}
+
+.ads-card-list-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 6px 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.ads-card-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px var(--separator);
+}
+
+.ads-card-row.is-checked {
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.ads-card-row.is-paused .ads-card-thumb,
+.ads-card-row.is-paused .ads-card-preview {
+  opacity: 0.6;
+}
+
+/* Un anuncio: dibujado a la izquierda, lo demás a la derecha (una debajo de otra si no hay sitio). */
+.ads-card-row.is-ad {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+@container (max-width: 680px) {
+  .ads-card-row.is-ad {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.ads-card-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 0.5px var(--separator);
+}
+
+.ads-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Un logo va entero, sobre blanco (como en Google Ads). */
+.ads-card-thumb.is-logo {
+  background: #fff;
+}
+
+.ads-card-thumb.is-logo img {
+  padding: 8px;
+  object-fit: contain;
+}
+
+.ads-card-thumb.is-empty svg {
+  width: 28px;
+  height: 28px;
+}
+
+.ads-card-thumb-type {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.ads-card-thumb-type svg {
+  width: 13px;
+  height: 13px;
+}
+
+.ads-card-body {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+}
+
+.ads-card-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 0;
+}
+
+.ads-card-facts span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.ads-card-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.ads-card-note.is-warning {
+  color: var(--ads-warning);
+}
+
+.ads-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 6px 12px;
+  margin: 2px 0 0;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--separator);
+}
+
+.ads-card-metrics div {
+  min-width: 0;
+}
+
+.ads-card-metrics dt {
+  overflow: hidden;
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+
+.ads-card-metrics dd {
+  margin: 1px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* La campaña (o el grupo) elegida, arriba: su imagen, lo que se sabe de ella y su estado explicado. */
+.ads-panel-head .ads-card-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+}
+
+.ads-panel-head .ads-card-thumb.is-logo img {
+  padding: 5px;
+}
+
+.ads-panel-head .ads-card-thumb-type {
+  display: none;
+}
+
+.ads-panel-facts {
+  display: grid;
+  flex-basis: 100%;
+  gap: 6px;
+}
+
+.ads-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 42px;
+  padding: 0 8px 0 4px;
+  border-radius: 12px 12px 0 0;
+  /* Las de atrás, un poco hundidas; la elegida, del color de la tabla y pegada a ella. */
+  background: color-mix(in srgb, var(--surface) 50%, var(--bg));
+  transition: background-color 120ms;
+}
+
+.ads-tab:hover:not(.is-active) {
+  background: color-mix(in srgb, var(--surface) 75%, var(--bg));
+}
+
+.ads-tab.is-active {
+  background: var(--surface);
+}
+
+.ads .ads-tab-button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px 10px 0 0;
+  background: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--text);
+}
+
+.ads-tab-button span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ads-tab-button svg {
+  flex: none;
+  color: var(--text-2);
+}
+
+.ads-tab.is-active .ads-tab-button,
+.ads-tab.is-active .ads-tab-button svg {
+  color: var(--accent-text);
+}
+
+.ads-tab-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* «1 seleccionada ×»: el filtro, que se quita con la cruz. */
+.ads-tab-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 2px 0 8px;
+  border-radius: 6px;
+  background: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #fff;
+}
+
+.ads-tab-chip button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: #fff;
+}
+
+.ads-tab-chip button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.ads-tab-chip svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* Sin el borde fino de las tarjetas: así la pestaña elegida y la tabla son una sola pieza. */
+.ads-folder .ads-card.ads-campaigns {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  box-shadow: none;
+}
+
+/* Arriba de la tabla: de qué es (la campaña o el conjunto elegido), cómo va y lo que se puede crear ahí. */
+.ads-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 12px 16px 4px;
+}
+
+.ads-panel-name {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  border-radius: 5px;
+}
+
+.ads-panel-name:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ads-panel-head .ads-new-adset {
+  margin-left: auto;
+}
+
+.ads-panel-message {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin: 0;
+  padding: 18px 16px;
+}
+
+.ads-panel-message p {
+  margin: 0;
+  color: var(--text-2);
+}
+
+/* Con poco ancho, las pestañas se quedan en su icono y lo esencial. */
+@container ads-main (max-width: 560px) {
+  .ads-tab {
+    height: 38px;
+  }
+
+  .ads-tab-button {
+    font-size: 12.5px;
+  }
+
+  .ads-tab-chip {
+    font-size: 0;
+    gap: 0;
+    padding: 0 2px;
+  }
+}
+
+/* El selector de métricas: una fila por métrica y una columna para cada sitio. */
+.ads-metrics-table {
+  width: 100%;
+  margin: 0;
+  padding: 8px 8px 2px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ads-metrics-table thead th {
+  padding: 4px 10px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-2);
+}
+
+.ads-metrics-table thead th:first-child {
+  text-align: left;
+}
+
+.ads-metrics-table tbody th {
+  padding: 6px 10px;
+  font-weight: 400;
+  text-align: left;
+  line-height: 1.3;
+}
+
+.ads-metrics-table tbody th small {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.ads-metrics-table td {
+  width: 88px;
+  text-align: center;
+}
+
+.ads-metrics-table tbody tr:hover {
+  background: var(--hover);
+}
+
+.ads-metrics-table input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+/* «+ Crear»: verde, como en el Administrador de anuncios, a la izquierda de la barra. */
+.ads .ads-create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 14px 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--create);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  transition: background-color 120ms;
+}
+
+.ads .ads-create-btn:hover {
+  background: var(--create-hover);
+}
+
+.ads-create-btn svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.2;
+}
+
+.ads-new-campaign {
+  display: grid;
+  gap: 12px;
+}
+
+/* Se queda montada (para no perder lo escrito) pero sin verse mientras se mira «En marcha». */
+.ads-new-campaign[hidden] {
+  display: none;
+}
+
+.ads-new-campaign > .ads-composer-head .btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.ads-panel-note {
+  margin: 8px 16px 0;
+}

@@ -42,24 +42,250 @@ iPhone por iCloud:
 - Por seguridad, si desaparecen muchos recordatorios de golpe (iCloud resincronizando),
   no se borra nada en Tablero; y un borrado solo se aplica si se mantiene unos segundos.
 
+**Captura rápida**: «Tablero Avisos» pone un icono en la barra de menús. `⌥Espacio` abre un panel
+para apuntar una tarea desde cualquier app (entiende lo mismo que «Nueva tarea») y `⌥⇧Espacio`, lo
+mismo con la página abierta en Chrome (la primera vez macOS pide el permiso de Automatización para
+Chrome). Los atajos se cambian en `datos/ajustes.json` (`{"atajoCaptura": "option+space",
+"atajoCapturaPagina": "option+shift+space"}`; `""` desactiva uno).
+
 Que los avisos salgan como globo y con sonido depende de los ajustes de notificaciones de
-Recordatorios en cada dispositivo (la campana de Tablero lleva a ellos). El estado de la
+Recordatorios en cada dispositivo («Avisos en el iPhone», en la búsqueda, lleva a ellos). El estado de la
 sincronización se guarda en `datos/sincronizacion.json` y su registro en `datos/avisos.log`.
+
+## Día a día
+
+- **Apariencia**: abajo del menú lateral, *Como el sistema*, *Claro* u *Oscuro* (cada clic pasa a la siguiente;
+  también «Modo claro» y «Modo oscuro» en la búsqueda). Se recuerda en el navegador.
+- **Hoy** (D): lo que vence hoy o está atrasado, de todas las columnas. «Lo primero» arriba
+  (F), «Pasar todas a hoy», y la siguiente tarea de cada proyecto sin nada para hoy. El
+  icono del Dock muestra cuántas quedan; la primera vez que se abre cada día, arranca aquí.
+- **Escribir en lenguaje natural**: «Llamar a Marta mañana 10:30 #Trabajo», «Copias cada
+  lunes», «Leer Sapiens algún día», «Pagar seguro 15/10». Solo se entienden fechas y horas
+  al principio o al final; ⌥↩ guarda el texto tal cual.
+- **Enlaces**: las URLs salen como píldoras; pegar una URL sola crea la tarea con el título
+  de la página (los de GitHub, con `gh`). **Checklist**: líneas «- [ ] paso» en las notas.
+  **Repetición**: en el detalle; al completarla se crea la siguiente.
+- **Proyectos**: cada columna tiene ficha (carpeta, repo, producción, staging, entrega,
+  enlaces), un pulso («Entrega vie», «Parada · 12 d»), «Lo hecho» para copiar al cliente,
+  y se puede contraer o archivar. «Archivar completadas» las saca a `datos/archivo.json`.
+- **Bandeja + Siri**: lo que llega de Siri o de la captura entra en la Bandeja; «#columna»
+  al final lo manda a su sitio. Para Siri: en el iPhone, Ajustes › Recordatorios › Lista
+  por omisión › «Tablero · Bandeja».
+- **Captura global**: ⌥Espacio desde cualquier app (icono en la barra de menús);
+  ⌥⇧Espacio añade la pestaña activa de Chrome. Atajos en `datos/ajustes.json`
+  (`{"atajoCaptura": "option+space", "atajoCapturaPagina": "option+shift+space"}`).
+- **Claude Code**: «Abrir en Claude Code» en una tarea abre una sesión en la carpeta del
+  proyecto con la tarea escrita. Y el MCP (`npm run mcp` muestra cómo registrarlo) deja
+  pedir a Claude «apunta esto en Tablero», «¿qué tengo hoy?» o «¿cuánto pago al mes en
+  suscripciones?».
+
+## Suscripciones
+
+La vista **Suscripciones** (`U`) apunta lo que pagas cada semana, mes, trimestre, semestre o año:
+cuánto suma al mes y al año (por moneda: euros, dólares y libras nunca se mezclan) y el próximo
+cobro. Las dadas de baja quedan plegadas al final y se pueden reactivar.
+
+- **Por empresa**: cada suscripción pertenece a una columna del tablero («Personal», «LTO»…; una
+  empresa nueva es una columna nueva). Se ven en columnas lado a lado, como el tablero, cada una con
+  lo que suma al mes; dentro, por próximo cobro. Se arrastran de una columna a otra (con el teclado:
+  `Espacio`, `←` `→` y `Espacio`) o se elige «Columna» en su ficha; «+ Suscripción» al pie de una
+  columna la crea ahí. Las que no tienen columna salen en «Sin columna». Borrar una columna las deja
+  sin columna (con deshacer); archivarla no las toca. En la **ficha del proyecto** de una columna,
+  «Suscripciones · 3 · 28,22 € / mes» lleva a ellas.
+- **Tarjetas**: cada suscripción puede llevar una tarjeta, que es solo un nombre y un color
+  («BBVA», «Revolut»). **Nunca el número**: Tablero rechaza 6 cifras o más (vale «BBVA ··1234»).
+  Pulsar una tarjeta filtra las columnas y los totales.
+- **Avisos**: con «Aviso» (el mismo día, 1, 3 o 7 días antes), el servidor crea una tarea «Netflix
+  se cobra el 15 oct · 12,99 € · BBVA» en la columna de la suscripción (en la Bandeja si no tiene o
+  está archivada), que llega al iPhone como cualquier otra (con dos días de margen, por si el Mac se
+  duerme). Una sola vez por cobro; si cambias el precio, la fecha o la tarjeta mientras está
+  pendiente, se rehace, y si la cambias de columna, se va con ella (si borras o archivas su columna,
+  pasa a la Bandeja). En el detalle de esa tarea, «Ver suscripción» lleva a su ficha. `TABLERO_SIN_AVISOS_SUSCRIPCIONES=1` los desactiva.
+- Se guardan en `datos/board.json` con las tareas (copias diarias, deshacer y sincronización
+  entre ventanas incluidos). Claude Code las ve con la herramienta `tablero_suscripciones` del MCP,
+  con su columna, los totales por columna y, si se pide, solo las de una (`columna`) o una tarjeta.
+
+## Anuncios
+
+En el menú lateral, bajo Marketing, están **Meta Ads** (`P`) y **Google Ads** (`G`), cada una con sus cuentas
+publicitarias debajo (la flecha las pliega; las cerradas o con un pago pendiente, más apagadas); con el menú
+oculto o en iconos, el nombre de la cuenta abre la lista para cambiar.
+
+### Meta Ads
+
+La vista **Meta Ads** enseña cómo van las campañas de las cuentas publicitarias de todos tus portfolios y lanza
+campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
+
+- **Conectar (una vez)**: hace falta una app de Meta propia (developers.facebook.com, caso de uso «Crear y
+  gestionar anuncios con la API de marketing»; sin revisión, pero publicada: en modo desarrollo Meta no deja
+  crear anuncios, y para publicarla pide una URL de política de privacidad: sirve [PRIVACIDAD.md](PRIVACIDAD.md)).
+  En su inicio de sesión con Facebook, añade `http://localhost:4747/api/meta/volver` a las URI de
+  redireccionamiento (en desarrollo, también la del puerto 5173). Ojo: Meta solo deja volver a `localhost` con la
+  app en modo desarrollo; publicada, la ventana dice «Can't load URL» (y en las apps de empresa no se puede volver a
+  desarrollo). Entonces, **Pegar un token** (al conectar, en el botón de la conexión y en Resúmenes): uno de usuario
+  del [Explorador de la API Graph](https://developers.facebook.com/tools/explorer/) con la app y los permisos que
+  dice; Tablero lo cambia por uno de 60 días. Tablero pide su identificador y su clave
+  secreta y abre la ventana de Meta; si la app usa «Inicio de sesión con Facebook para empresas», también el
+  identificador de una configuración con token de usuario. La conexión dura unos 60 días (avisa una semana antes); «Volver a conectar» la renueva.
+- **En marcha**: las campañas activas de la cuenta con su presupuesto y sus métricas de hoy, ayer, 7 o 30
+  días, y los totales. «Métricas» elige cuáles se ven arriba, en grande, y cuáles en las columnas de la tabla
+  (cada sitio las suyas): gasto, conversaciones de WhatsApp, coste por conversación, contactos nuevos, alcance,
+  impresiones, frecuencia, CPM, clics, CTR, CPC y bloqueos. Al pulsar
+  una campaña se ven sus conjuntos, y al pulsar un conjunto, sus anuncios (con miniatura); las pestañas llevan de
+  vuelta. Las pestañas **Campañas · Conjuntos · Anuncios**, como carpetas sobre la tabla, cambian de nivel como
+  en el Administrador de anuncios: sin filtro, todos los de la cuenta, con su campaña o conjunto al lado. Las
+  **casillas** de las campañas y los conjuntos (y la de la cabecera, para todos los que se ven) filtran el nivel
+  siguiente: con dos campañas marcadas, «Conjuntos de 2 campañas» enseña solo los suyos (y sus totales); con
+  conjuntos marcados, «Anuncios de 3 conjuntos». La pestaña de lo elegido dice «2 seleccionadas ×» (la cruz
+  quita el filtro); pulsar un nombre elige solo ese y abre lo de debajo. Igual en Google Ads. Debajo de
+  cada nombre sale lo que pasa de verdad (conjuntos en pausa, terminada, rechazado…). El
+  interruptor pausa enseguida o activa (pide confirmación) campañas, conjuntos y anuncios; lo que está en pausa
+  sin gasto en el periodo va plegado. Las campañas creadas desde Tablero se encienden enteras la primera vez y
+  luego solo la campaña, para no reactivar lo que se pausara en Meta. Ocupa todo el ancho de la ventana.
+- **Editar lo publicado** (el menú «…» de cada fila), sin pasar por el Administrador de anuncios:
+  - *Campaña*: nombre, presupuesto (si lo reparte entre sus conjuntos), estrategia de puja y límite de gasto.
+  - *Conjunto*: nombre, presupuesto, fechas (el inicio, si aún no ha empezado; el fin, o sin fin), puja (volumen
+    máximo, objetivo de coste o límite de puja, con su importe), público (lugares, Advantage+, edad, sexo) y
+    ubicaciones (automáticas o elegidas una a una). Lo que Tablero no enseña del público (intereses, públicos
+    personalizados…) y las ubicaciones que no conoce se quedan como están.
+  - *Anuncio*: una imagen o un vídeo por formato (4:5, 1:1, 9:16 y 16:9), con las ubicaciones del conjunto y un
+    check en las que tienen versión de su tamaño; texto principal, título y descripción (con sus otras opciones de
+    texto, como en el Administrador, si hay una sola versión), Instagram, chat de WhatsApp y mejoras automáticas. Meta no deja cambiar el
+    contenido de un anuncio publicado: Tablero crea uno nuevo con los cambios y se lo pone al mismo anuncio, que
+    conserva sus métricas (Meta lo vuelve a revisar). Los que usan una publicación existente, los carruseles y los
+    que no llevan a WhatsApp solo cambian de nombre.
+  - **Duplicar** (en pausa, con todo lo que cuelga), **archivar** y **borrar** (pide confirmación; borrar no se
+    puede deshacer). Y **Nuevo anuncio** dentro de un conjunto, empezando con los textos de uno de sus anuncios.
+- **Nuevo conjunto**: dentro de una campaña (de interacción, clientes potenciales o ventas), el mismo formulario
+  que una campaña nueva crea un conjunto de mensajes a WhatsApp con sus anuncios. Usa la página de los demás
+  conjuntos y, si mandan los mensajes a un número concreto, ese número; si la campaña reparte su presupuesto,
+  el conjunto no lleva. Se crea en pausa con los anuncios listos (se enciende con su interruptor) o, con
+  «Publicar ya», activo.
+- **Nueva campaña**: eliges la cuenta (agrupadas por portfolio), una **plantilla** (página, Instagram,
+  presupuesto diario, lugares, edad, sexo, Advantage+, ubicaciones, textos, chat de WhatsApp y mejoras de Meta)
+  y arrastras imágenes o vídeos: cada pieza es un anuncio del mismo conjunto. Se empieza con el botón verde
+  **+ Crear**, a la izquierda de las fechas (como en el Administrador). «Crear en pausa» sube todo y crea
+  campaña, conjunto y anuncios **en pausa**; si algo falla a medias, borra lo creado. Luego, «Revisar en Meta»
+  (Administrador de anuncios) o «Activar» (pide confirmación: desde ahí gasta). **Publicar ya** lo crea todo
+  activo de una vez (también pide confirmación, con lo que gastará al día): empieza en cuanto Meta apruebe los
+  anuncios.
+- **Orden del formulario**: nombre de la campaña (o del conjunto) arriba del todo; luego plantilla, quién
+  anuncia, presupuesto, público (sin plantilla, **Ciudad del Este**), imágenes y vídeos con sus ubicaciones,
+  texto, chat y mejoras. Con sitio, a la derecha va la **vista previa**, todas a la vez: feed de Facebook y de
+  Instagram (4:5), Stories y Reels (9:16) y horizontal (16:9), cada una con la versión que le toca y avisando
+  si Meta tiene que adaptar otra; con ubicaciones elegidas, solo las que salen. Sin sitio, debajo.
+- **Texto**: texto principal, título y descripción (los dos últimos, opcionales). **Escribir con Claude** los
+  escribe todos, y el chat de WhatsApp, con la API de Claude (Claude Opus 5.5): ve las imágenes, la página, el
+  público, lo ya escrito y unas indicaciones opcionales; no inventa precios ni fechas, y se puede deshacer. La
+  primera vez pide la clave de la API (console.anthropic.com), que se guarda en `datos/claude.json` (solo en este
+  Mac, permisos 600; nunca vuelve a la web). Sin ella, usa `ANTHROPIC_API_KEY` si está.
+- **Chat de WhatsApp**: vuestro mensaje (lo primero que ve la persona) y, para que empiece, su mensaje ya escrito
+  o hasta 4 preguntas frecuentes que toca para enviarlas; con vista previa del chat (vuestro mensaje a la
+  izquierda, el del cliente a la derecha, en verde).
+- **Formatos**: Tablero mide cada imagen o vídeo y lo enseña junto al nombre (4:5, 1:1, 9:16, 16:9). Las
+  versiones de una pieza (mismo nombre sin el formato, como «2_9_16» y «2_4_5», o si solo hay dos) se juntan en
+  **un solo anuncio** (hasta cuatro, una por formato): cada una va en las ubicaciones que le tocan y la primera
+  (4:5, si la hay) en el resto, como hace el Administrador de anuncios. Se pueden separar o juntar a mano.
+- **Ubicaciones**: automáticas (Meta reparte) o elegidas una a una, por grupos: Facebook (feed, perfil,
+  Marketplace, búsqueda, columna derecha, notificaciones, Stories, Reels y vídeos in-stream, solo con vídeo),
+  Instagram (feed, perfil, Explorar, búsqueda, Stories, Reels y Reels del perfil), Messenger (bandeja de entrada y
+  Stories) y Estados de WhatsApp (Meta los pide con Instagram Stories: se marcan juntos). Al lado de cada una, el
+  tamaño recomendado y un **check verde** si alguna versión subida le va (con varios anuncios, cuántos la tienen).
+- Con Advantage+ activado, Meta solo admite la edad mínima (hasta 25) y decide el resto.
+- **Mejoras automáticas de Meta** (Advantage+ creative: retoques, superposiciones, mejoras de texto,
+  comentarios relevantes, traducción, stickers…) y **anuncios multianunciante**: sin decir nada, Meta activa
+  algunas por su cuenta. Tablero las manda todas, desactivadas salvo las que se marquen en el formulario (se
+  guardan en la plantilla); las de catálogo y web, siempre desactivadas. En «En marcha», los anuncios que tienen
+  alguna activada lo enseñan («2 automáticas») con la lista.
+- **Páginas e Instagram**: las páginas son las que ya usa la cuenta y todas las de su portfolio. La app de
+  anuncios no tiene el permiso `instagram_basic`, así que Meta solo le enseña la cuenta de Instagram vinculada a
+  la página; Tablero ofrece también las que ya usan los anuncios de esa página (en esa cuenta o, si no, en las
+  demás; el nombre sale de su publicación en Instagram), que son las que se eligen en el Administrador de
+  anuncios.
+- La app de Meta y el token se guardan en `datos/meta.json` (solo en este Mac, permisos 600) y nunca llegan a
+  la web; las plantillas y las campañas creadas, en `datos/anuncios.json`. Versión de la API: v26.0
+  (`TABLERO_META_VERSION` la cambia).
+
+### Google Ads
+
+La vista **Google Ads** enseña tus cuentas de Google Ads (también las de una cuenta de administrador, entrando
+por ella) como Google Ads, pero con imágenes para ubicarse de un vistazo. Arriba, los totales del periodo (hoy,
+ayer, 7 o 30 días) con los nombres y en el orden de Google: Clics, Impr., CTR, CPC medio, Coste, Conversiones y
+Coste/conv. (y, si se eligen en «Métricas», tasa y valor de conversión, ROAS y CPM).
+
+- **Campañas**: cada una en su tarjeta, con su imagen (una foto suya, si no su logo, si no el de la cuenta, con el
+  icono de su tipo encima), su tipo, cómo puja («Maximizar conversiones»), su presupuesto, su puntuación de
+  optimización y su estado en una frase: «El presupuesto se acaba antes de tiempo: pierdes el 79 % de las
+  impresiones por presupuesto. Sales en el 10 % de las búsquedas en las que podrías aparecer» (las cuotas de
+  impresiones de búsqueda de Google). Al pulsar una, sus anuncios; arriba, ella con todo eso.
+- **Anuncios**: cada uno dibujado como sale. Los de búsqueda (también los de las campañas inteligentes), como en
+  Google: «Patrocinado», el logo y el nombre de la empresa, la web con sus rutas, los tres primeros títulos en
+  azul, la descripción con los textos destacados y los enlaces de sitio (los de la campaña o, si no tiene, los de
+  la cuenta). Los de Demand Gen y display, con su imagen, su logo y su botón. Al lado, la calidad del anuncio
+  (Excelente, Buena…), todos sus títulos y descripciones (plegados) y adónde lleva. Las campañas inteligentes no
+  dan cifras por anuncio: arriba salen las de la campaña, y se dice.
+- **Palabras clave**: con su concordancia como la escribe Google (amplia, "de frase", [exacta]), su nivel de
+  calidad (de 1 a 10, en color), si salen poco, y sus cifras, con el total abajo. **Términos de búsqueda**: lo que
+  la gente escribió de verdad y la palabra clave que lo trajo (los 300 con más impresiones). **Recursos**: las
+  imágenes y logos (con su tamaño), los enlaces de sitio, los textos destacados, los fragmentos estructurados, el
+  nombre de la empresa y las llamadas, cada uno con de dónde es (la cuenta, una campaña o un grupo).
+- Las pestañas, las casillas (que filtran lo de debajo), el interruptor (pausa enseguida o activa con
+  confirmación) y el menú «…» funcionan como en Meta Ads: edita el nombre y el presupuesto diario de una campaña,
+  el nombre y el CPC máximo de un grupo, y los títulos, descripciones, URL final y rutas de un anuncio de búsqueda
+  adaptable; o la quita (no se puede deshacer). Las de Máximo rendimiento no se abren (no tienen grupos de
+  anuncios, sino de recursos).
+
+- **Conectar (una vez)**: desde septiembre de 2026 no hace falta token de desarrollador ni cuenta de
+  administrador; el nivel de acceso es el del proyecto de Google Cloud. En console.cloud.google.com, un proyecto
+  con la **Google Ads API** activada y el **acceso Explorer** solicitado en su página (sin él solo se ven cuentas
+  de prueba; da 2.880 operaciones al día, de sobra). En Google Auth Platform: «Publicar app» en Público (en
+  «Prueba» la conexión se corta cada 7 días) y, en Clientes, uno de tipo «Aplicación web» con
+  `http://localhost:4747/api/google/volver` en las URI de redireccionamiento (en desarrollo, también la del
+  puerto 5173). Tablero pide su ID y su secreto y abre la ventana de Google.
+- El cliente OAuth y el token de refresco se guardan en `datos/google.json` (solo en este Mac, permisos 600) y
+  nunca llegan a la web. Versión de la API: v26 (`TABLERO_GOOGLE_VERSION` la cambia).
+
+### Resúmenes por WhatsApp
+
+La vista **Resúmenes** (`R`) manda cada día, a la hora que elijas, un WhatsApp por empresa: el gasto de ayer
+en Meta y en Google con sus conversaciones (o conversiones) y lo que costó cada una, las campañas con más
+gasto, lo que hay que revisar y las tareas del día de su columna (y los cobros de sus suscripciones de los
+próximos dos días). En «Para revisar» salen las cuentas con problemas (pago pendiente…), los anuncios
+rechazados, las campañas activas que no entregan o que ayer no gastaron, las que terminan en dos días, las de
+Google limitadas, y las que ayer costaron por resultado 1,5 veces su media de 7 días o más (o gastaron lo de
+dos resultados sin ninguno).
+
+- Cada resumen: nombre (sale en el mensaje), número de WhatsApp de la empresa desde el que sale, a quién (con
+  prefijo de país), hora, cuentas de Meta y de Google que entran y columna de las tareas. «Vista previa» enseña
+  el mensaje con los datos de ahora, sin mandarlo; «Enviar ahora» lo manda (no cuenta como el del día).
+- Sale por la API de WhatsApp de Meta con la conexión de Meta Ads, que necesita los permisos de WhatsApp: en la
+  app de Meta, el caso de uso «Conectar con clientes a través de WhatsApp» y, en Resúmenes, **Dar permiso de
+  WhatsApp** (vuelve a abrir la ventana de Meta). Fuera de una conversación abierta, WhatsApp solo deja mandar
+  plantillas: **Pedir la plantilla a Meta** crea `tablero_resumen_diario` (de utilidad, en español) en la cuenta
+  de WhatsApp del número; Meta la revisa (de minutos a unas horas). Cada mensaje lo cobra Meta como una plantilla
+  de utilidad, y la cuenta de WhatsApp necesita forma de pago.
+- El servidor mira cada 5 minutos si toca alguno (si el Mac dormía a esa hora, sale al despertar). Si falla, lo
+  reintenta a la media hora (tres veces al día como mucho) solo a quien no lo recibió. Lo que se configura y
+  cómo fue el último envío se guarda en `datos/resumenes.json`; `TABLERO_SIN_RESUMENES=1` los desactiva.
+  WhatsApp no deja más de 1024 caracteres: si no cabe, se quitan las últimas de la lista más larga («y 3 más»).
 
 ## Atajos
 
 | Tecla | Acción |
 | --- | --- |
-| `T` / `C` | Tablero / Calendario |
-| `N` | Nueva tarea (en el calendario, para hoy) |
-| `1`–`9` | Nueva tarea en esa columna |
-| `⇧N` | Nueva columna |
-| `←` `→` · `H` · `S` / `M` | Calendario: anterior/siguiente · hoy · semana/mes |
+| `D` / `T` / `C` / `U` / `P` / `G` / `R` | Hoy / Tablero / Calendario / Suscripciones / Meta Ads / Google Ads / Resúmenes |
+| `⌃⌘S` | Mostrar u ocultar el menú lateral |
+| `N` · `1`–`9` · `⇧N` | Nueva tarea (en Suscripciones, nueva suscripción) · en esa columna · nueva columna |
+| `⌘K` o `/` | Buscar (también completadas y archivadas) |
+| `↑↓` `←→` (o `J`/`K`) | Moverse entre tareas (o suscripciones) y columnas |
+| `X` · `H` · `M` · `L` · `0` | Completar · hoy · mañana · próxima semana · sin fecha |
+| `A` · `F` · `⌥1`–`9` · `⌘D` · `⌫` | Algún día · lo primero · mover · duplicar · eliminar |
+| `⌘clic` / `⇧clic` | Seleccionar varias (las teclas se aplican a todas) |
 | `⌘Z` / `⇧⌘Z` | Deshacer / rehacer |
 | `?` | Todos los atajos |
 
-En el calendario se puede escribir la hora con la tarea: «Dentista 10:30», «18h Pádel»,
-«Cena a las 9».
+Las teclas de tareas actúan sobre la selección, la tarea enfocada o la que está bajo el
+ratón. Cada tarea tiene enlace propio (`/t/<id>`, «Copiar enlace» en su detalle).
 
 ## Publicar actualizaciones
 
@@ -78,6 +304,12 @@ Las versiones van firmadas con una clave que solo está en este Mac
 con ella. **Guarda una copia de esa clave**: sin ella habría que reinstalar a mano en
 cada Mac. El repositorio es público (código, nunca tareas).
 
+`npm run firma` crea (una vez) la identidad «Tablero (firma propia)» en el llavero, para que macOS
+recuerde los permisos del ayudante entre versiones; su copia de seguridad (`firma-codigo.p12` y su
+contraseña, `firma-codigo.clave`) va en la misma carpeta. **`~/.config/tablero` guarda claves
+privadas**: no la subas a ningún repositorio (tiene un `.gitignore` con `*`) ni la sincronices; cópiala
+solo a un sitio seguro (p. ej. un disco cifrado).
+
 Si una actualización cambia el ayudante de avisos (`avisos/`), macOS vuelve a pedir el
 permiso de Recordatorios en cada Mac.
 
@@ -95,10 +327,17 @@ npm run build  # comprueba tipos y compila a dist/
 ```
 
 - `src/` — la app (React + TypeScript). Modelo en `src/model.ts`, fusión de cambios en `src/merge.ts`.
+  Las cuentas de las suscripciones (cobros, importes, avisos) están en `server/suscripciones.mjs`,
+  compartidas por la app, el servidor y el MCP.
 - `server/` — servidor sin dependencias: web, API `/api/board`, eventos en vivo `/api/eventos`
-  y actualizaciones automáticas (`actualizador.mjs`).
+  y actualizaciones automáticas (`actualizador.mjs`). Anuncios: la conexión con Meta en `meta.mjs` y lo
+  que se manda para crear campañas en `anuncios.mjs`; la de Google Ads en `google.mjs`; los resúmenes por
+  WhatsApp en `resumenes.mjs` (probados con una Meta y un Google de mentira, sin internet).
 - `avisos/` — el ayudante de Recordatorios (Swift + EventKit): `Modelo.swift` (fusión, sin
   EventKit) y `Avisos.swift`. Pruebas: `swiftc -parse-as-library avisos/Modelo.swift
   avisos/Pruebas.swift -o /tmp/pruebas && /tmp/pruebas`. Solo se recompila si cambia,
   porque cada compilación nueva hace que macOS vuelva a pedir permiso.
 - Probar sin tocar tus datos: `TABLERO_DATA_DIR=/tmp/prueba PORT=4848 npm start`.
+- MCP para Claude Code: `npm run mcp` imprime cómo registrarlo. Habla con el servidor de
+  `TABLERO_PORT` (4747 por defecto; no usa `PORT`, que suele venir de otros proyectos) y antes
+  comprueba que de verdad es Tablero.

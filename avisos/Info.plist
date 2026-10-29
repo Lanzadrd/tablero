@@ -13,9 +13,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>1.1</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>2</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleDevelopmentRegion</key>
@@ -24,6 +24,8 @@
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Tablero lee la dirección y el título de la pestaña activa de Google Chrome para enlazarla a la tarea que estás creando. Solo lo hace cuando eliges «Nueva tarea con la página de Chrome».</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Tablero copia tus tareas a Recordatorios para que las tengas en el iPhone, con sus avisos, y trae a Tablero lo que añadas o completes allí.</string>
 	<key>NSRemindersUsageDescription</key>

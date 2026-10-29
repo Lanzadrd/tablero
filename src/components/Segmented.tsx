@@ -33,7 +33,8 @@ export function Segmented<T extends string>({
           type="button"
           role="tab"
           aria-selected={option.value === value}
-          title={option.hint}
+          title={option.hint ? `${option.label} (${option.hint})` : undefined}
+          aria-keyshortcuts={option.hint}
           onClick={() => onChange(option.value)}
         >
           {option.label}

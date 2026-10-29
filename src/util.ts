@@ -13,8 +13,16 @@ export const isTyping = (target: EventTarget | null) =>
 export const splitLines = (text: string) =>
   text
     .split(/\r?\n/)
-    .map((line) => line.replace(/^\s*(?:[-*•·]|\d+[.)]|\[[ xX]?\])\s+/, '').trim())
+    .map((line) =>
+      line
+        .replace(/^\s*(?:[-*•·]|\d+[.)])\s+/, '')
+        .replace(/^\s*\[[ xX]?\]\s+/, '')
+        .trim(),
+    )
     .filter(Boolean)
+
+/** Ancho del menú lateral en pantalla (--side-w; 0 si está oculto). */
+export const sideWidth = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--side-w')) || 0
 
 export const tint = (color: ColorKey) => ({ '--tint': `var(--c-${color})` }) as CSSProperties
 

@@ -8,18 +8,11 @@
 // Corre en segundo plano (LaunchAgent com.tablero.avisos) y habla con el servidor local:
 // escucha sus cambios (/api/eventos), le manda los del iPhone (/api/operaciones) y le
 // cuenta su estado (/api/avisos). La lógica de fusión está en Modelo.swift.
+//
+// También pone el icono de la barra de menús y la captura rápida (Menu.swift, Captura.swift).
 
 import AppKit
 import EventKit
-
-struct Fallo: LocalizedError {
-    let errorDescription: String?
-    init(_ mensaje: String) { errorDescription = mensaje }
-}
-
-func registrar(_ mensaje: String) {
-    print("\(ISO8601DateFormatter().string(from: Date()))  \(mensaje)")
-}
 
 func colorDeLista(_ clave: String) -> CGColor {
     let colores: [String: NSColor] = [
@@ -56,14 +49,14 @@ final class Sincronizador {
     private var otraVez = false
     private var repasar = false
     private var informe = Data()
+    /// Avisa de cada cambio de estado (para la línea de estado del menú).
+    var alInformar: ((_ estado: String, _ mensaje: String?) -> Void)?
 
     private var archivoEstado: URL { carpeta.appending(path: "sincronizacion.json") }
 
     init() {
-        let entorno = ProcessInfo.processInfo.environment
-        servidor = URL(string: "http://127.0.0.1:\(entorno["PORT"] ?? "4747")/")!
-        carpeta = entorno["TABLERO_DATA_DIR"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Tablero/datos")
+        servidor = direccionServidor()
+        carpeta = carpetaDeDatos()
         estado = EstadoSync()
         if let datos = try? Data(contentsOf: archivoEstado), let guardado = try? JSONDecoder().decode(EstadoSync.self, from: datos) {
             estado = guardado
@@ -471,6 +464,7 @@ final class Sincronizador {
     // MARK: Estado para la app (icono de la campana)
 
     private func informar(estado: String, lista: EKCalendar? = nil, listas: Int? = nil, programados: Int? = nil, mensaje: String? = nil) {
+        alInformar?(estado, mensaje)
         var cuerpo: [String: Any] = ["estado": estado, "sincronizacion": 2]
         if let lista {
             cuerpo["cuenta"] = lista.source.title
@@ -499,10 +493,14 @@ final class Sincronizador {
 
 final class Delegado: NSObject, NSApplicationDelegate {
     private var sincronizador: Sincronizador?
+    private var barra: BarraDeMenus?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let sincronizador = Sincronizador()
+        let barra = BarraDeMenus(servidor: direccionServidor(), carpeta: carpetaDeDatos())
+        sincronizador.alInformar = { [weak barra] estado, mensaje in barra?.mostrarEstado(estado, mensaje: mensaje) }
         self.sincronizador = sincronizador
+        self.barra = barra
         sincronizador.arrancar()
     }
 }
