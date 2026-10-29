@@ -6,6 +6,7 @@ import { cx } from '../util'
 import { AccountSwitcher, Avatar, CopyLine, errorText, useConnect, type Connection } from './Ads'
 import { RunningCampaigns, type RunningSource } from './AdsRunning'
 import { GoogleEditor } from './GoogleEdit'
+import { GOOGLE_TABS, googleDetails, googlePreview } from './GoogleParts'
 import * as Icon from './Icons'
 import { Popover } from './Popover'
 import '../styles/anuncios.css'
@@ -21,23 +22,27 @@ const GOOGLE_CONNECTION: Connection<GoogleStatus> = {
   stamp: (s) => s.conectadaEn,
 }
 
-/** «En marcha» con Google Ads: sus métricas y cómo llama a cada nivel. */
+/**
+ * «En marcha» con Google Ads, como en Google Ads pero con imágenes: cada campaña en su tarjeta (con su imagen, cómo
+ * puja, su optimización y su estado explicado), cada anuncio dibujado como sale en Google, las métricas con sus
+ * nombres y en su orden, y las pestañas de palabras clave, términos de búsqueda y recursos.
+ */
 const GOOGLE_SOURCE: RunningSource = {
   storage: 'tablero.google',
   metrics: [
-    { key: 'gasto', label: 'Coste', format: 'money' },
-    { key: 'conversiones', label: 'Conversiones', format: 'number' },
-    { key: 'coste', label: 'Coste por conversión', format: 'money' },
-    { key: 'tasa', label: 'Tasa de conversión', format: 'percent', hint: 'Conversiones por cada 100 clics' },
-    { key: 'valor', label: 'Valor de conversiones', format: 'money' },
-    { key: 'roas', label: 'ROAS', format: 'ratio', hint: 'Valor de las conversiones por cada unidad gastada' },
-    { key: 'impresiones', label: 'Impresiones', format: 'count', hint: 'Veces que se ha visto' },
     { key: 'clics', label: 'Clics', format: 'count' },
+    { key: 'impresiones', label: 'Impr.', format: 'count', hint: 'Impresiones: veces que se ha visto' },
     { key: 'ctr', label: 'CTR', format: 'percent', hint: 'Clics por cada 100 impresiones' },
     { key: 'cpc', label: 'CPC medio', format: 'money', hint: 'Coste por clic' },
+    { key: 'gasto', label: 'Coste', format: 'money' },
+    { key: 'conversiones', label: 'Conversiones', format: 'number' },
+    { key: 'coste', label: 'Coste/conv.', format: 'money', hint: 'Coste por conversión' },
+    { key: 'tasa', label: 'Tasa de conv.', format: 'percent', hint: 'Conversiones por cada 100 clics' },
+    { key: 'valor', label: 'Valor de conv.', format: 'money', hint: 'Valor de las conversiones' },
+    { key: 'roas', label: 'ROAS', format: 'ratio', hint: 'Valor de las conversiones por cada unidad gastada' },
     { key: 'cpm', label: 'CPM', format: 'money', hint: 'Coste por mil impresiones' },
   ],
-  defaultMetrics: ['gasto', 'clics', 'ctr', 'cpc', 'conversiones', 'coste'],
+  defaultMetrics: ['clics', 'impresiones', 'ctr', 'cpc', 'gasto', 'conversiones', 'coste'],
   levels: {
     campana: {
       nombre: 'Campaña',
@@ -79,6 +84,12 @@ const GOOGLE_SOURCE: RunningSource = {
   setStatus: googleApi.setStatus,
   editor: (props) => <GoogleEditor {...props} />,
   remove: { label: 'Quitar', run: googleApi.remove },
+  cards: true,
+  preview: googlePreview,
+  details: googleDetails,
+  // Al abrir una campaña, sus anuncios (lo que más se entiende de un vistazo); los grupos, en su pestaña.
+  openCampaignTo: 'anuncio',
+  tabs: GOOGLE_TABS,
 }
 
 /** «1234567890» como lo escribe Google Ads: «123-456-7890». */

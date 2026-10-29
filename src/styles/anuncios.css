@@ -2615,6 +2615,197 @@
   gap: 6px;
 }
 
+/* Con pestañas de más (Google Ads: palabras clave, términos, recursos), las de nivel algo más anchas. */
+.ads-tabs.has-extra {
+  grid-template-columns: repeat(3, minmax(0, 1.35fr)) repeat(var(--extra), minmax(0, 1fr));
+}
+
+/* ───────── Tarjetas (Google Ads): cada fila con su imagen, o su anuncio dibujado ───────── */
+
+.ads-card-list {
+  container-type: inline-size;
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px 14px;
+}
+
+.ads-card-list-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 6px 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.ads-card-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px var(--separator);
+}
+
+.ads-card-row.is-checked {
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.ads-card-row.is-paused .ads-card-thumb,
+.ads-card-row.is-paused .ads-card-preview {
+  opacity: 0.6;
+}
+
+/* Un anuncio: dibujado a la izquierda, lo demás a la derecha (una debajo de otra si no hay sitio). */
+.ads-card-row.is-ad {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+@container (max-width: 680px) {
+  .ads-card-row.is-ad {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.ads-card-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 0.5px var(--separator);
+}
+
+.ads-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Un logo va entero, sobre blanco (como en Google Ads). */
+.ads-card-thumb.is-logo {
+  background: #fff;
+}
+
+.ads-card-thumb.is-logo img {
+  padding: 8px;
+  object-fit: contain;
+}
+
+.ads-card-thumb.is-empty svg {
+  width: 28px;
+  height: 28px;
+}
+
+.ads-card-thumb-type {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.ads-card-thumb-type svg {
+  width: 13px;
+  height: 13px;
+}
+
+.ads-card-body {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+}
+
+.ads-card-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 0;
+}
+
+.ads-card-facts span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.ads-card-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.ads-card-note.is-warning {
+  color: var(--ads-warning);
+}
+
+.ads-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 6px 12px;
+  margin: 2px 0 0;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--separator);
+}
+
+.ads-card-metrics div {
+  min-width: 0;
+}
+
+.ads-card-metrics dt {
+  overflow: hidden;
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+
+.ads-card-metrics dd {
+  margin: 1px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* La campaña (o el grupo) elegida, arriba: su imagen, lo que se sabe de ella y su estado explicado. */
+.ads-panel-head .ads-card-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+}
+
+.ads-panel-head .ads-card-thumb.is-logo img {
+  padding: 5px;
+}
+
+.ads-panel-head .ads-card-thumb-type {
+  display: none;
+}
+
+.ads-panel-facts {
+  display: grid;
+  flex-basis: 100%;
+  gap: 6px;
+}
+
 .ads-tab {
   display: flex;
   align-items: center;
@@ -2864,4 +3055,8 @@
 .ads-new-campaign > .ads-composer-head .btn svg {
   width: 13px;
   height: 13px;
+}
+
+.ads-panel-note {
+  margin: 8px 16px 0;
 }

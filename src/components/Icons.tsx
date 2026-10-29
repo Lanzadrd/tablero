@@ -162,6 +162,14 @@ export const Search = () => (
   </svg>
 )
 
+/** Llave (palabras clave de Google Ads) */
+export const Key = () => (
+  <svg {...stroke}>
+    <circle cx="5.25" cy="10.75" r="2.75" />
+    <path d="m7.2 8.8 6.05-6.05M11.25 4.75l1.75 1.75M9.75 6.25l1.25 1.25" />
+  </svg>
+)
+
 /** Archivada: una bandeja donde se guarda */
 export const Archive = () => (
   <svg {...stroke}>

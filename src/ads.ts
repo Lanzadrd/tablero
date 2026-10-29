@@ -221,6 +221,78 @@ export interface AdRow {
   sinHijos?: boolean
   /** De qué campaña (y conjunto) es: para bajar a él desde la lista de toda la cuenta. */
   padres?: { campana?: { id: string; nombre: string } | null; conjunto?: { id: string; nombre: string } | null } | null
+  /** Google Ads: cómo puja la campaña («Maximizar conversiones») y su puntuación de optimización (de 0 a 1). */
+  puja?: string | null
+  optimizacion?: number | null
+  /** Google Ads: su estado en una frase, con lo que se pierde (presupuesto, cuota de búsqueda…). */
+  explicacion?: string | null
+  /** Google Ads: la imagen que la representa (`logo`: se enseña entera). */
+  imagen?: { url: string; logo: boolean } | null
+  /** Google Ads: el anuncio, para dibujarlo como sale en Google. */
+  vista?: AdPreview
+}
+
+/** Un anuncio de Google como sale: de búsqueda (títulos, descripciones, enlaces) o con imágenes. */
+export interface AdPreview {
+  tipo: 'busqueda' | 'imagen' | 'otro'
+  titulos: string[]
+  descripciones: string[]
+  rutas: string[]
+  url: string | null
+  empresa: string | null
+  accion: string | null
+  imagenes: string[]
+  logo: string | null
+  /** La calidad del anuncio que da Google: EXCELLENT, GOOD, AVERAGE, POOR, PENDING… */
+  calidad: string | null
+  enlaces: string[]
+  destacados: string[]
+}
+
+/** Lo que tiene cualquier fila de Google Ads con métricas (palabras clave, términos de búsqueda). */
+interface GoogleListRow {
+  id: string
+  campana: AdRef | null
+  grupo: AdRef | null
+  metricas: Metrics
+}
+
+export interface Keyword extends GoogleListRow {
+  texto: string
+  /** BROAD, PHRASE o EXACT. */
+  concordancia: string | null
+  estado: AdRow['estado']
+  /** El nivel de calidad (1–10), si Google lo da. */
+  calidad: number | null
+  aviso: string | null
+}
+
+export interface SearchTerm extends GoogleListRow {
+  termino: string
+  estado: string | null
+  palabra: { texto: string; concordancia: string | null } | null
+}
+
+/** Un recurso de Google Ads (imagen, logo, enlace de sitio, texto destacado…) y de dónde es. */
+export interface GoogleAsset {
+  id: string
+  /** Para qué se usa: BUSINESS_LOGO, MARKETING_IMAGE, SITELINK, CALLOUT, STRUCTURED_SNIPPET… */
+  tipo: string
+  texto: string | null
+  detalle: string[]
+  imagen: string | null
+  ancho: number | null
+  alto: number | null
+  url: string | null
+  nivel: 'cuenta' | 'campana' | 'grupo'
+  campana: AdRef | null
+  grupo: AdRef | null
+}
+
+export interface GoogleList<T> {
+  moneda: string
+  filas: T[]
+  totales: Metrics
 }
 
 // ── Editar lo publicado ──
@@ -353,6 +425,8 @@ export interface AdRowWithMetrics extends AdRow {
 
 /** Lo que enseña «En marcha» de un nivel, venga de donde venga. */
 export interface RunningRows {
+  /** Algo que decir de las cifras (las de las campañas inteligentes de Google Ads son de la campaña). */
+  nota?: string
   moneda: string
   periodo: Period
   nivel: Level
@@ -587,6 +661,12 @@ export const googleApi = {
   update: (account: string, level: Level, id: string, cambios: GoogleEditChanges) =>
     call<GoogleEditDetails>('POST', '/api/google/editar', { cuenta: account, nivel: level, id, cambios }),
   remove: (account: string, level: Level, id: string) => call<{ id: string }>('POST', '/api/google/quitar', { cuenta: account, nivel: level, id }),
+  keywords: (account: string, period: Period, path: AdPath, fresh = false) =>
+    call<GoogleList<Keyword>>('GET', `/api/google/palabras?${rowsQuery(account, period, path, fresh)}`),
+  searchTerms: (account: string, period: Period, path: AdPath, fresh = false) =>
+    call<GoogleList<SearchTerm>>('GET', `/api/google/terminos?${rowsQuery(account, period, path, fresh)}`),
+  assets: (account: string, path: AdPath, fresh = false) =>
+    call<{ recursos: GoogleAsset[] }>('GET', `/api/google/recursos?${rowsQuery(account, '7d', path, fresh)}`).then((r) => r.recursos),
 }
 
 export const metaApi = {

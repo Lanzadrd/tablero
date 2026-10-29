@@ -81,6 +81,32 @@ export interface RunningSource {
   archive?: (account: string, level: Level, id: string) => Promise<unknown>
   /** Borrar (Meta) o quitar (Google Ads): no se puede deshacer. */
   remove?: { label: string; run: (account: string, level: Level, id: string) => Promise<unknown> }
+  /** Cada fila, una tarjeta con su imagen (y cada anuncio, dibujado), en vez de la tabla (Google Ads). */
+  cards?: boolean
+  /** Un anuncio como sale (a la izquierda de su tarjeta) y lo que se dice de él (su calidad, sus textos). */
+  preview?: (row: AdRow) => ReactNode
+  details?: (row: AdRow) => ReactNode
+  /** Al abrir una campaña, a qué nivel se va (sin decirlo, a los conjuntos). */
+  openCampaignTo?: Level
+  /** Pestañas de más, después de las de nivel, con lo elegido (Google Ads: palabras clave, términos, recursos). */
+  tabs?: ExtraTab[]
+}
+
+/** Una pestaña de más: su contenido lo pinta ella, con la cuenta, el periodo y lo elegido. */
+export interface ExtraTab {
+  key: string
+  label: string
+  icon: () => ReactNode
+  render: (props: ExtraTabProps) => ReactNode
+}
+
+export interface ExtraTabProps {
+  account: AdAccount
+  period: Period
+  /** Lo elegido arriba (campañas y conjuntos). */
+  path: AdPath
+  /** Sube cada vez que se pulsa «Actualizar». */
+  refresh: number
 }
 
 export interface EditorProps {
@@ -181,7 +207,7 @@ function formatMetric(value: number | null, format: Format, currency: string) {
 }
 
 /** En las filas, un recuento a cero no dice nada: mejor la raya. */
-const cellText = (value: number | null, format: Format, currency: string) =>
+export const cellText = (value: number | null, format: Format, currency: string) =>
   (format === 'count' || format === 'number') && !value ? '—' : formatMetric(value, format, currency)
 
 /** Columnas de los totales: filas iguales de como mucho `max` (con 4: 6 → 3 + 3, no 4 + 2). */
@@ -224,6 +250,10 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
    */
   const [campaigns, setCampaigns] = useState<AdRef[]>([])
   const [adSets, setAdSets] = useState<AdRef[]>([])
+  /** Una pestaña de más abierta (en vez de la del nivel), y las veces que se ha pulsado «Actualizar». */
+  const [tab, setTab] = useState<string | null>(null)
+  const [refresh, setRefresh] = useState(0)
+  const extra = source.tabs?.find((t) => t.key === tab) ?? null
   // Lo que filtra este nivel: los conjuntos elegidos (en los anuncios) o las campañas; y de qué nivel es.
   const scopeLevel: Level | null = level === 'anuncio' && adSets.length ? 'conjunto' : level !== 'campana' && campaigns.length ? 'campana' : null
   const scope = scopeLevel === 'conjunto' ? adSets : scopeLevel === 'campana' ? campaigns : []
@@ -290,6 +320,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
 
   /** Cambia de nivel (con lo elegido, o con otra elección: al abrir una campaña o un conjunto). */
   const show = (nextLevel: Level, nextCampaigns = campaigns, nextAdSets = adSets) => {
+    setTab(null)
     setLevel(nextLevel)
     setCampaigns(nextCampaigns)
     setAdSets(nextAdSets)
@@ -336,6 +367,15 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
     } else if (level === 'conjunto') setAdSets(next)
   }
   const chosen = level === 'campana' ? campaigns : level === 'conjunto' ? adSets : []
+
+  /** Abre una pestaña de más, con lo elegido. */
+  const openTab = (key: string) => {
+    setTab(key)
+    setEditing(null)
+    setAdding(false)
+    setAddingAd(false)
+    setBanner(null)
+  }
 
   /** Quita lo elegido en un nivel (la × de su pestaña); sin campañas, tampoco quedan conjuntos. */
   const clear = (l: Level) => {
@@ -394,6 +434,35 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
   const shown = rows.filter((r) => r.estado === 'activa' || (r.metricas.gasto ?? 0) > 0 || touched.has(r.id))
   const folded = rows.length - shown.length
   const visible = showPaused ? rows : shown
+
+  /** Lo de cada fila (en la tabla o en su tarjeta). */
+  const rowProps = (r: AdRow & { metricas: MetricValues }): RowProps => ({
+    row: r,
+    level,
+    source,
+    metrics,
+    currency,
+    parentStopped: stopped(current?.padre ?? null),
+    busy: busy === r.id,
+    checked: level !== 'anuncio' ? chosen.some((c) => c.id === r.id) : undefined,
+    onCheck: level !== 'anuncio' ? (on) => check([r], on) : undefined,
+    onOpen: r.sinHijos
+      ? undefined
+      : level === 'campana'
+        ? () => show(source.openCampaignTo ?? 'conjunto', [{ id: r.id, nombre: r.nombre }], [])
+        : level === 'conjunto'
+          ? () => show('anuncio', campaigns, [{ id: r.id, nombre: r.nombre }])
+          : undefined,
+    context:
+      level === 'conjunto' && !single
+        ? (r.padres?.campana?.nombre ?? null)
+        : level === 'anuncio' && !(scopeLevel === 'conjunto' && single)
+          ? (r.padres?.conjunto?.nombre ?? null)
+          : null,
+    actions: rowActions(r),
+    onChange: (estado) => change(r, estado),
+    quiet: Boolean(current?.nota),
+  })
 
   if (editing && source.editor) {
     return source.editor({
@@ -483,7 +552,10 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
           aria-label="Actualizar"
           title="Actualizar"
           disabled={loading}
-          onClick={() => load(true)}
+          onClick={() => {
+            load(true)
+            setRefresh((n) => n + 1)
+          }}
         >
           <Icon.Reload />
         </button>
@@ -527,17 +599,42 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
       )}
 
       <div className="ads-folder">
-        <LevelTabs source={source} level={level} campaigns={campaigns} adSets={adSets} onLevel={(l) => show(l)} onClear={clear} />
-        <section className="ads-card ads-campaigns" role="tabpanel" aria-label={words.plural.charAt(0).toUpperCase() + words.plural.slice(1)}>
+        <LevelTabs
+          source={source}
+          level={extra ? null : level}
+          campaigns={campaigns}
+          adSets={adSets}
+          tab={extra?.key ?? null}
+          onLevel={(l) => show(l)}
+          onTab={openTab}
+          onClear={clear}
+        />
+        <section className="ads-card ads-campaigns" role="tabpanel" aria-label={extra ? extra.label : words.plural.charAt(0).toUpperCase() + words.plural.slice(1)}>
+          {extra ? (
+            <>
+              {(adSets.length > 0 || campaigns.length > 0) && (
+                <div className="ads-panel-head">
+                  <span className="ads-panel-name">
+                    {(adSets.length ? adSets : campaigns).length === 1
+                      ? (adSets.length ? adSets : campaigns)[0].nombre
+                      : `${(adSets.length ? adSets : campaigns).length} ${source.levels[adSets.length ? 'conjunto' : 'campana'].plural}: ${(adSets.length ? adSets : campaigns).map((s) => s.nombre).join(' · ')}`}
+                  </span>
+                </div>
+              )}
+              {extra.render({ account, period, path: { campanas: campaigns, conjuntos: adSets }, refresh })}
+            </>
+          ) : (
+          <>
           {scopeLevel && (
             <div className="ads-panel-head">
+              {source.cards && single && current?.padre && <Thumb row={current.padre} />}
               <span ref={here} tabIndex={-1} className="ads-panel-name">
                 {single ? single.nombre : `${scope.length} ${source.levels[scopeLevel].plural}: ${scope.map((s) => s.nombre).join(' · ')}`}
               </span>
               {current?.padre && (
                 <span className="ads-crumbs-info">
                   <span className={cx('ads-delivery', `is-${current.padre.entrega.tono}`)}>{current.padre.entrega.texto}</span>
-                  {current.padre.presupuesto && <span>{budgetText(current.padre.presupuesto, currency)}</span>}
+                  {current.padre.presupuesto && !source.cards && <span>{budgetText(current.padre.presupuesto, currency)}</span>}
                   {current.padre.enlace && (
                     <a
                       className="ads-row-link"
@@ -579,6 +676,14 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
                   Nuevo anuncio
                 </button>
               )}
+              {source.cards && single && current?.padre && (
+                <div className="ads-panel-facts">
+                  <RowFacts row={current.padre} currency={currency} />
+                  {current.padre.explicacion && (
+                    <p className={cx('ads-card-note', current.padre.entrega.tono === 'warning' && 'is-warning')}>{current.padre.explicacion}</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {!current ? (
@@ -605,7 +710,22 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
             </div>
           ) : (
             <>
-              {visible.length > 0 ? (
+              {current.nota && <p className="ads-card-note ads-panel-note">{current.nota}</p>}
+              {visible.length > 0 && source.cards ? (
+                <div className="ads-card-list">
+                  {level !== 'anuncio' && (
+                    <div className="ads-card-list-head">
+                      <CheckAll rows={visible} chosen={chosen} label={`Elegir ${visible.length === 1 ? words.el : `los ${visible.length} ${words.plural}`}`} onCheck={check} />
+                      <span>
+                        {visible.length} {visible.length === 1 ? words.nombre.toLowerCase() : words.plural}
+                      </span>
+                    </div>
+                  )}
+                  {visible.map((r) => (
+                    <RowCard key={r.id} {...rowProps(r)} />
+                  ))}
+                </div>
+              ) : visible.length > 0 ? (
                 <div className="ads-table-wrap">
                   <table className="ads-table">
                     <thead>
@@ -630,36 +750,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
                     </thead>
                     <tbody>
                       {visible.map((r) => (
-                        <Row
-                          key={r.id}
-                          row={r}
-                          level={level}
-                          source={source}
-                          metrics={metrics}
-                          currency={currency}
-                          parentStopped={stopped(current.padre)}
-                          busy={busy === r.id}
-                          checked={level !== 'anuncio' ? chosen.some((c) => c.id === r.id) : undefined}
-                          onCheck={level !== 'anuncio' ? (on) => check([r], on) : undefined}
-                          onOpen={
-                            r.sinHijos
-                              ? undefined
-                              : level === 'campana'
-                                ? () => show('conjunto', [{ id: r.id, nombre: r.nombre }], [])
-                                : level === 'conjunto'
-                                  ? () => show('anuncio', campaigns, [{ id: r.id, nombre: r.nombre }])
-                                  : undefined
-                          }
-                          context={
-                            level === 'conjunto' && !single
-                              ? (r.padres?.campana?.nombre ?? null)
-                              : level === 'anuncio' && !(scopeLevel === 'conjunto' && single)
-                                ? (r.padres?.conjunto?.nombre ?? null)
-                                : null
-                          }
-                          actions={rowActions(r)}
-                          onChange={(estado) => change(r, estado)}
-                        />
+                        <Row key={r.id} {...rowProps(r)} />
                       ))}
                     </tbody>
                   </table>
@@ -673,6 +764,8 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
                 </button>
               )}
             </>
+          )}
+          </>
           )}
         </section>
       </div>
@@ -811,14 +904,19 @@ function LevelTabs({
   level,
   campaigns,
   adSets,
+  tab,
   onLevel,
+  onTab,
   onClear,
 }: {
   source: RunningSource
-  level: Level
+  /** El nivel que se ve (null: una pestaña de más). */
+  level: Level | null
   campaigns: AdRef[]
   adSets: AdRef[]
+  tab: string | null
   onLevel: (level: Level) => void
+  onTab: (key: string) => void
   onClear: (level: Level) => void
 }) {
   const words = source.levels
@@ -832,7 +930,12 @@ function LevelTabs({
         : words[l].pestana
   const selected = (l: Level) => (l === 'campana' ? campaigns : l === 'conjunto' ? adSets : [])
   return (
-    <div className="ads-tabs" role="tablist" aria-label="Nivel">
+    <div
+      className={cx('ads-tabs', Boolean(source.tabs?.length) && 'has-extra')}
+      role="tablist"
+      aria-label="Nivel"
+      style={source.tabs?.length ? ({ '--extra': source.tabs.length } as CSSProperties) : undefined}
+    >
       {(['campana', 'conjunto', 'anuncio'] as const).map((l) => {
         const LevelIcon = LEVEL_ICONS[l]
         return (
@@ -858,7 +961,88 @@ function LevelTabs({
           </div>
         )
       })}
+      {source.tabs?.map((t) => (
+        <div key={t.key} className={cx('ads-tab', 'is-extra', t.key === tab && 'is-active')}>
+          <button type="button" role="tab" aria-selected={t.key === tab} className="ads-tab-button" title={t.label} onClick={() => onTab(t.key)}>
+            <t.icon />
+            <span>{t.label}</span>
+          </button>
+        </div>
+      ))}
     </div>
+  )
+}
+
+/** El icono de cada tipo de campaña de Google Ads (en su imagen y en sus datos). */
+const TYPE_ICONS: Record<string, () => ReactNode> = {
+  Búsqueda: Icon.Search,
+  Inteligente: Icon.Sparkles,
+  Display: Icon.Image,
+  'Demand Gen': Icon.Image,
+  Vídeo: Icon.Video,
+  'Máximo rendimiento': Icon.Chart,
+}
+const typeIcon = (tipo: string | null | undefined) => (tipo && TYPE_ICONS[tipo]) || Icon.Megaphone
+
+/** La imagen de una fila: la suya (un logo, entero; una foto, recortada) o, sin imagen, el icono de su tipo. */
+function Thumb({ row }: { row: AdRow }) {
+  const TypeIcon = typeIcon(row.tipo)
+  return (
+    <span className={cx('ads-card-thumb', row.imagen?.logo && 'is-logo', !row.imagen && 'is-empty')} aria-hidden="true">
+      {row.imagen ? <img src={row.imagen.url} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <TypeIcon />}
+      {row.imagen && row.tipo && (
+        <span className="ads-card-thumb-type">
+          <TypeIcon />
+        </span>
+      )}
+    </span>
+  )
+}
+
+/** Lo que se sabe de una campaña de Google Ads: cómo puja, su presupuesto y su puntuación de optimización. */
+function RowFacts({ row, currency }: { row: AdRow; currency: string }) {
+  const facts = [
+    row.puja,
+    row.presupuesto ? budgetText(row.presupuesto, currency) : null,
+    row.optimizacion != null ? `Optimización ${Math.round(row.optimizacion * 100)} %` : null,
+  ].filter(Boolean)
+  if (!facts.length) return null
+  return (
+    <p className="ads-card-facts">
+      {facts.map((fact) => (
+        <span key={fact}>{fact}</span>
+      ))}
+    </p>
+  )
+}
+
+/**
+ * Una fila como tarjeta (Google Ads): su imagen (o, un anuncio, dibujado como sale), su cabeza, lo que se sabe de
+ * ella, su estado explicado y sus métricas.
+ */
+function RowCard(props: RowProps) {
+  const { row: r, level, source, metrics, currency, checked = false } = props
+  const ad = level === 'anuncio' && r.vista && source.preview ? source.preview(r) : null
+  return (
+    <article className={cx('ads-card-row', ad !== null && 'is-ad', r.estado !== 'activa' && 'is-paused', checked && 'is-checked')}>
+      {ad !== null ? <div className="ads-card-preview">{ad}</div> : <Thumb row={r} />}
+      <div className="ads-card-body">
+        <RowHead {...props} />
+        <RowFacts row={r} currency={currency} />
+        {r.explicacion && <p className={cx('ads-card-note', r.entrega.tono === 'warning' && 'is-warning')}>{r.explicacion}</p>}
+        {level === 'anuncio' && source.details?.(r)}
+        {!props.quiet && (
+          <dl className="ads-card-metrics">
+            {metrics.map((m) => (
+              <div key={m.key}>
+                <dt title={m.hint}>{m.label}</dt>
+                <dd>{cellText(r.metricas[m.key], m.format, currency)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
+    </article>
   )
 }
 
@@ -918,21 +1102,8 @@ function AutomaticBadge({ automaticas, name }: { automaticas: NonNullable<AdRow[
   )
 }
 
-function Row({
-  row: r,
-  level,
-  source,
-  metrics,
-  currency,
-  parentStopped,
-  busy,
-  checked = false,
-  onCheck,
-  onOpen,
-  onChange,
-  context,
-  actions,
-}: {
+/** Lo que recibe cada fila (en la tabla o en su tarjeta). */
+interface RowProps {
   row: AdRow & { metricas: MetricValues }
   level: Level
   source: RunningSource
@@ -948,8 +1119,29 @@ function Row({
   /** De qué campaña o conjunto es (en las listas de toda la cuenta). */
   context: string | null
   actions: (anchor: HTMLElement) => MenuItem[]
-}) {
-  const cell = useRef<HTMLTableCellElement>(null)
+  /** Sin cifras propias (las de las campañas inteligentes de Google Ads, que solo da la campaña). */
+  quiet?: boolean
+}
+
+/**
+ * La cabeza de una fila: la casilla, el interruptor (activar pide confirmación), la miniatura (anuncios de Meta), el
+ * nombre (que abre lo de debajo), lo que pasa con ella, su enlace y su menú.
+ */
+function RowHead({
+  row: r,
+  level,
+  source,
+  currency,
+  parentStopped,
+  busy,
+  checked = false,
+  onCheck,
+  onOpen,
+  onChange,
+  context,
+  actions,
+}: RowProps) {
+  const box = useRef<HTMLDivElement>(null)
   const more = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -959,9 +1151,8 @@ function Row({
   // La última palabra va pegada a la flecha: que no quede sola en otra línea.
   const cut = r.nombre.lastIndexOf(' ') + 1
   return (
-    <tr className={cx(!active && 'is-paused', checked && 'is-checked')}>
-      <th ref={cell} scope="row">
-        <div className="ads-row-name">
+    <>
+        <div ref={box} className="ads-row-name">
           {onCheck && (
             <input
               type="checkbox"
@@ -1037,8 +1228,8 @@ function Row({
           </div>
         </div>
         {menuOpen && more.current && <Menu anchor={more.current} items={actions(more.current)} label={`Opciones de «${r.nombre}»`} onClose={() => setMenuOpen(false)} />}
-        {confirming && cell.current && (
-          <Popover anchor={cell.current} placement="below-start" width={280} label={`Activar ${words.el}`} onClose={() => setConfirming(false)}>
+        {confirming && box.current && (
+          <Popover anchor={box.current} placement="below-start" width={280} label={`Activar ${words.el}`} onClose={() => setConfirming(false)}>
             <div className="ads-confirm">
               <p>
                 <b>{r.nombre}</b> {spends}.
@@ -1068,6 +1259,16 @@ function Row({
             </div>
           </Popover>
         )}
+    </>
+  )
+}
+
+function Row(props: RowProps) {
+  const { row: r, level, source, metrics, currency, checked = false } = props
+  return (
+    <tr className={cx(r.estado !== 'activa' && 'is-paused', checked && 'is-checked')}>
+      <th scope="row">
+        <RowHead {...props} />
       </th>
       {source.budgets.includes(level) && (
         <td>

@@ -222,10 +222,51 @@ const CHANNELS = {
 }
 
 /**
- * Las campañas que no se abren: las de Máximo rendimiento no tienen grupos de anuncios (tienen grupos de recursos), y
- * las inteligentes tienen uno que gestiona Google, sin métricas propias (Google Ads tampoco las abre).
+ * Las campañas que no se abren: las de Máximo rendimiento no tienen grupos de anuncios (tienen grupos de recursos).
+ * Las inteligentes sí: su grupo lo gestiona Google, pero su anuncio se ve.
  */
-const CLOSED_CHANNELS = ['PERFORMANCE_MAX', 'SMART']
+const CLOSED_CHANNELS = ['PERFORMANCE_MAX']
+
+/** Cómo puja la campaña, como lo dice Google Ads. */
+const BIDDING = {
+  MAXIMIZE_CONVERSIONS: 'Maximizar conversiones',
+  MAXIMIZE_CONVERSION_VALUE: 'Maximizar el valor de conversión',
+  TARGET_CPA: 'CPA objetivo',
+  TARGET_ROAS: 'ROAS objetivo',
+  TARGET_SPEND: 'Maximizar clics',
+  MANUAL_CPC: 'CPC manual',
+  ENHANCED_CPC: 'CPC mejorado',
+  TARGET_IMPRESSION_SHARE: 'Cuota de impresiones objetivo',
+  MANUAL_CPM: 'CPM manual',
+  TARGET_CPM: 'CPM objetivo',
+  MANUAL_CPV: 'CPV manual',
+  COMMISSION: 'Comisiones',
+}
+
+/** «10 %» (las cuotas de Google son fracciones). */
+const percent = (value) => `${Math.round(value * 100)} %`
+
+/**
+ * Lo que quiere decir el estado de una campaña, en una frase, con lo que se pierde si se sabe (la cuota de
+ * impresiones de búsqueda: en cuántas de las búsquedas en las que podría salir sale, y lo que pierde por presupuesto).
+ */
+export function explainOf(entity, cuota = null) {
+  const reasons = new Set(entity?.primaryStatusReasons ?? [])
+  const parts = []
+  if (reasons.has('BUDGET_CONSTRAINED')) {
+    parts.push(
+      cuota?.presupuesto ? `El presupuesto se acaba antes de tiempo: pierdes el ${percent(cuota.presupuesto)} de las impresiones por presupuesto.` : 'El presupuesto no llega para salir en todas las búsquedas.',
+    )
+  }
+  if (reasons.has('HAS_ADS_DISAPPROVED') || reasons.has('AD_GROUP_AD_DISAPPROVED')) parts.push('Hay anuncios rechazados: revisa sus políticas en Google Ads.')
+  if (reasons.has('HAS_ADS_LIMITED_BY_POLICY')) parts.push('Algún anuncio solo se muestra en parte por las políticas de Google.')
+  if (reasons.has('MOST_ADS_UNDER_REVIEW') || reasons.has('AD_GROUP_AD_UNDER_REVIEW')) parts.push('Google está revisando los anuncios.')
+  if (reasons.has('BIDDING_STRATEGY_LEARNING')) parts.push('Google está aprendiendo con esta forma de pujar: tarda unos días.')
+  if (reasons.has('BIDDING_STRATEGY_MISCONFIGURED') || reasons.has('BUDGET_MISCONFIGURED')) parts.push('Algo de la puja o del presupuesto está mal configurado.')
+  if (reasons.has('NO_KEYWORDS') || reasons.has('KEYWORDS_PAUSED')) parts.push('No tiene palabras clave activas.')
+  if (cuota?.total != null && entity?.status === 'ENABLED') parts.push(`Sales en el ${percent(cuota.total)} de las búsquedas en las que podrías aparecer.`)
+  return parts.length ? parts.join(' ') : null
+}
 
 /** Los anuncios sin nombre (casi todos), por su primer título o su tipo. */
 const AD_TYPES = {
@@ -238,8 +279,42 @@ const AD_TYPES = {
 }
 
 function adName(ad) {
-  const headline = ad?.responsiveSearchAd?.headlines?.[0]?.text ?? ad?.responsiveDisplayAd?.headlines?.[0]?.text ?? ad?.responsiveDisplayAd?.longHeadline?.text
+  const headline =
+    ad?.responsiveSearchAd?.headlines?.[0]?.text ??
+    ad?.smartCampaignAd?.headlines?.[0]?.text ??
+    ad?.demandGenMultiAssetAd?.headlines?.[0]?.text ??
+    ad?.responsiveDisplayAd?.headlines?.[0]?.text ??
+    ad?.responsiveDisplayAd?.longHeadline?.text
   return ad?.name || headline || `${AD_TYPES[ad?.type] ?? 'Anuncio'} ${ad?.id ?? ''}`.trim()
+}
+
+/**
+ * Lo que hace falta para dibujar un anuncio como sale en Google: de búsqueda (los de búsqueda adaptables y los de
+ * las campañas inteligentes) o con imágenes (Demand Gen, display adaptables). Las imágenes van por su recurso
+ * («customers/…/assets/…»): luego se cambian por su dirección.
+ */
+export function adPreviewOf(result) {
+  const ad = result?.adGroupAd?.ad ?? {}
+  const texts = (list) => (list ?? []).map((a) => a?.text).filter(Boolean)
+  const images = (...lists) => lists.flatMap((list) => (list ?? []).map((i) => i?.asset)).filter(Boolean)
+  const search = ad.responsiveSearchAd ?? ad.smartCampaignAd ?? null
+  const visual = ad.demandGenMultiAssetAd ?? ad.responsiveDisplayAd ?? null
+  const source = search ?? visual ?? {}
+  return {
+    tipo: search ? 'busqueda' : visual ? 'imagen' : 'otro',
+    titulos: [...texts(source.headlines), ...(visual?.longHeadline?.text ? [visual.longHeadline.text] : [])],
+    descripciones: texts(source.descriptions),
+    rutas: [ad.responsiveSearchAd?.path1, ad.responsiveSearchAd?.path2].filter(Boolean),
+    url: ad.finalUrls?.[0] ?? null,
+    empresa: visual?.businessName ?? null,
+    accion: visual?.callToActionText ?? null,
+    imagenes: images(visual?.marketingImages, visual?.squareMarketingImages, visual?.portraitMarketingImages),
+    logos: images(visual?.logoImages),
+    calidad: result?.adGroupAd?.adStrength ?? null,
+    // De la campaña o de la cuenta (enlaces de sitio, textos destacados): se ponen después.
+    enlaces: [],
+    destacados: [],
+  }
 }
 
 /** El presupuesto de la campaña: diario o, si es de un periodo, el total. Los grupos y los anuncios no tienen. */
@@ -260,6 +335,15 @@ export function googleRowOf(result, level = 'campana') {
   return {
     id,
     nombre: (level === 'anuncio' ? adName(ad) : entity?.name) || id,
+    ...(level === 'campana'
+      ? {
+          puja: BIDDING[entity?.biddingStrategyType] ?? null,
+          optimizacion: Number.isFinite(entity?.optimizationScore) ? entity.optimizationScore : null,
+          explicacion: explainOf(entity),
+        }
+      : {}),
+    ...(level === 'anuncio' ? { vista: adPreviewOf(result) } : {}),
+    imagen: null,
     estado: entity?.status === 'ENABLED' ? 'activa' : 'pausada',
     entrega: googleDelivery(entity, level),
     presupuesto: level === 'campana' ? budgetOf(result.campaignBudget) : null,
@@ -297,7 +381,13 @@ export function googleRowsOf(entities, metricRows, level) {
     const row = googleRowOf(result, level)
     const raw = stats.get(row.id)
     for (const field of SUMMED) sum[field] += Number(raw?.[field]) || 0
-    return { ...row, metricas: googleMetrics(raw) }
+    if (level !== 'campana') return { ...row, metricas: googleMetrics(raw) }
+    // Las cuotas de búsqueda (solo las campañas que salen en la búsqueda): no se suman.
+    const share = (value) => (Number.isFinite(value) ? value : null)
+    const cuota = raw?.searchImpressionShare != null
+      ? { total: share(raw.searchImpressionShare), presupuesto: share(raw.searchBudgetLostImpressionShare), ranking: share(raw.searchRankLostImpressionShare) }
+      : null
+    return { ...row, cuota, explicacion: explainOf(result.campaign, cuota), metricas: googleMetrics(raw) }
   })
   rows.sort(
     (a, b) =>
@@ -317,9 +407,13 @@ const LEVEL_QUERIES = {
   campana: {
     entities:
       'SELECT campaign.id, campaign.name, campaign.status, campaign.primary_status, campaign.primary_status_reasons, ' +
-      'campaign.advertising_channel_type, campaign_budget.amount_micros, campaign_budget.total_amount_micros FROM campaign',
+      'campaign.advertising_channel_type, campaign.bidding_strategy_type, campaign.optimization_score, ' +
+      'campaign_budget.amount_micros, campaign_budget.total_amount_micros FROM campaign',
     status: `campaign.status ${ACTIVE}`,
-    metrics: `SELECT campaign.id, ${METRIC_FIELDS} FROM campaign`,
+    // Con las cuotas de impresiones de búsqueda (en cuántas búsquedas sale, y lo que pierde por presupuesto o ranking).
+    metrics:
+      `SELECT campaign.id, ${METRIC_FIELDS}, metrics.search_impression_share, metrics.search_budget_lost_impression_share, ` +
+      'metrics.search_rank_lost_impression_share FROM campaign',
   },
   conjunto: {
     entities:
@@ -328,16 +422,171 @@ const LEVEL_QUERIES = {
     metrics: `SELECT ad_group.id, ${METRIC_FIELDS} FROM ad_group`,
   },
   anuncio: {
+    // Con lo que hace falta para dibujarlos: textos, rutas, dirección, imágenes y la calidad del anuncio.
     entities:
-      'SELECT ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, ad_group_ad.ad.responsive_search_ad.headlines, ' +
-      'ad_group_ad.ad.responsive_display_ad.headlines, ad_group_ad.ad.responsive_display_ad.long_headline, ad_group_ad.status, ' +
-      'ad_group_ad.primary_status, ad_group_ad.primary_status_reasons, ad_group_ad.policy_summary.approval_status FROM ad_group_ad',
+      'SELECT ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, ad_group_ad.ad.final_urls, ' +
+      'ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, ad_group_ad.ad.responsive_search_ad.path1, ' +
+      'ad_group_ad.ad.responsive_search_ad.path2, ad_group_ad.ad.smart_campaign_ad.headlines, ad_group_ad.ad.smart_campaign_ad.descriptions, ' +
+      'ad_group_ad.ad.responsive_display_ad.headlines, ad_group_ad.ad.responsive_display_ad.long_headline, ad_group_ad.ad.responsive_display_ad.descriptions, ' +
+      'ad_group_ad.ad.responsive_display_ad.business_name, ad_group_ad.ad.responsive_display_ad.marketing_images, ' +
+      'ad_group_ad.ad.responsive_display_ad.square_marketing_images, ad_group_ad.ad.responsive_display_ad.logo_images, ' +
+      'ad_group_ad.ad.demand_gen_multi_asset_ad.headlines, ad_group_ad.ad.demand_gen_multi_asset_ad.descriptions, ' +
+      'ad_group_ad.ad.demand_gen_multi_asset_ad.business_name, ad_group_ad.ad.demand_gen_multi_asset_ad.call_to_action_text, ' +
+      'ad_group_ad.ad.demand_gen_multi_asset_ad.marketing_images, ad_group_ad.ad.demand_gen_multi_asset_ad.square_marketing_images, ' +
+      'ad_group_ad.ad.demand_gen_multi_asset_ad.portrait_marketing_images, ad_group_ad.ad.demand_gen_multi_asset_ad.logo_images, ad_group_ad.ad_strength, ' +
+      'ad_group_ad.status, ad_group_ad.primary_status, ad_group_ad.primary_status_reasons, ad_group_ad.policy_summary.approval_status FROM ad_group_ad',
     status: `ad_group_ad.status ${ACTIVE}`,
     metrics: `SELECT ad_group.id, ad_group_ad.ad.id, ${METRIC_FIELDS} FROM ad_group_ad`,
   },
 }
 
 const where = (...conditions) => ` WHERE ${conditions.filter(Boolean).join(' AND ')}`
+
+// ── Los recursos (assets): imágenes, logos, enlaces de sitio, textos destacados… ──
+
+const ASSET_FIELDS =
+  'asset.id, asset.type, asset.name, asset.final_urls, asset.image_asset.full_size.url, asset.image_asset.full_size.width_pixels, ' +
+  'asset.image_asset.full_size.height_pixels, asset.sitelink_asset.link_text, asset.sitelink_asset.description1, asset.sitelink_asset.description2, ' +
+  'asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, asset.text_asset.text, ' +
+  'asset.call_asset.phone_number'
+/** Los de la cuenta, los de cada campaña y los de cada grupo (los de lo que está activo o en pausa). */
+const ASSET_QUERIES = {
+  cuenta: `SELECT customer_asset.field_type, ${ASSET_FIELDS} FROM customer_asset WHERE customer_asset.status = 'ENABLED'`,
+  // Google pide en el SELECT lo que se filtra de otro recurso (el estado de la campaña o del grupo).
+  campana: `SELECT campaign.id, campaign.name, campaign.status, campaign_asset.field_type, ${ASSET_FIELDS} FROM campaign_asset WHERE campaign_asset.status = 'ENABLED' AND campaign.status ${ACTIVE}`,
+  grupo: `SELECT campaign.id, ad_group.id, ad_group.name, ad_group.status, ad_group_asset.field_type, ${ASSET_FIELDS} FROM ad_group_asset WHERE ad_group_asset.status = 'ENABLED' AND ad_group.status ${ACTIVE}`,
+}
+
+/** Un recurso de la cuenta, de una campaña o de un grupo: qué es (su uso: logo, enlace de sitio…), su texto o su imagen. */
+export function assetOf(result, nivel) {
+  const asset = result?.asset
+  if (!asset) return null
+  const link = nivel === 'cuenta' ? result.customerAsset : nivel === 'campana' ? result.campaignAsset : result.adGroupAsset
+  const image = asset.imageAsset?.fullSize
+  const sitelink = asset.sitelinkAsset
+  const snippet = asset.structuredSnippetAsset
+  return {
+    id: String(asset.id ?? asset.resourceName ?? ''),
+    tipo: link?.fieldType ?? asset.type ?? 'OTRO',
+    texto: sitelink?.linkText ?? asset.calloutAsset?.calloutText ?? snippet?.header ?? asset.textAsset?.text ?? asset.callAsset?.phoneNumber ?? null,
+    detalle: [sitelink?.description1, sitelink?.description2, ...(snippet?.values ?? [])].filter(Boolean),
+    imagen: image?.url ?? null,
+    ancho: Number(image?.widthPixels) || null,
+    alto: Number(image?.heightPixels) || null,
+    url: asset.finalUrls?.[0] ?? null,
+    nivel,
+    campana: nivel === 'cuenta' ? null : refOf(result.campaign),
+    grupo: nivel === 'grupo' ? refOf(result.adGroup) : null,
+  }
+}
+
+const PHOTOS = ['MARKETING_IMAGE', 'SQUARE_MARKETING_IMAGE', 'PORTRAIT_MARKETING_IMAGE', 'TALL_PORTRAIT_MARKETING_IMAGE', 'AD_IMAGE']
+const LOGOS = ['BUSINESS_LOGO', 'LOGO', 'LANDSCAPE_LOGO']
+
+/**
+ * La imagen que representa una campaña o un grupo: una foto suya si la hay; si no, su logo; si no, lo mismo de la
+ * campaña y luego de la cuenta. `logo`: es un logo (se enseña entero, sin recortar).
+ */
+export function pictureOf(assets, { campaign = null, adGroup = null } = {}) {
+  const pick = (list) => {
+    const photo = list.find((a) => a.imagen && PHOTOS.includes(a.tipo))
+    if (photo) return { url: photo.imagen, logo: false }
+    const logo = list.find((a) => a.imagen && LOGOS.includes(a.tipo))
+    return logo ? { url: logo.imagen, logo: true } : null
+  }
+  return (
+    (adGroup ? pick(assets.filter((a) => a.nivel === 'grupo' && a.grupo?.id === adGroup)) : null) ??
+    (campaign ? pick(assets.filter((a) => a.nivel === 'campana' && a.campana?.id === campaign)) : null) ??
+    pick(assets.filter((a) => a.nivel === 'cuenta'))
+  )
+}
+
+/**
+ * Lo que Google añade a los anuncios de una campaña: sus enlaces de sitio y textos destacados (si la campaña tiene,
+ * los suyos; si no, los de la cuenta, como hace Google), el nombre de la empresa y su logo.
+ */
+export function extensionsOf(assets, campaign) {
+  const of = (types) => {
+    const own = assets.filter((a) => types.includes(a.tipo) && a.nivel === 'campana' && a.campana?.id === campaign)
+    return own.length ? own : assets.filter((a) => types.includes(a.tipo) && a.nivel === 'cuenta')
+  }
+  const texts = (types) => [...new Set(of(types).map((a) => a.texto).filter(Boolean))]
+  return {
+    enlaces: texts(['SITELINK']).slice(0, 4),
+    destacados: texts(['CALLOUT']).slice(0, 4),
+    empresa: texts(['BUSINESS_NAME'])[0] ?? null,
+    logo: of(LOGOS).find((a) => a.imagen)?.imagen ?? null,
+  }
+}
+
+/** Una consulta con lo elegido (los grupos, si hay; si no, las campañas), comprobado. */
+function filterOf({ campaigns = [], adGroups = [] } = {}) {
+  for (const objectId of [...campaigns, ...adGroups]) {
+    if (!/^\d{1,20}$/.test(objectId ?? '')) throw new HttpError(400, 'Campaña o grupo no válido')
+  }
+  if (campaigns.length > MAX_FILTER || adGroups.length > MAX_FILTER) throw new HttpError(400, `Como mucho ${MAX_FILTER} a la vez`)
+  const [field, ids] = adGroups.length ? ['ad_group.id', adGroups] : campaigns.length ? ['campaign.id', campaigns] : [null, []]
+  return { within: ids.length ? `${field} IN (${ids.join(', ')})` : null, key: ids.length ? [...ids].sort().join(',') : 'cuenta' }
+}
+
+// ── Palabras clave y términos de búsqueda ──
+
+const KEYWORD_QUERY =
+  'SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group.status, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ' +
+  'ad_group_criterion.keyword.match_type, ad_group_criterion.status, ad_group_criterion.quality_info.quality_score, ' +
+  'ad_group_criterion.system_serving_status, ad_group_criterion.approval_status FROM ad_group_criterion'
+const LIVE_KEYWORDS = `campaign.status ${ACTIVE} AND ad_group.status ${ACTIVE} AND ad_group_criterion.status ${ACTIVE}`
+const TERMS_QUERY =
+  'SELECT search_term_view.search_term, search_term_view.status, segments.keyword.info.text, segments.keyword.info.match_type, ' +
+  `campaign.id, campaign.name, ad_group.id, ad_group.name, ${METRIC_FIELDS} FROM search_term_view`
+const TERM_STATES = { ADDED: 'Añadido como palabra clave', EXCLUDED: 'Excluido', ADDED_EXCLUDED: 'Añadido y excluido' }
+
+const byClicks = (a, b) => b.metricas.clics - a.metricas.clics || b.metricas.impresiones - a.metricas.impresiones
+
+/** Las palabras clave (activas y en pausa) con sus métricas del periodo; primero las activas, por clics. */
+export function keywordRowsOf(entities, metricRows) {
+  const keyOf = (r) => `${r.adGroup?.id}~${r.adGroupCriterion?.criterionId}`
+  const stats = new Map(metricRows.map((r) => [keyOf(r), r.metrics]))
+  const sum = Object.fromEntries(SUMMED.map((field) => [field, 0]))
+  const filas = entities.map((r) => {
+    const c = r.adGroupCriterion ?? {}
+    const raw = stats.get(keyOf(r))
+    for (const field of SUMMED) sum[field] += Number(raw?.[field]) || 0
+    return {
+      id: keyOf(r),
+      texto: c.keyword?.text ?? '',
+      concordancia: c.keyword?.matchType ?? null,
+      estado: c.status === 'ENABLED' ? 'activa' : 'pausada',
+      calidad: Number.isFinite(c.qualityInfo?.qualityScore) ? c.qualityInfo.qualityScore : null,
+      aviso: c.approvalStatus === 'DISAPPROVED' ? 'Rechazada' : c.systemServingStatus === 'RARELY_SERVED' ? 'Pocas búsquedas' : null,
+      campana: refOf(r.campaign),
+      grupo: refOf(r.adGroup),
+      metricas: googleMetrics(raw),
+    }
+  })
+  filas.sort((a, b) => (a.estado === 'pausada') - (b.estado === 'pausada') || byClicks(a, b) || a.texto.localeCompare(b.texto, 'es'))
+  return { filas, totales: googleMetrics(sum) }
+}
+
+/** Lo que la gente buscó de verdad, con la palabra clave que lo trajo; por clics. */
+export function searchTermRowsOf(results) {
+  const sum = Object.fromEntries(SUMMED.map((field) => [field, 0]))
+  const filas = results.map((r) => {
+    for (const field of SUMMED) sum[field] += Number(r.metrics?.[field]) || 0
+    const keyword = r.segments?.keyword?.info
+    return {
+      id: `${r.adGroup?.id}~${r.searchTermView?.searchTerm}~${keyword?.text ?? ''}`,
+      termino: r.searchTermView?.searchTerm ?? '',
+      estado: TERM_STATES[r.searchTermView?.status] ?? null,
+      palabra: keyword?.text ? { texto: keyword.text, concordancia: keyword.matchType ?? null } : null,
+      campana: refOf(r.campaign),
+      grupo: refOf(r.adGroup),
+      metricas: googleMetrics(r.metrics),
+    }
+  })
+  filas.sort((a, b) => byClicks(a, b) || a.termino.localeCompare(b.termino, 'es'))
+  return { filas, totales: googleMetrics(sum) }
+}
 
 /** Cada nivel, para pausar o activar: su servicio y el nombre del recurso. */
 const MUTATIONS = {
@@ -688,25 +937,139 @@ export function createGoogle({ fetch: fetchImpl = globalThis.fetch, now = () => 
       `campanas:${customer}:${period}:${level}:${ids.length ? [...ids].sort().join(',') : 'cuenta'}`,
       fresh,
       async () => {
-        const [entities, metrics, parentRows] = await Promise.all([
+        const parentWhere = parentLevel ? `${parentLevel === 'campana' ? 'campaign' : 'ad_group'}.id = ${parent}` : null
+        const [entities, metrics, parentRows, parentMetrics, assets] = await Promise.all([
           search(customer, q.entities + where(within, q.status), login),
           // Solo salen las filas con algo en el periodo; las demás, a cero.
           search(customer, q.metrics + where(within, q.status, during), login),
-          parentLevel ? search(customer, LEVEL_QUERIES[parentLevel].entities + where(`${parentLevel === 'campana' ? 'campaign' : 'ad_group'}.id = ${parent}`), login) : [],
+          parentLevel ? search(customer, LEVEL_QUERIES[parentLevel].entities + where(parentWhere), login) : [],
+          // Las del padre, para saber cuánto pierde (las cuotas de búsqueda de la campaña).
+          parentLevel ? search(customer, LEVEL_QUERIES[parentLevel].metrics + where(parentWhere, during), login) : [],
+          // Las imágenes, logos y enlaces adornan: si no se pueden leer, se sigue sin ellos.
+          assetsOf(customer, login, fresh).catch((err) => (err?.status === 401 ? Promise.reject(err) : [])),
         ])
         const { filas, totales } = googleRowsOf(entities, metrics, level)
+        const padre = parentRows[0] ? googleRowsOf(parentRows.slice(0, 1), parentMetrics, parentLevel).filas[0] : null
+        await decorate(filas, level, assets, customer, login, account)
+        if (padre) await decorate([padre], parentLevel, assets, customer, login, account)
+        // Las inteligentes no dan cifras por grupo ni por anuncio: arriba, las de la campaña (y se dice).
+        const smart = parentLevel === 'campana' && parentRows[0]?.campaign?.advertisingChannelType === 'SMART' && !totales.impresiones && padre?.metricas.impresiones
         return {
           moneda: account.moneda,
           periodo: period,
           nivel: level,
           actualizado: new Date(now()).toISOString(),
-          padre: parentRows[0] ? googleRowOf(parentRows[0], parentLevel) : null,
-          totales,
+          padre,
+          totales: smart ? padre.metricas : totales,
+          ...(smart ? { nota: 'Las campañas inteligentes no dan cifras por grupo ni por anuncio: arriba, las de toda la campaña.' } : {}),
           filas,
         }
       },
       METRICS_TTL,
     )
+  }
+
+  /** Los recursos de la cuenta, de sus campañas y de sus grupos (un rato guardados: cambian poco). */
+  function assetsOf(customer, login, fresh = false) {
+    return cached(`recursos:${customer}`, fresh, async () => {
+      const lists = await Promise.all(
+        Object.entries(ASSET_QUERIES).map(([nivel, query]) => search(customer, query, login).then((rows) => rows.map((r) => assetOf(r, nivel)).filter(Boolean))),
+      )
+      return lists.flat()
+    })
+  }
+
+  /**
+   * Pone a cada fila su imagen (la del anuncio, o la de su grupo, su campaña o la cuenta) y, a los anuncios, lo que
+   * Google les añade (enlaces de sitio, textos destacados, logo, nombre de la empresa) y la dirección de sus imágenes.
+   */
+  async function decorate(rows, level, assets, customer, login, account) {
+    for (const row of rows) {
+      const campaign = level === 'campana' ? row.id : (row.padres?.campana?.id ?? null)
+      const adGroup = level === 'conjunto' ? row.id : level === 'anuncio' ? (row.padres?.conjunto?.id ?? null) : null
+      row.imagen = pictureOf(assets, { campaign, adGroup })
+      if (level === 'anuncio' && row.vista) {
+        const extras = extensionsOf(assets, campaign)
+        // El nombre de la empresa: el del anuncio, el de su campaña o la cuenta, el de cualquier campaña; si no, el de la cuenta.
+        const anyName = assets.find((a) => a.tipo === 'BUSINESS_NAME' && a.texto)?.texto
+        Object.assign(row.vista, { enlaces: extras.enlaces, destacados: extras.destacados, empresa: row.vista.empresa ?? extras.empresa ?? anyName ?? account.nombre })
+        row.vista.logo = extras.logo
+      }
+    }
+    if (level !== 'anuncio') return
+    const names = [...new Set(rows.flatMap((r) => [...(r.vista?.imagenes ?? []), ...(r.vista?.logos ?? [])]))].filter((n) => /^customers\/\d+\/assets\/\d+$/.test(n))
+    const found = names.length
+      ? await search(customer, `SELECT asset.resource_name, asset.image_asset.full_size.url FROM asset${where(`asset.resource_name IN (${names.slice(0, 200).map((n) => `'${n}'`).join(', ')})`)}`, login).catch(
+          (err) => (err?.status === 401 ? Promise.reject(err) : []),
+        )
+      : []
+    const urls = new Map(found.map((r) => [r.asset?.resourceName, r.asset?.imageAsset?.fullSize?.url]).filter(([, url]) => url))
+    for (const row of rows) {
+      if (!row.vista) continue
+      row.vista.imagenes = row.vista.imagenes.map((n) => urls.get(n)).filter(Boolean)
+      row.vista.logo = row.vista.logos.map((n) => urls.get(n)).find(Boolean) ?? row.vista.logo ?? null
+      delete row.vista.logos
+      if (row.vista.imagenes[0]) row.imagen = { url: row.vista.imagenes[0], logo: false }
+    }
+  }
+
+  /** Las palabras clave de la cuenta, de las campañas o de los grupos elegidos, con sus métricas del periodo. */
+  async function keywords(customer, { period = '7d', campaigns = [], adGroups = [], fresh = false } = {}) {
+    if (!Object.hasOwn(GOOGLE_PERIODS, period)) throw new HttpError(400, 'Periodo no válido')
+    const { within, key } = filterOf({ campaigns, adGroups })
+    const { account, login } = await accountOf(customer)
+    const during = `segments.date DURING ${GOOGLE_PERIODS[period]}`
+    return cached(
+      `palabras:${customer}:${period}:${key}`,
+      fresh,
+      async () => {
+        const [entities, metrics] = await Promise.all([
+          search(customer, KEYWORD_QUERY + where("ad_group_criterion.type = 'KEYWORD'", 'ad_group_criterion.negative = FALSE', LIVE_KEYWORDS, within), login),
+          search(
+            customer,
+            `SELECT campaign.status, ad_group.id, ad_group.status, ad_group_criterion.criterion_id, ad_group_criterion.status, ${METRIC_FIELDS} FROM keyword_view` +
+              where(LIVE_KEYWORDS, within, during),
+            login,
+          ),
+        ])
+        return { moneda: account.moneda, periodo: period, actualizado: new Date(now()).toISOString(), ...keywordRowsOf(entities, metrics) }
+      },
+      METRICS_TTL,
+    )
+  }
+
+  /** Lo que la gente buscó (los 300 con más impresiones del periodo), de la cuenta o de lo elegido. */
+  async function searchTerms(customer, { period = '7d', campaigns = [], adGroups = [], fresh = false } = {}) {
+    if (!Object.hasOwn(GOOGLE_PERIODS, period)) throw new HttpError(400, 'Periodo no válido')
+    const { within, key } = filterOf({ campaigns, adGroups })
+    const { account, login } = await accountOf(customer)
+    return cached(
+      `terminos:${customer}:${period}:${key}`,
+      fresh,
+      async () => {
+        const rows = await search(customer, `${TERMS_QUERY}${where(within, `segments.date DURING ${GOOGLE_PERIODS[period]}`)} ORDER BY metrics.impressions DESC LIMIT 300`, login)
+        return { moneda: account.moneda, periodo: period, actualizado: new Date(now()).toISOString(), ...searchTermRowsOf(rows) }
+      },
+      METRICS_TTL,
+    )
+  }
+
+  /**
+   * Los recursos que se ven con lo elegido: los de la cuenta y los de las campañas (y sus grupos) o de los grupos
+   * elegidos; sin elegir nada, todos.
+   */
+  async function assets(customer, { campaigns = [], adGroups = [], fresh = false } = {}) {
+    filterOf({ campaigns, adGroups })
+    const { login } = await accountOf(customer)
+    const all = await assetsOf(customer, login, fresh)
+    const inCampaigns = new Set(campaigns)
+    const inGroups = new Set(adGroups)
+    const shown = (a) =>
+      a.nivel === 'cuenta' ||
+      (!campaigns.length && !adGroups.length) ||
+      (a.nivel === 'campana' && inCampaigns.has(a.campana?.id)) ||
+      (a.nivel === 'grupo' && (adGroups.length ? inGroups.has(a.grupo?.id) : inCampaigns.has(a.campana?.id)))
+    return { recursos: all.filter(shown) }
   }
 
   /** Pausa o activa una campaña, un grupo de anuncios o un anuncio (enseguida: no hay confirmación aquí). */
@@ -861,5 +1224,21 @@ export function createGoogle({ fetch: fetchImpl = globalThis.fetch, now = () => 
     return { id, nivel: level }
   }
 
-  return { status, saveClient, connectUrl, finishConnect, disconnect, accounts, performance, setStatus, forget, details, update, remove: removeObject }
+  return {
+    status,
+    saveClient,
+    connectUrl,
+    finishConnect,
+    disconnect,
+    accounts,
+    performance,
+    keywords,
+    searchTerms,
+    assets,
+    setStatus,
+    forget,
+    details,
+    update,
+    remove: removeObject,
+  }
 }

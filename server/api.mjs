@@ -386,6 +386,20 @@ async function googleRoute(req, res, url, google) {
         }),
       )
     }
+    case '/api/google/palabras':
+    case '/api/google/terminos':
+    case '/api/google/recursos': {
+      only(req, 'GET')
+      const query = url.searchParams
+      const options = {
+        period: query.get('periodo') ?? '7d',
+        campaigns: idList(query.get('campana')),
+        adGroups: idList(query.get('conjunto')),
+        fresh: query.has('actualizar'),
+      }
+      const load = { '/api/google/palabras': google.keywords, '/api/google/terminos': google.searchTerms, '/api/google/recursos': google.assets }[url.pathname]
+      return send(res, 200, await load(query.get('cuenta'), options))
+    }
     case '/api/google/campanas/estado':
       only(req, 'POST')
       return send(res, 200, await google.setStatus(await readJson(req)))

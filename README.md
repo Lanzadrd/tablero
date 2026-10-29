@@ -209,15 +209,31 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
 ### Google Ads
 
 La vista **Google Ads** enseña tus cuentas de Google Ads (también las de una cuenta de administrador, entrando
-por ella) y, como en Meta Ads, «En marcha»: las campañas activas y en pausa con su presupuesto y sus métricas de
-hoy, ayer, 7 o 30 días (coste, conversiones, coste por conversión, tasa de conversión, valor, ROAS, impresiones,
-clics, CTR, CPC medio y CPM), los totales, y al pulsar una campaña sus grupos de anuncios y luego sus anuncios.
-Debajo de cada nombre sale lo que dice Google (limitada por presupuesto, aprendiendo, rechazado…) y el tipo de
-campaña; las de Máximo rendimiento y las inteligentes no se abren (no tienen grupos de anuncios propios). El
-interruptor pausa enseguida o activa (pide confirmación). Los botones **Campañas · Grupos · Anuncios** cambian de
-nivel, y el menú «…» de cada fila edita el nombre y el presupuesto diario de una campaña, el nombre y el CPC
-máximo de un grupo, y los títulos, descripciones, URL final y rutas de un anuncio de búsqueda adaptable; o la
-quita (no se puede deshacer).
+por ella) como Google Ads, pero con imágenes para ubicarse de un vistazo. Arriba, los totales del periodo (hoy,
+ayer, 7 o 30 días) con los nombres y en el orden de Google: Clics, Impr., CTR, CPC medio, Coste, Conversiones y
+Coste/conv. (y, si se eligen en «Métricas», tasa y valor de conversión, ROAS y CPM).
+
+- **Campañas**: cada una en su tarjeta, con su imagen (una foto suya, si no su logo, si no el de la cuenta, con el
+  icono de su tipo encima), su tipo, cómo puja («Maximizar conversiones»), su presupuesto, su puntuación de
+  optimización y su estado en una frase: «El presupuesto se acaba antes de tiempo: pierdes el 79 % de las
+  impresiones por presupuesto. Sales en el 10 % de las búsquedas en las que podrías aparecer» (las cuotas de
+  impresiones de búsqueda de Google). Al pulsar una, sus anuncios; arriba, ella con todo eso.
+- **Anuncios**: cada uno dibujado como sale. Los de búsqueda (también los de las campañas inteligentes), como en
+  Google: «Patrocinado», el logo y el nombre de la empresa, la web con sus rutas, los tres primeros títulos en
+  azul, la descripción con los textos destacados y los enlaces de sitio (los de la campaña o, si no tiene, los de
+  la cuenta). Los de Demand Gen y display, con su imagen, su logo y su botón. Al lado, la calidad del anuncio
+  (Excelente, Buena…), todos sus títulos y descripciones (plegados) y adónde lleva. Las campañas inteligentes no
+  dan cifras por anuncio: arriba salen las de la campaña, y se dice.
+- **Palabras clave**: con su concordancia como la escribe Google (amplia, "de frase", [exacta]), su nivel de
+  calidad (de 1 a 10, en color), si salen poco, y sus cifras, con el total abajo. **Términos de búsqueda**: lo que
+  la gente escribió de verdad y la palabra clave que lo trajo (los 300 con más impresiones). **Recursos**: las
+  imágenes y logos (con su tamaño), los enlaces de sitio, los textos destacados, los fragmentos estructurados, el
+  nombre de la empresa y las llamadas, cada uno con de dónde es (la cuenta, una campaña o un grupo).
+- Las pestañas, las casillas (que filtran lo de debajo), el interruptor (pausa enseguida o activa con
+  confirmación) y el menú «…» funcionan como en Meta Ads: edita el nombre y el presupuesto diario de una campaña,
+  el nombre y el CPC máximo de un grupo, y los títulos, descripciones, URL final y rutas de un anuncio de búsqueda
+  adaptable; o la quita (no se puede deshacer). Las de Máximo rendimiento no se abren (no tienen grupos de
+  anuncios, sino de recursos).
 
 - **Conectar (una vez)**: desde septiembre de 2026 no hace falta token de desarrollador ni cuenta de
   administrador; el nivel de acceso es el del proyecto de Google Cloud. En console.cloud.google.com, un proyecto
