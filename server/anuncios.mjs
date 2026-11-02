@@ -154,9 +154,13 @@ export function targetingOf(plan) {
   return targeting
 }
 
+/** El número de WhatsApp elegido, como lo quiere Meta en el conjunto (sin él, Meta usa el conectado a la página). */
+export const promotedNumber = (whatsapp) =>
+  whatsapp ? { ...(whatsapp.id ? { whats_app_business_phone_number_id: whatsapp.id } : {}), whatsapp_phone_number: whatsapp.numero } : {}
+
 /**
  * El conjunto: mensajes a WhatsApp, con su presupuesto diario (salvo `sharedBudget`: el de la campaña) y, en
- * `promoted`, el número al que llegan si no es el de la página.
+ * `promoted`, el número al que llegan.
  */
 export function adSetBody(plan, { campaignId, currency, today = localDay(), sharedBudget = false, promoted = {} }) {
   const body = {
@@ -628,6 +632,7 @@ export function cleanSettings(raw) {
     cuenta: id(raw?.cuenta),
     pagina: id(raw?.pagina),
     instagram: id(raw?.instagram),
+    whatsapp: cleanNumber(raw?.whatsapp),
     presupuesto: Number(raw?.presupuesto) > 0 ? Math.round(Number(raw.presupuesto) * 100) / 100 : 0,
     lugares: places(raw?.lugares),
     edadMin: clamp(raw?.edadMin, 18, 65),
@@ -649,6 +654,12 @@ export function cleanSettings(raw) {
       .filter(Boolean)
       .slice(0, MAX_QUESTIONS),
   }
+}
+
+/** El número de WhatsApp al que llegan los mensajes: sus cifras y, si se sabe, su id en Meta; null si no es un número. */
+export function cleanNumber(raw) {
+  const numero = typeof raw?.numero === 'string' ? raw.numero.replace(/\D/g, '') : ''
+  return numero.length >= 8 && numero.length <= 15 ? { id: /^\d{1,32}$/.test(raw.id ?? '') ? raw.id : null, numero } : null
 }
 
 /** Una imagen ya subida (su hash) o un vídeo (su id); null si no es nada de eso. */
@@ -844,7 +855,7 @@ export async function launch(meta, raw, options = {}) {
   try {
     const adSet = await meta.graph(`${plan.cuenta}/adsets`, {
       method: 'POST',
-      body: adSetBody(plan, { campaignId: campaign.id, currency: account.currency }),
+      body: adSetBody(plan, { campaignId: campaign.id, currency: account.currency, promoted: promotedNumber(plan.whatsapp) }),
     })
     const ads = await createAds(meta, plan, adSet.id, thumbs, plan.publicar ? 'ACTIVE' : 'PAUSED')
     const record = {
@@ -882,8 +893,8 @@ const WHATSAPP_NUMBER = ['whats_app_business_phone_number_id', 'whatsapp_phone_n
  * Un conjunto nuevo, con un anuncio por imagen o vídeo, en una campaña que ya existe. El conjunto se crea en
  * pausa (activo, con `publicar`) y sus anuncios no: se encienden todos con el interruptor del conjunto (y,
  * mientras, Meta los revisa).
- * Si la campaña reparte su presupuesto, el conjunto no lleva; si otro conjunto de la campaña, con la misma
- * página, manda los mensajes a un número concreto, este también. Si algo falla a medias, se borra el conjunto.
+ * Si la campaña reparte su presupuesto, el conjunto no lleva. Los mensajes llegan al número elegido o, sin elegirlo,
+ * al que usen los demás conjuntos de la campaña con la misma página. Si algo falla a medias, se borra el conjunto.
  */
 export async function addAdSet(meta, raw, options = {}) {
   const campaignId = typeof raw?.campana === 'string' && /^\d{1,32}$/.test(raw.campana) ? raw.campana : null
@@ -901,7 +912,7 @@ export async function addAdSet(meta, raw, options = {}) {
   const sibling = (campaign.adsets?.data ?? [])
     .map((s) => s.promoted_object ?? {})
     .find((p) => p.page_id === plan.pagina && WHATSAPP_NUMBER.some((key) => p[key]))
-  const promoted = Object.fromEntries(WHATSAPP_NUMBER.filter((key) => sibling?.[key]).map((key) => [key, sibling[key]]))
+  const promoted = plan.whatsapp ? promotedNumber(plan.whatsapp) : Object.fromEntries(WHATSAPP_NUMBER.filter((key) => sibling?.[key]).map((key) => [key, sibling[key]]))
   const sharedBudget = Number(campaign.daily_budget) > 0 || Number(campaign.lifetime_budget) > 0
   const thumbs = await thumbnailsOf(meta, plan, options)
 

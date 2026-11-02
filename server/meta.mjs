@@ -83,6 +83,21 @@ const LEVELS = {
   },
 }
 
+/** La cuenta de WhatsApp que Meta crea para probar la API: su número no sirve para anunciarse. */
+const TEST_WABA = /^test whatsapp business account$/i
+const digits = (value) => String(value ?? '').replace(/\D/g, '')
+
+/** Los números de una página: el que más usan sus conjuntos, el conectado a ella y, después, los demás. */
+function numbersOfPage(pageId, connected, { numbers, uses }) {
+  const own = uses.get(pageId) ?? new Map()
+  const link = digits(connected)
+  const list = [...numbers.values()]
+  if (link && !numbers.has(link)) list.push({ id: null, numero: link, texto: `+${link}`, nombre: null })
+  return list
+    .map((n) => ({ ...n, usos: own.get(n.numero) ?? 0, conectado: n.numero === link }))
+    .sort((a, b) => b.usos - a.usos || Number(b.conectado) - Number(a.conectado))
+}
+
 const ACCOUNT_STATUS = {
   1: 'activa',
   2: 'desactivada',
@@ -445,14 +460,54 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
   const adInstagrams = (account, fresh) => cached(`instagram:${account}`, fresh, () => instagramsInAds(account))
 
   /**
+   * Los números de WhatsApp a los que pueden llegar los mensajes de la cuenta: los que ya usan sus conjuntos (y cuántos
+   * de cada página) y los del portfolio, sin los de prueba de Meta (estos, solo con el permiso de WhatsApp).
+   */
+  async function whatsappNumbers(account) {
+    const [sets, { business }] = await Promise.all([
+      maybe(all(`${account}/adsets`, { fields: 'promoted_object' }, 500), []),
+      maybe(graph(account, { params: { fields: 'business{id}' } }), {}),
+    ])
+    const owned = business
+      ? await Promise.all(
+          ['owned_whatsapp_business_accounts', 'client_whatsapp_business_accounts'].map((edge) =>
+            maybe(all(`${business.id}/${edge}`, { fields: 'name,phone_numbers{id,display_phone_number,verified_name}' }, 100), []),
+          ),
+        )
+      : []
+    const numbers = new Map()
+    for (const waba of owned.flat()) {
+      if (TEST_WABA.test(waba.name ?? '')) continue
+      for (const phone of waba.phone_numbers?.data ?? []) {
+        const numero = digits(phone.display_phone_number)
+        if (numero) numbers.set(numero, { id: String(phone.id), numero, texto: phone.display_phone_number, nombre: phone.verified_name ?? null })
+      }
+    }
+    const uses = new Map()
+    for (const { promoted_object: promoted } of sets) {
+      const numero = digits(promoted?.whatsapp_phone_number)
+      if (!numero || !promoted.page_id) continue
+      if (!numbers.has(numero)) {
+        const phoneId = promoted.whats_app_business_phone_number_id
+        numbers.set(numero, { id: phoneId ? String(phoneId) : null, numero, texto: `+${numero}`, nombre: null })
+      }
+      const counts = uses.get(promoted.page_id) ?? new Map()
+      counts.set(numero, (counts.get(numero) ?? 0) + 1)
+      uses.set(promoted.page_id, counts)
+    }
+    return { numbers, uses }
+  }
+
+  /**
    * Las páginas con las que se puede anunciar la cuenta, con sus cuentas de Instagram (la vinculada a la página y
-   * las que ya usan sus anuncios, en esta cuenta o en otras) y su número de WhatsApp si Meta lo enseña (cada dato
-   * se pide aparte: si falta un permiso, la página sale igual, sin ese dato).
+   * las que ya usan sus anuncios, en esta cuenta o en otras), su número de WhatsApp si Meta lo enseña (cada dato se
+   * pide aparte: si falta un permiso, la página sale igual, sin ese dato) y los números a los que pueden llegar sus
+   * mensajes (primero los que ya usan sus conjuntos).
    */
   function pages(account, fresh = false) {
     if (!/^act_\d+$/.test(account ?? '')) throw new HttpError(400, 'Cuenta publicitaria no válida')
     return cached(`pages:${account}`, fresh, async () => {
-      const [list, used] = await Promise.all([accountPages(account), adInstagrams(account, fresh)])
+      const [list, used, whatsapps] = await Promise.all([accountPages(account), adInstagrams(account, fresh), whatsappNumbers(account)])
       const found = await Promise.all(
         list.map(async (page) => {
           const [ig, wa] = await Promise.all([
@@ -490,6 +545,7 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
             foto: page.picture?.data?.url ?? null,
             instagrams,
             whatsapp: wa.whatsapp_number ?? null,
+            numeros: numbersOfPage(page.id, wa.whatsapp_number, whatsapps),
           }
         }),
       )

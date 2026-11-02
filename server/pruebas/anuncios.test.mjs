@@ -709,8 +709,42 @@ test('páginas: las de la cuenta y las de su portfolio, con su Instagram, los qu
   routes['GET act_111'] = { business: { id: 'b9' }, id: 'act_111' }
   routes['GET b9/owned_pages'] = { data: [{ id: 'p1', name: 'Hoplon' }, { id: 'p4', name: 'Del portfolio' }] }
   routes['GET b9/client_pages'] = { data: [] }
+  // Los números: los de los conjuntos de la cuenta y los del portfolio, sin el de prueba de Meta.
+  routes['GET act_111/adsets'] = {
+    data: [
+      { promoted_object: { page_id: 'p2', whats_app_business_phone_number_id: '901', whatsapp_phone_number: '15550100192' } },
+      { promoted_object: { page_id: 'p2', whatsapp_phone_number: '15550100192' } },
+      { promoted_object: { page_id: 'p3', whatsapp_phone_number: '15550100193' } },
+      { promoted_object: { page_id: 'p1' } },
+    ],
+  }
+  routes['GET b9/owned_whatsapp_business_accounts'] = {
+    data: [
+      { name: 'Test WhatsApp Business Account', phone_numbers: { data: [{ id: '1', display_phone_number: '+1 555-010-0190', verified_name: 'Test Number' }] } },
+      {
+        name: 'Empresa',
+        phone_numbers: {
+          data: [
+            { id: '900', display_phone_number: '+1 555-010-0191', verified_name: 'Ventas' },
+            { id: '901', display_phone_number: '+1 555-010-0192', verified_name: 'Reservas' },
+          ],
+        },
+      },
+    ],
+  }
+  routes['GET b9/client_whatsapp_business_accounts'] = { data: [] }
   const res = await request('GET', '/api/meta/paginas?cuenta=act_111')
   assert.equal(res.status, 200)
+  const numbers = Object.fromEntries(res.body.paginas.map((p) => [p.id, p.numeros]))
+  const ventas = { id: '900', numero: '15550100191', texto: '+1 555-010-0191', nombre: 'Ventas', usos: 0, conectado: false }
+  const reservas = { id: '901', numero: '15550100192', texto: '+1 555-010-0192', nombre: 'Reservas', usos: 0, conectado: false }
+  const suelto = { id: null, numero: '15550100193', texto: '+15550100193', nombre: null, usos: 0, conectado: false }
+  // La conectada a la página, aunque no esté en el portfolio, va primero; si no, el que más usan sus conjuntos.
+  assert.deepEqual(numbers.p1, [{ id: null, numero: '34600000000', texto: '+34600000000', nombre: null, usos: 0, conectado: true }, ventas, reservas, suelto])
+  assert.deepEqual(numbers.p2, [{ ...reservas, usos: 2 }, ventas, suelto])
+  assert.deepEqual(numbers.p3, [{ ...suelto, usos: 1 }, ventas, reservas])
+  assert.deepEqual(numbers.p4, [ventas, reservas, suelto])
+  for (const page of res.body.paginas) delete page.numeros
   assert.deepEqual(res.body.paginas, [
     {
       id: 'p1',
@@ -873,6 +907,28 @@ test('crear: si algo falla a medias, se borra la campaña y se dice', async () =
   assert.match(stuck.body.mensaje ?? stuck.body.error, /Ha quedado la campaña/)
 })
 
+test('crear: los mensajes llegan al número elegido (sin elegirlo, Meta usa el de la página)', async () => {
+  await connect()
+  launchRoutes()
+  const res = await request('POST', '/api/meta/lanzar', { body: plan({ whatsapp: { id: '900', numero: '+1 555-010-0191' } }) })
+  assert.equal(res.status, 200, res.text)
+  assert.deepEqual(calls.find((c) => c.method === 'POST' && c.path === 'act_111/adsets').body.promoted_object, {
+    page_id: '222',
+    whats_app_business_phone_number_id: '900',
+    whatsapp_phone_number: '15550100191',
+  })
+})
+
+test('el número de WhatsApp: sus cifras y, si es válido, su id', () => {
+  assert.deepEqual(ads.cleanNumber({ id: '900', numero: '+1 555-010-0191' }), { id: '900', numero: '15550100191' })
+  assert.deepEqual(ads.cleanNumber({ id: 'x y', numero: '15550100191' }), { id: null, numero: '15550100191' })
+  assert.equal(ads.cleanNumber({ numero: '123' }), null)
+  assert.equal(ads.cleanNumber({ numero: 15550100191 }), null)
+  assert.equal(ads.cleanNumber(null), null)
+  assert.deepEqual(ads.promotedNumber({ id: null, numero: '15550100191' }), { whatsapp_phone_number: '15550100191' })
+  assert.deepEqual(ads.promotedNumber(null), {})
+})
+
 test('nuevo conjunto: en una campaña que ya existe, en pausa y con sus anuncios listos', async () => {
   await connect()
   launchRoutes()
@@ -897,6 +953,16 @@ test('nuevo conjunto: en una campaña que ya existe, en pausa y con sus anuncios
   assert.equal(posts.find((c) => c.path === 'act_111/ads').body.status, 'ACTIVE')
   // Nada apuntado como campaña de Tablero.
   assert.deepEqual((await request('GET', '/api/anuncios')).body.lanzamientos, [])
+
+  // El número elegido manda sobre el de los demás conjuntos.
+  calls.length = 0
+  const chosen = await request('POST', '/api/meta/conjuntos', { body: plan({ campana: '10', nombre: 'Otro número', whatsapp: { id: '900', numero: '15550100191' } }) })
+  assert.equal(chosen.status, 200, chosen.text)
+  assert.deepEqual(calls.find((c) => c.method === 'POST' && c.path === 'act_111/adsets').body.promoted_object, {
+    page_id: '222',
+    whats_app_business_phone_number_id: '900',
+    whatsapp_phone_number: '15550100191',
+  })
 
   // Con el presupuesto en la campaña, el conjunto no lleva (y no hace falta indicarlo).
   routes['GET 10'] = { ...routes['GET 10'], daily_budget: '3000', adsets: { data: [] } }

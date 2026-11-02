@@ -46,6 +46,25 @@ export interface MetaPage {
   instagrams: Array<{ id: string; usuario: string | null }>
   /** Número de WhatsApp conectado a la página, si Meta lo enseña. */
   whatsapp: string | null
+  /** A los que pueden llegar sus mensajes: primero el que más usan sus conjuntos y el conectado a ella. */
+  numeros: WhatsappOption[]
+}
+
+/** El número de WhatsApp al que llegan los mensajes de un conjunto. */
+export interface AdNumber {
+  id: string | null
+  /** Solo las cifras. */
+  numero: string
+}
+
+export interface WhatsappOption extends AdNumber {
+  /** Como se enseña: «+1 555-010-0191». */
+  texto: string
+  /** El nombre de la empresa en WhatsApp. */
+  nombre: string | null
+  /** Cuántos conjuntos de la página lo usan ya. */
+  usos: number
+  conectado: boolean
 }
 
 /** Un lugar del público: país, región o ciudad (las claves son las de Meta). */
@@ -105,6 +124,8 @@ export interface AdSettings {
   pagina: string | null
   /** Cuenta de Instagram que firma el anuncio; null = la página. */
   instagram: string | null
+  /** Adónde llegan los mensajes; null = al que Meta tenga conectado a la página. */
+  whatsapp: AdNumber | null
   /** Presupuesto diario, en la moneda de la cuenta. */
   presupuesto: number
   lugares: Place[]
@@ -506,6 +527,7 @@ export const DEFAULT_SETTINGS: AdSettings = {
   cuenta: null,
   pagina: null,
   instagram: null,
+  whatsapp: null,
   presupuesto: 10,
   // Sin plantilla, Ciudad del Este (la clave es la de Meta).
   lugares: [{ key: '1903856', tipo: 'city', nombre: 'Ciudad del Este', detalle: 'Alto Paraná Department, Paraguay' }],
@@ -531,6 +553,8 @@ export const settingsOf = (t: AdSettings): AdSettings => ({
   cuenta: t.cuenta,
   pagina: t.pagina,
   instagram: t.instagram,
+  // Las plantillas de antes no lo tienen.
+  whatsapp: t.whatsapp ?? null,
   presupuesto: t.presupuesto,
   lugares: t.lugares,
   edadMin: t.edadMin,
@@ -585,13 +609,26 @@ export function campaignName(template: string | null, now = new Date()) {
 export const adNameFrom = (file: string) => file.replace(/\.[a-z0-9]{2,5}$/i, '').trim() || file
 
 /** Qué falta para poder crear la campaña (null = nada). */
+/**
+ * El número con el que empieza una página: el que ya usan sus conjuntos o el conectado a ella; si solo hay uno, ese. Si
+ * no, se elige a mano: a ciegas podría ser el que no es.
+ */
+export function defaultNumber(page: MetaPage | null): AdNumber | null {
+  const first = page?.numeros[0]
+  if (!first || !(first.usos > 0 || first.conectado || page?.numeros.length === 1)) return null
+  return { id: first.id, numero: first.numero }
+}
+
 export function missing(
-  plan: Pick<AdSettings, 'cuenta' | 'pagina' | 'presupuesto' | 'lugares' | 'texto' | 'tipoMensaje' | 'saludo' | 'preguntas' | 'ubicaciones' | 'posiciones'> & {
+  plan: Pick<AdSettings, 'cuenta' | 'pagina' | 'whatsapp' | 'presupuesto' | 'lugares' | 'texto' | 'tipoMensaje' | 'saludo' | 'preguntas' | 'ubicaciones' | 'posiciones'> & {
     creatividades: number
+    /** Cuántos números se pueden elegir (sin ninguno, Meta usa el conectado a la página). */
+    numeros: number
   },
 ) {
   if (!plan.cuenta) return 'Elige una cuenta publicitaria'
   if (!plan.pagina) return 'Elige la página de Facebook'
+  if (plan.numeros > 0 && !plan.whatsapp) return 'Elige el destino de los mensajes'
   if (!(plan.presupuesto > 0)) return 'Indica el presupuesto diario'
   if (!plan.lugares.length) return 'Añade al menos un lugar'
   if (!plan.texto.trim()) return 'Escribe el texto principal'

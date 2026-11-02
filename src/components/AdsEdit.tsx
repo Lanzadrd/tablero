@@ -23,7 +23,7 @@ import {
 import { formatOf, FORMATOS, type Formato } from '../placements'
 import { cx } from '../util'
 import { errorText } from './Ads'
-import { CHAT_STARTS, ChatPreview, Chips, Field, GENDERS, PlacePicker, Questions, range } from './AdsComposer'
+import { CHAT_STARTS, ChatPreview, Chips, Field, GENDERS, MoneyInput, PlacePicker, Questions, range } from './AdsComposer'
 import { measure, type Creative } from './AdsMedia'
 import { PlacementPicker, type PlacementMode } from './AdsPlacements'
 import { AdPreview } from './AdsPreview'
@@ -173,25 +173,6 @@ export function SaveBar({
         </p>
       )}
     </section>
-  )
-}
-
-/** Un importe en la moneda de la cuenta. */
-export function MoneyInput({ id, value, currency, onChange }: { id: string; value: number; currency: string; onChange: (value: number) => void }) {
-  return (
-    <span className="ads-money">
-      <input
-        id={id}
-        className="input ads-amount"
-        type="number"
-        inputMode="decimal"
-        min={0}
-        step="any"
-        value={Number.isFinite(value) ? value : ''}
-        onChange={(e) => onChange(e.target.valueAsNumber)}
-      />
-      <span>{currency}</span>
-    </span>
   )
 }
 
@@ -404,7 +385,7 @@ function AdSetForm({ data, onSave }: FormProps) {
         <p className="ads-hint">
           Optimización: {OPTIMIZATION[s.optimizacion ?? ''] ?? s.optimizacion ?? '—'}
           {s.destino === 'WHATSAPP' ? ' · a WhatsApp' : ''}
-          {s.whatsapp ? ` (${s.whatsapp})` : ''}. Para cambiarlo, duplica el conjunto en otra campaña o crea uno nuevo.
+          {s.whatsapp ? ` (+${s.whatsapp})` : s.destino === 'WHATSAPP' ? ' (sin número elegido: Meta usa el conectado a la página)' : ''}. Para cambiarlo, duplica el conjunto en otra campaña o crea uno nuevo.
         </p>
       </section>
       <SaveBar changed={changed} busy={busy} error={error} onSave={() => void run(() => changes)} />

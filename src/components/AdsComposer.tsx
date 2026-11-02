@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { amountNumber, amountText, caretAfter, decimalsOf, typedAmount } from '../../server/importes.mjs'
 import {
   adNameFrom,
   automaticSummary,
   budgetText,
   campaignName,
+  defaultNumber,
   DEFAULT_SETTINGS,
   ENHANCEMENTS,
   GREETING,
@@ -15,6 +17,7 @@ import {
   settingsOf,
   uploadMedia,
   type AdAccount,
+  type AdNumber,
   type AdRow,
   type AdSettings,
   type Copy,
@@ -123,7 +126,7 @@ export function AdsComposer({
       ...(t ? settingsOf(t) : DEFAULT_SETTINGS),
       cuenta: account.id,
     }
-    return adSetIn?.pagina && base.pagina !== adSetIn.pagina ? { ...base, pagina: null, instagram: null } : base
+    return adSetIn?.pagina && base.pagina !== adSetIn.pagina ? { ...base, pagina: null, instagram: null, whatsapp: null } : base
   }
   const shared = adSetIn?.presupuesto?.reparte ? adSetIn.presupuesto : null
   // Las plantillas de esta cuenta y las que no son de ninguna.
@@ -162,22 +165,24 @@ export function AdsComposer({
   // Al abrir un conjunto nuevo, el foco va a su título.
   useEffect(() => heading.current?.focus(), [])
 
-  // La página de la plantilla, si está en esta cuenta; si no, la de la campaña o la única que haya. Su Instagram,
-  // por defecto.
+  // La página de la plantilla, si está en esta cuenta; si no, la de la campaña o la única que haya. Su Instagram y su
+  // número de WhatsApp, por defecto.
   const preferredPage = adSetIn?.pagina ?? null
   useEffect(() => {
     if (!pages) return
     setSettings((s) => {
       const page = pages.find((p) => p.id === s.pagina) ?? pages.find((p) => p.id === preferredPage) ?? (pages.length === 1 ? pages[0] : null)
       const instagram = page && s.instagram && page.instagrams.some((i) => i.id === s.instagram) ? s.instagram : (page?.instagrams[0]?.id ?? null)
-      if (page?.id === s.pagina && instagram === s.instagram) return s
+      const whatsapp = page?.numeros.some((n) => n.numero === s.whatsapp?.numero) ? s.whatsapp : defaultNumber(page)
+      if (page?.id === s.pagina && instagram === s.instagram && whatsapp === s.whatsapp) return s
       return {
         ...s,
         pagina: page?.id ?? null,
         instagram: s.pagina === page?.id ? s.instagram : instagram,
+        whatsapp,
       }
     })
-  }, [pages, preferredPage])
+  }, [pages, preferredPage, settings.pagina, settings.whatsapp])
 
   const page = pages?.find((p) => p.id === settings.pagina) ?? null
 
@@ -188,7 +193,8 @@ export function AdsComposer({
     setSettings(startFrom(templates.find((t) => t.id === id) ?? null))
     setName(null)
   }
-  const dirty = template ? !sameSettings({ ...template, cuenta: account.id }, settings) : false
+  // Una plantilla sin número (las de antes) no cambia por el que se ha puesto solo.
+  const dirty = template ? !sameSettings({ ...template, cuenta: account.id, whatsapp: template.whatsapp ?? settings.whatsapp }, settings) : false
 
   const saveTemplate = async () => {
     if (!template) return
@@ -292,6 +298,7 @@ export function AdsComposer({
     ...settings,
     presupuesto: shared ? 1 : settings.presupuesto,
     creatividades: drafts.length,
+    numeros: page?.numeros.length ?? 0,
   })
   const busy = phase.kind === 'uploading' || phase.kind === 'creating'
 
@@ -436,6 +443,7 @@ export function AdsComposer({
                       update({
                         pagina: next?.id ?? null,
                         instagram: next?.instagrams[0]?.id ?? null,
+                        whatsapp: defaultNumber(next),
                       })
                     }}
                   >
@@ -476,13 +484,7 @@ export function AdsComposer({
                 <option value="">{page?.instagrams.length ? 'Sin Instagram (como la página)' : 'La página no tiene Instagram conectado'}</option>
               </select>
             </Field>
-            <Field label="WhatsApp">
-              <span className="ads-note">
-                {page?.whatsapp
-                  ? `Los mensajes llegan al ${page.whatsapp}.`
-                  : 'Al WhatsApp conectado a la página. Si la página no tiene ninguno, Meta no deja crear el anuncio.'}
-              </span>
-            </Field>
+            <NumberField id={`${ids}-whatsapp`} page={page} value={settings.whatsapp} onChange={(whatsapp) => update({ whatsapp })} />
           </div>
         </section>
 
@@ -495,19 +497,7 @@ export function AdsComposer({
               </Field>
             ) : (
               <Field label="Al día" htmlFor={`${ids}-amount`}>
-                <span className="ads-money">
-                  <input
-                    id={`${ids}-amount`}
-                    className="input ads-amount"
-                    type="number"
-                    inputMode="decimal"
-                    min={1}
-                    step={0.5}
-                    value={Number.isFinite(settings.presupuesto) ? settings.presupuesto : ''}
-                    onChange={(e) => update({ presupuesto: e.target.valueAsNumber })}
-                  />
-                  <span>{account.moneda}</span>
-                </span>
+                <MoneyInput id={`${ids}-amount`} value={settings.presupuesto} currency={account.moneda} onChange={(presupuesto) => update({ presupuesto })} />
               </Field>
             )}
             <Field label="Empieza" htmlFor={`${ids}-start`} note={start ? null : adSetIn ? 'En cuanto lo actives' : 'En cuanto la actives'}>
@@ -809,6 +799,90 @@ export function Field({ label, htmlFor, note, children }: { label: string; htmlF
         {note && <span className="ads-note">{note}</span>}
       </div>
     </div>
+  )
+}
+
+/** Adónde llegan los mensajes de un conjunto (como «Destino de los mensajes» en el Administrador de anuncios). */
+function NumberField({ id, page, value, onChange }: { id: string; page: MetaPage | null; value: AdNumber | null; onChange: (value: AdNumber | null) => void }) {
+  const numbers = page?.numeros ?? []
+  const chosen = numbers.find((n) => n.numero === value?.numero)
+  if (!numbers.length) {
+    return (
+      <Field label="Destino de los mensajes">
+        <span className="ads-note">
+          {page?.whatsapp ? `Los mensajes llegan al ${page.whatsapp}.` : 'Al WhatsApp conectado a la página. Si la página no tiene ninguno, Meta no deja crear el anuncio.'}
+        </span>
+      </Field>
+    )
+  }
+  return (
+    <Field
+      label="Destino de los mensajes"
+      htmlFor={id}
+      note={
+        chosen?.usos
+          ? `WhatsApp. Lo ${chosen.usos === 1 ? 'usa 1 conjunto' : `usan ${chosen.usos} conjuntos`} de esta página.`
+          : 'WhatsApp. Tiene que estar conectado a la página: si no, Meta no deja crear el anuncio.'
+      }
+    >
+      <select
+        id={id}
+        className="input"
+        value={value?.numero ?? ''}
+        onChange={(e) => {
+          const next = numbers.find((n) => n.numero === e.target.value)
+          onChange(next ? { id: next.id, numero: next.numero } : null)
+        }}
+      >
+        {!chosen && <option value="">Elige un número…</option>}
+        {numbers.map((n) => (
+          <option key={n.numero} value={n.numero}>
+            {n.nombre ? `${n.texto} · ${n.nombre}` : n.texto}
+          </option>
+        ))}
+      </select>
+    </Field>
+  )
+}
+
+/** Un importe en la moneda de la cuenta: se escribe sin puntos y se ponen solos, sin mover el cursor de su sitio. */
+export function MoneyInput({ id, value, currency, onChange }: { id: string; value: number; currency: string; onChange: (value: number) => void }) {
+  const decimals = decimalsOf(currency)
+  const [text, setText] = useState(() => amountText(value, decimals))
+  const input = useRef<HTMLInputElement>(null)
+  const caret = useRef<number | null>(null)
+
+  // Cambiado desde fuera (al elegir una plantilla).
+  const shown = amountText(value, decimals)
+  if (!Object.is(amountNumber(text), value) && text !== shown) setText(shown)
+
+  useLayoutEffect(() => {
+    if (caret.current === null) return
+    input.current?.setSelectionRange(caret.current, caret.current)
+    caret.current = null
+  })
+
+  return (
+    <span className="ads-money">
+      <input
+        ref={input}
+        id={id}
+        className="input ads-amount"
+        type="text"
+        inputMode={decimals ? 'decimal' : 'numeric'}
+        autoComplete="off"
+        value={text}
+        onChange={(e) => {
+          const typed = e.target.value
+          const at = e.target.selectionStart ?? typed.length
+          const next = typedAmount(typed, decimals, (e.nativeEvent as InputEvent).inputType?.startsWith('delete'))
+          caret.current = at === typed.length ? next.length : caretAfter(next, typed.slice(0, at).replace(/[^\d,]/g, '').length)
+          setText(next)
+          onChange(amountNumber(next))
+        }}
+      />
+      <span>{currency}</span>
+    </span>
   )
 }
 

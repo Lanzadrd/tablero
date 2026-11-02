@@ -172,6 +172,9 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
   (Administrador de anuncios) o «Activar» (pide confirmación: desde ahí gasta). **Publicar ya** lo crea todo
   activo de una vez (también pide confirmación, con lo que gastará al día): empieza en cuanto Meta apruebe los
   anuncios.
+- **Destino de los mensajes**: en «Quién anuncia», el número de WhatsApp al que llegan: empieza con el que ya usan
+  los conjuntos de la página o el conectado a ella; si no está claro, hay que elegirlo. Sale de los conjuntos de la
+  cuenta y de los números del portfolio. Sin ninguno que elegir, Meta usa el conectado a la página.
 - **Orden del formulario**: nombre de la campaña (o del conjunto) arriba del todo; luego plantilla, quién
   anuncia, presupuesto, público (sin plantilla, **Ciudad del Este**), imágenes y vídeos con sus ubicaciones,
   texto, chat y mejoras. Con sitio, a la derecha va la **vista previa**, todas a la vez: feed de Facebook y de
