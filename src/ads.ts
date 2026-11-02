@@ -1,6 +1,7 @@
 // Anuncios en Meta y Google Ads: lo que las vistas piden al servidor (server/meta.mjs, server/anuncios.mjs y
 // server/google.mjs) y las cuentas del formulario. Los tokens nunca llegan aquí: solo si hay conexión y de quién.
 
+import { announce, notify } from './notices'
 import type { Formato } from './placements'
 
 export interface MetaStatus {
@@ -651,6 +652,13 @@ export class ApiError extends Error {
   }
 }
 
+const META_LEVELS: Record<Level, string> = { campana: 'Campaña', conjunto: 'Conjunto', anuncio: 'Anuncio' }
+const GOOGLE_LEVELS: Record<Level, string> = { campana: 'Campaña', conjunto: 'Grupo de anuncios', anuncio: 'Anuncio' }
+
+/** «Campaña activada», «Conjunto en pausa». */
+const statusDone = (level: Level, estado: AdRow['estado'], words: Record<Level, string>) =>
+  `${words[level]} ${estado === 'activa' ? `activad${level === 'campana' ? 'a' : 'o'}` : 'en pausa'}`
+
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
   let res: Response
   try {
@@ -686,18 +694,24 @@ export const googleRedirectUri = () => `http://localhost${location.port ? `:${lo
 
 export const googleApi = {
   status: () => call<GoogleStatus>('GET', '/api/google/estado'),
-  saveClient: (id: string, secreto: string) => call<GoogleStatus>('PUT', '/api/google/cliente', { id, secreto }),
-  disconnect: () => call<GoogleStatus>('POST', '/api/google/desconectar', {}),
+  saveClient: (id: string, secreto: string) =>
+    announce(call<GoogleStatus>('PUT', '/api/google/cliente', { id, secreto }), 'No se ha podido guardar el cliente de Google', 'Cliente de Google guardado'),
+  disconnect: () => announce(call<GoogleStatus>('POST', '/api/google/desconectar', {}), 'No se ha podido desconectar de Google Ads', 'Desconectado de Google Ads'),
   accounts: (fresh = false) =>
     call<{ portfolios: Portfolio[] }>('GET', `/api/google/cuentas${fresh ? '?actualizar=1' : ''}`).then((r) => r.portfolios),
   rows: (account: string, period: Period, path: AdPath, fresh = false) =>
     call<RunningRows>('GET', `/api/google/campanas?${rowsQuery(account, period, path, fresh)}`),
   setStatus: (account: string, level: Level, id: string, estado: AdRow['estado']) =>
-    call<{ id: string; estado: AdRow['estado'] }>('POST', '/api/google/campanas/estado', { cuenta: account, nivel: level, id, estado }),
+    announce(
+      call<{ id: string; estado: AdRow['estado'] }>('POST', '/api/google/campanas/estado', { cuenta: account, nivel: level, id, estado }),
+      `No se ha podido ${estado === 'activa' ? 'activar' : 'pausar'}`,
+      statusDone(level, estado, GOOGLE_LEVELS),
+    ),
   details: (account: string, level: Level, id: string) => call<GoogleEditDetails>('GET', `/api/google/editar?${editQuery(account, level, id)}`),
   update: (account: string, level: Level, id: string, cambios: GoogleEditChanges) =>
-    call<GoogleEditDetails>('POST', '/api/google/editar', { cuenta: account, nivel: level, id, cambios }),
-  remove: (account: string, level: Level, id: string) => call<{ id: string }>('POST', '/api/google/quitar', { cuenta: account, nivel: level, id }),
+    announce(call<GoogleEditDetails>('POST', '/api/google/editar', { cuenta: account, nivel: level, id, cambios }), 'No se han podido guardar los cambios', (d) => `«${d.nombre}»: cambios guardados`),
+  remove: (account: string, level: Level, id: string) =>
+    announce(call<{ id: string }>('POST', '/api/google/quitar', { cuenta: account, nivel: level, id }), 'No se ha podido quitar', 'Quitado de Google Ads'),
   keywords: (account: string, period: Period, path: AdPath, fresh = false) =>
     call<GoogleList<Keyword>>('GET', `/api/google/palabras?${rowsQuery(account, period, path, fresh)}`),
   searchTerms: (account: string, period: Period, path: AdPath, fresh = false) =>
@@ -708,9 +722,10 @@ export const googleApi = {
 
 export const metaApi = {
   status: () => call<MetaStatus>('GET', '/api/meta/estado'),
-  saveApp: (id: string, secreto: string, configuracion: string) => call<MetaStatus>('PUT', '/api/meta/app', { id, secreto, configuracion }),
-  saveToken: (token: string) => call<MetaStatus>('POST', '/api/meta/token', { token }),
-  disconnect: () => call<MetaStatus>('POST', '/api/meta/desconectar', {}),
+  saveApp: (id: string, secreto: string, configuracion: string) =>
+    announce(call<MetaStatus>('PUT', '/api/meta/app', { id, secreto, configuracion }), 'No se ha podido guardar la app de Meta', 'App de Meta guardada'),
+  saveToken: (token: string) => announce(call<MetaStatus>('POST', '/api/meta/token', { token }), 'No se ha podido conectar con Meta', 'Conectado con Meta'),
+  disconnect: () => announce(call<MetaStatus>('POST', '/api/meta/desconectar', {}), 'No se ha podido desconectar de Meta', 'Desconectado de Meta'),
   portfolios: (fresh = false) =>
     call<{ portfolios: Portfolio[] }>('GET', `/api/meta/cuentas${fresh ? '?actualizar=1' : ''}`).then((r) => r.portfolios),
   pages: (account: string, fresh = false) =>
@@ -719,33 +734,62 @@ export const metaApi = {
     ),
   places: (query: string) =>
     call<{ lugares: Place[] }>('GET', `/api/meta/lugares?q=${encodeURIComponent(query)}`).then((r) => r.lugares),
-  launch: (plan: LaunchPlan) => call<{ lanzamiento: Launch }>('POST', '/api/meta/lanzar', plan).then((r) => r.lanzamiento),
+  launch: (plan: LaunchPlan) =>
+    announce(
+      call<{ lanzamiento: Launch }>('POST', '/api/meta/lanzar', plan).then((r) => r.lanzamiento),
+      'No se ha podido crear la campaña',
+      (l) => (plan.publicar ? `Campaña «${l.nombre}» publicada: empieza en cuanto Meta apruebe los anuncios` : `Campaña «${l.nombre}» creada en pausa`),
+    ),
   addAdSet: (plan: LaunchPlan & { campana: string }) =>
-    call<{ conjunto: NewAdSet }>('POST', '/api/meta/conjuntos', plan).then((r) => r.conjunto),
-  activate: (id: string) => call<{ lanzamiento: Launch }>('POST', '/api/meta/activar', { id }).then((r) => r.lanzamiento),
+    announce(
+      call<{ conjunto: NewAdSet }>('POST', '/api/meta/conjuntos', plan).then((r) => r.conjunto),
+      'No se ha podido crear el conjunto',
+      (s) => (s.activo ? `Conjunto «${s.nombre}» publicado: empieza en cuanto Meta apruebe los anuncios` : `Conjunto «${s.nombre}» creado en pausa`),
+    ),
+  activate: (id: string) =>
+    announce(
+      call<{ lanzamiento: Launch }>('POST', '/api/meta/activar', { id }).then((r) => r.lanzamiento),
+      'No se ha podido activar la campaña',
+      (l) => `Campaña «${l.nombre}» activada`,
+    ),
   rows: (account: string, period: Period, path: AdPath, fresh = false) => call<AdRows>('GET', `/api/meta/campanas?${rowsQuery(account, period, path, fresh)}`),
   details: (account: string, level: Level, id: string) => call<EditDetails>('GET', `/api/meta/editar?${editQuery(account, level, id)}`),
   update: (account: string, level: Level, id: string, cambios: EditChanges) =>
-    call<EditDetails>('POST', '/api/meta/editar', { cuenta: account, nivel: level, id, cambios }),
-  duplicate: (account: string, level: Level, id: string) => call<{ id: string }>('POST', '/api/meta/duplicar', { cuenta: account, nivel: level, id }),
+    announce(call<EditDetails>('POST', '/api/meta/editar', { cuenta: account, nivel: level, id, cambios }), 'No se han podido guardar los cambios', (d) => `«${d.nombre}»: cambios guardados`),
+  duplicate: (account: string, level: Level, id: string) =>
+    announce(call<{ id: string }>('POST', '/api/meta/duplicar', { cuenta: account, nivel: level, id }), 'No se ha podido duplicar', 'Copia creada en pausa'),
   remove: (account: string, level: Level, id: string, modo: 'archivar' | 'borrar') =>
-    call<{ id: string }>('POST', '/api/meta/quitar', { cuenta: account, nivel: level, id, modo }),
+    announce(
+      call<{ id: string }>('POST', '/api/meta/quitar', { cuenta: account, nivel: level, id, modo }),
+      `No se ha podido ${modo}`,
+      `${META_LEVELS[level]} ${modo === 'archivar' ? 'archivad' : 'borrad'}${level === 'campana' ? 'a' : 'o'}`,
+    ),
   addAds: (plan: AdContent & { cuenta: string; conjunto: string; anuncios: Array<{ nombre: string; versiones: AdVersion[] }> }) =>
-    call<{ conjunto: string; anuncios: string[] }>('POST', '/api/meta/anuncios', plan),
+    announce(call<{ conjunto: string; anuncios: string[] }>('POST', '/api/meta/anuncios', plan), 'No se ha podido crear el anuncio', 'Anuncio creado en pausa'),
   setStatus: (account: string, level: Level, id: string, estado: AdRow['estado']) =>
-    call<{ id: string; estado: AdRow['estado']; lanzamiento: Launch | null }>('POST', '/api/meta/campanas/estado', {
-      cuenta: account,
-      nivel: level,
-      id,
-      estado,
-    }),
+    announce(
+      call<{ id: string; estado: AdRow['estado']; lanzamiento: Launch | null }>('POST', '/api/meta/campanas/estado', {
+        cuenta: account,
+        nivel: level,
+        id,
+        estado,
+      }),
+      `No se ha podido ${estado === 'activa' ? 'activar' : 'pausar'}`,
+      statusDone(level, estado, META_LEVELS),
+    ),
   saved: () => call<{ plantillas: Template[]; lanzamientos: Launch[] }>('GET', '/api/anuncios'),
   /** Si hay clave de la API de Claude para escribir los textos. */
   claudeStatus: () => call<{ clave: boolean }>('GET', '/api/anuncios/claude'),
-  saveClaudeKey: (clave: string) => call<{ clave: boolean }>('PUT', '/api/anuncios/claude', { clave }),
-  writeCopy: (request: CopyRequest) => call<{ textos: Copy }>('POST', '/api/anuncios/textos', request).then((r) => r.textos),
+  saveClaudeKey: (clave: string) =>
+    announce(call<{ clave: boolean }>('PUT', '/api/anuncios/claude', { clave }), 'No se ha podido guardar la clave de Claude', 'Clave de Claude guardada'),
+  writeCopy: (request: CopyRequest) =>
+    announce(call<{ textos: Copy }>('POST', '/api/anuncios/textos', request).then((r) => r.textos), 'Claude no ha podido escribir los textos', 'Textos escritos con Claude'),
   saveTemplates: (plantillas: Template[]) =>
-    call<{ plantillas: Template[] }>('PUT', '/api/anuncios/plantillas', { plantillas }).then((r) => r.plantillas),
+    announce(
+      call<{ plantillas: Template[] }>('PUT', '/api/anuncios/plantillas', { plantillas }).then((r) => r.plantillas),
+      'No se han podido guardar las plantillas',
+      'Plantillas guardadas',
+    ),
 }
 
 // ── Resúmenes diarios por WhatsApp (server/resumenes.mjs) ──
@@ -810,13 +854,24 @@ export interface WhatsappBusiness {
 
 export const summariesApi = {
   list: () => call<{ resumenes: DailySummary[] }>('GET', '/api/resumenes').then((r) => r.resumenes),
-  save: (resumenes: DailySummary[]) => call<{ resumenes: DailySummary[] }>('PUT', '/api/resumenes', { resumenes }).then((r) => r.resumenes),
+  /** Se guarda solo al escribir: de eso avisa la tarjeta, y aquí solo si falla. */
+  save: (resumenes: DailySummary[]) =>
+    announce(call<{ resumenes: DailySummary[] }>('PUT', '/api/resumenes', { resumenes }).then((r) => r.resumenes), 'No se han podido guardar los resúmenes'),
   numbers: () => call<{ empresas: WhatsappBusiness[] }>('GET', '/api/resumenes/numeros').then((r) => r.empresas),
   createTemplate: (cuenta: string, tipo: TemplateKind) =>
-    call<{ plantilla: WhatsappTemplate }>('POST', '/api/resumenes/plantilla', { cuenta, tipo }).then((r) => r.plantilla),
+    announce(
+      call<{ plantilla: WhatsappTemplate }>('POST', '/api/resumenes/plantilla', { cuenta, tipo }).then((r) => r.plantilla),
+      'No se ha podido pedir la plantilla',
+      'Plantilla pedida a Meta: falta que la apruebe',
+    ),
   /** El mensaje como está ahora (aunque no se haya guardado), sin mandarlo. */
-  preview: (resumen: DailySummary) => call<{ texto: string }>('POST', '/api/resumenes/vista', { resumen }).then((r) => r.texto),
-  send: (id: string) => call<{ envio: SummarySend }>('POST', '/api/resumenes/enviar', { id }).then((r) => r.envio),
+  preview: (resumen: DailySummary) => announce(call<{ texto: string }>('POST', '/api/resumenes/vista', { resumen }).then((r) => r.texto), 'No se ha podido preparar el mensaje'),
+  send: (id: string) =>
+    announce(call<{ envio: SummarySend }>('POST', '/api/resumenes/enviar', { id }).then((r) => r.envio), 'No se ha podido enviar el resumen').then((envio) => {
+      if (envio.ok) notify('ok', envio.enviados.length === 1 ? 'Resumen enviado a 1 número' : `Resumen enviado a ${envio.enviados.length} números`)
+      else notify('error', `No se ha podido enviar el resumen${envio.error ? `: ${envio.error}` : ''}`)
+      return envio
+    }),
 }
 
 /** «+34 600 11 22 33» → «+34600112233»; null si no parece un número con prefijo de país (como en el servidor). */
@@ -829,7 +884,9 @@ export function phoneOf(value: string) {
  * Sube una imagen o un vídeo a la cuenta publicitaria. Va tal cual (no en JSON): la cabecera propia hace que
  * otra web no pueda mandarlo (el navegador pediría permiso antes, y el servidor nunca lo da).
  */
-export async function uploadMedia(account: string, file: File): Promise<Media> {
+export const uploadMedia = (account: string, file: File): Promise<Media> => announce(sendMedia(account, file), `No se ha podido subir «${file.name}»`)
+
+async function sendMedia(account: string, file: File): Promise<Media> {
   const url = `/api/meta/medios?cuenta=${encodeURIComponent(account)}&nombre=${encodeURIComponent(file.name)}`
   let res: Response
   try {

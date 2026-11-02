@@ -912,11 +912,18 @@ test('crear: los mensajes llegan al número elegido (sin elegirlo, Meta usa el d
   launchRoutes()
   const res = await request('POST', '/api/meta/lanzar', { body: plan({ whatsapp: { id: '900', numero: '+1 555-010-0191' } }) })
   assert.equal(res.status, 200, res.text)
-  assert.deepEqual(calls.find((c) => c.method === 'POST' && c.path === 'act_111/adsets').body.promoted_object, {
-    page_id: '222',
-    whats_app_business_phone_number_id: '900',
-    whatsapp_phone_number: '15550100191',
-  })
+  assert.deepEqual(calls.find((c) => c.method === 'POST' && c.path === 'act_111/adsets').body.promoted_object, { page_id: '222', whatsapp_phone_number: '15550100191' })
+})
+
+test('crear: el #200 de Meta se explica', async () => {
+  await connect()
+  launchRoutes()
+  routes['POST act_111/adsets'] = { error: { message: 'Permissions error', code: 200 } }
+  routes['DELETE c1'] = { success: true }
+  const res = await request('POST', '/api/meta/lanzar', { body: plan() })
+  assert.equal(res.status, 403)
+  assert.match(res.body.mensaje ?? res.body.error, /Meta no da permiso para esto \(#200\).*Permissions error/)
+  assert.ok(calls.some((c) => c.method === 'DELETE' && c.path === 'c1'), 'no deja la campaña a medias')
 })
 
 test('el número de WhatsApp: sus cifras y, si es válido, su id', () => {
@@ -925,7 +932,7 @@ test('el número de WhatsApp: sus cifras y, si es válido, su id', () => {
   assert.equal(ads.cleanNumber({ numero: '123' }), null)
   assert.equal(ads.cleanNumber({ numero: 15550100191 }), null)
   assert.equal(ads.cleanNumber(null), null)
-  assert.deepEqual(ads.promotedNumber({ id: null, numero: '15550100191' }), { whatsapp_phone_number: '15550100191' })
+  assert.deepEqual(ads.promotedNumber({ id: '900', numero: '15550100191' }), { whatsapp_phone_number: '15550100191' })
   assert.deepEqual(ads.promotedNumber(null), {})
 })
 
@@ -958,11 +965,14 @@ test('nuevo conjunto: en una campaña que ya existe, en pausa y con sus anuncios
   calls.length = 0
   const chosen = await request('POST', '/api/meta/conjuntos', { body: plan({ campana: '10', nombre: 'Otro número', whatsapp: { id: '900', numero: '15550100191' } }) })
   assert.equal(chosen.status, 200, chosen.text)
-  assert.deepEqual(calls.find((c) => c.method === 'POST' && c.path === 'act_111/adsets').body.promoted_object, {
-    page_id: '222',
-    whats_app_business_phone_number_id: '900',
-    whatsapp_phone_number: '15550100191',
-  })
+  assert.deepEqual(calls.find((c) => c.method === 'POST' && c.path === 'act_111/adsets').body.promoted_object, { page_id: '222', whatsapp_phone_number: '15550100191' })
+
+  // Sin elegirlo, el de otro conjunto; de los dos datos, solo uno: con ambos, Meta contesta «(#200) Permissions error».
+  routes['GET 10'] = { ...routes['GET 10'], adsets: { data: [{ promoted_object: { page_id: '222', whats_app_business_phone_number_id: 'wa1', whatsapp_phone_number: '15550100192' } }] } }
+  calls.length = 0
+  const copied = await request('POST', '/api/meta/conjuntos', { body: plan({ campana: '10', nombre: 'Como los demás' }) })
+  assert.equal(copied.status, 200, copied.text)
+  assert.deepEqual(calls.find((c) => c.method === 'POST' && c.path === 'act_111/adsets').body.promoted_object, { page_id: '222', whatsapp_phone_number: '15550100192' })
 
   // Con el presupuesto en la campaña, el conjunto no lleva (y no hace falta indicarlo).
   routes['GET 10'] = { ...routes['GET 10'], daily_budget: '3000', adsets: { data: [] } }

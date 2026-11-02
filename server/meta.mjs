@@ -162,6 +162,14 @@ function explain(error, status) {
       'meta-app-desarrollo',
     )
   }
+  // Lo que Meta llama «Permissions error», sin más explicación.
+  if (error?.code === 200 && !error.error_user_msg) {
+    return new HttpError(
+      403,
+      `Meta no da permiso para esto (#200). Mira en el portfolio que tu usuario tenga acceso a la cuenta publicitaria, a la página y al número de WhatsApp. Lo que dice Meta: ${error.message ?? 'sin más detalle'}`,
+      'meta-permiso',
+    )
+  }
   const title = error?.error_user_title
   const message = error?.error_user_msg || error?.message || `Meta ha respondido con un error (${status})`
   return new HttpError(502, title && !message.startsWith(title) ? `${title}: ${message}` : message, 'meta')

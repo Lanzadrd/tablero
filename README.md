@@ -107,6 +107,9 @@ cobro. Las dadas de baja quedan plegadas al final y se pueden reactivar.
 
 ## Anuncios
 
+Todo lo que se hace aquí avisa con un **aviso arriba a la derecha**, salga bien o mal: lo bueno se va solo a los pocos
+segundos; un error se queda hasta cerrarlo.
+
 En el menú lateral, bajo Marketing, están **Meta Ads** (`P`) y **Google Ads** (`G`), cada una con sus cuentas
 publicitarias debajo (la flecha las pliega; las cerradas o con un pago pendiente, más apagadas); con el menú
 oculto o en iconos, el nombre de la cuenta abre la lista para cambiar.

@@ -31,6 +31,7 @@ import {
   type Template,
 } from '../ads'
 import { formatWhen } from '../dates'
+import { notify } from '../notices'
 import { cx } from '../util'
 import { Avatar, errorText } from './Ads'
 import * as Icon from './Icons'
@@ -244,7 +245,9 @@ export function AdsComposer({
       if (!tipo || file.size > (tipo === 'imagen' ? MAX_IMAGE : MAX_VIDEO)) rejected.push(file.name)
       else accepted.push({ file, tipo })
     }
-    setError(rejected.length ? `No se pueden usar: ${rejected.join(', ')} (solo imágenes de hasta 30 MB y vídeos de hasta 1 GB).` : null)
+    const refused = rejected.length ? `No se pueden usar: ${rejected.join(', ')} (solo imágenes de hasta 30 MB y vídeos de hasta 1 GB).` : null
+    setError(refused)
+    if (refused) notify('error', refused)
     if (phase.kind === 'done') setPhase({ kind: 'idle' })
     // Se mide cada una para saber si es vertical y juntarla con la otra versión de su pieza.
     const added = await Promise.all(

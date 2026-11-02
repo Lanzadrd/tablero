@@ -5,6 +5,7 @@ import { BoardView } from './components/Board'
 import { CalendarView } from './components/Calendar'
 import { AdsView } from './components/Ads'
 import { GoogleAdsView } from './components/Google'
+import { Notices } from './components/Notices'
 import { SummariesView } from './components/Summaries'
 import { Palette, type CommandId } from './components/Palette'
 import { SelectionBar } from './components/SelectionBar'
@@ -472,6 +473,7 @@ export default function App() {
                 </button>
               </div>
             )}
+            <Notices />
             {status === 'offline' && (
               <div className="status-pill" role="status">
                 Sin conexión con el servidor local · reintentando…

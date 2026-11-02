@@ -154,9 +154,11 @@ export function targetingOf(plan) {
   return targeting
 }
 
-/** El número de WhatsApp elegido, como lo quiere Meta en el conjunto (sin él, Meta usa el conectado a la página). */
-export const promotedNumber = (whatsapp) =>
-  whatsapp ? { ...(whatsapp.id ? { whats_app_business_phone_number_id: whatsapp.id } : {}), whatsapp_phone_number: whatsapp.numero } : {}
+/**
+ * El número de WhatsApp elegido, como lo quiere Meta en el conjunto (sin él, Meta usa el conectado a la página). Solo las
+ * cifras: con su id también, Meta contesta «(#200) Permissions error», aunque así salgan los del Administrador.
+ */
+export const promotedNumber = (whatsapp) => (whatsapp ? { whatsapp_phone_number: whatsapp.numero } : {})
 
 /**
  * El conjunto: mensajes a WhatsApp, con su presupuesto diario (salvo `sharedBudget`: el de la campaña) y, en
@@ -886,8 +888,8 @@ export async function launch(meta, raw, options = {}) {
 
 /** Los objetivos de campaña que admiten conjuntos de mensajes a WhatsApp como los de Tablero. */
 const WHATSAPP_OBJECTIVES = new Set(['OUTCOME_ENGAGEMENT', 'OUTCOME_LEADS', 'OUTCOME_SALES'])
-/** Lo de un conjunto que dice a qué número de WhatsApp llegan los mensajes (sin él, al de la página). */
-const WHATSAPP_NUMBER = ['whats_app_business_phone_number_id', 'whatsapp_phone_number']
+/** Lo de un conjunto que dice a qué número de WhatsApp llegan los mensajes (sin él, al de la página): solo uno, ver promotedNumber. */
+const WHATSAPP_NUMBER = ['whatsapp_phone_number', 'whats_app_business_phone_number_id']
 
 /**
  * Un conjunto nuevo, con un anuncio por imagen o vídeo, en una campaña que ya existe. El conjunto se crea en
@@ -912,7 +914,8 @@ export async function addAdSet(meta, raw, options = {}) {
   const sibling = (campaign.adsets?.data ?? [])
     .map((s) => s.promoted_object ?? {})
     .find((p) => p.page_id === plan.pagina && WHATSAPP_NUMBER.some((key) => p[key]))
-  const promoted = plan.whatsapp ? promotedNumber(plan.whatsapp) : Object.fromEntries(WHATSAPP_NUMBER.filter((key) => sibling?.[key]).map((key) => [key, sibling[key]]))
+  const siblingKey = WHATSAPP_NUMBER.find((key) => sibling?.[key])
+  const promoted = plan.whatsapp ? promotedNumber(plan.whatsapp) : siblingKey ? { [siblingKey]: sibling[siblingKey] } : {}
   const sharedBudget = Number(campaign.daily_budget) > 0 || Number(campaign.lifetime_budget) > 0
   const thumbs = await thumbnailsOf(meta, plan, options)
 

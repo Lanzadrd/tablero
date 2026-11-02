@@ -15,6 +15,7 @@ import {
   type RunningRows,
   type Template,
 } from '../ads'
+import { notify } from '../notices'
 import { cx, useStoredState } from '../util'
 import { errorText } from './Ads'
 import { AdsComposer } from './AdsComposer'
@@ -291,7 +292,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
   const current = data?.ruta === route ? data : null
 
   const load = useCallback(
-    (fresh = false) => {
+    (fresh = false, loud = false) => {
       // Si se cambia de periodo o de nivel antes de que llegue la respuesta anterior, esa se descarta.
       const n = ++latest.current
       setLoading(true)
@@ -302,9 +303,12 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
             if (n !== latest.current) return
             setData({ ...list, ruta: route })
             setError(null)
+            if (loud) notify('ok', 'Datos actualizados')
           },
           (err) => {
-            if (n === latest.current) setError(errorText(err))
+            if (n !== latest.current) return
+            setError(errorText(err))
+            if (loud) notify('error', `No se han podido actualizar los datos: ${errorText(err)}`)
           },
         )
         .finally(() => {
@@ -628,7 +632,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
           title="Actualizar"
           disabled={loading}
           onClick={() => {
-            load(true)
+            load(true, true)
             setRefresh((n) => n + 1)
           }}
         >

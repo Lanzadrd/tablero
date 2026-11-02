@@ -285,6 +285,14 @@ export const Video = () => (
   </svg>
 )
 
+/** Un aviso que solo informa */
+export const Info = () => (
+  <svg {...stroke}>
+    <circle cx="8" cy="8" r="6.25" />
+    <path d="M8 7.25v3.5M8 5.1v.05" />
+  </svg>
+)
+
 /** Poner en marcha un vídeo */
 export const Play = () => (
   <svg {...stroke}>
