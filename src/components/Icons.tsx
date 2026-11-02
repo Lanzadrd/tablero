@@ -285,6 +285,37 @@ export const Video = () => (
   </svg>
 )
 
+/** Poner en marcha un vídeo */
+export const Play = () => (
+  <svg {...stroke}>
+    <path d="M5 3.25v9.5L12.5 8z" />
+  </svg>
+)
+
+/** Parar un vídeo */
+export const Pause = () => (
+  <svg {...stroke}>
+    <path d="M5.5 3.5v9M10.5 3.5v9" />
+  </svg>
+)
+
+/** Con sonido */
+export const SoundOn = () => (
+  <svg {...stroke}>
+    <path d="M2.25 6.25v3.5H4.5L7.75 12.5v-9L4.5 6.25z" />
+    <path d="M10.25 6a2.75 2.75 0 0 1 0 4" />
+    <path d="M12.25 4.25a5.25 5.25 0 0 1 0 7.5" />
+  </svg>
+)
+
+/** Sin sonido */
+export const SoundOff = () => (
+  <svg {...stroke}>
+    <path d="M2.25 6.25v3.5H4.5L7.75 12.5v-9L4.5 6.25z" />
+    <path d="m10.5 6.25 3.5 3.5M14 6.25l-3.5 3.5" />
+  </svg>
+)
+
 /** Recargar (↻ sin repetición: volver a pedir los datos) */
 export const Reload = () => (
   <svg {...stroke}>

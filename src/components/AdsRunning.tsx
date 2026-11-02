@@ -278,11 +278,15 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
   const [addingAd, setAddingAd] = useState(false)
   const [editing, setEditing] = useState<AdRow | null>(null)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
+  /** «Crear» sin saber dónde: buscando las opciones, y preguntando en cuál. */
+  const [gathering, setGathering] = useState(false)
+  const [picking, setPicking] = useState<{ anchor: HTMLElement; title: string; items: MenuItem[] } | null>(null)
   /** Lo último que ha salido bien (creado, guardado, duplicado…), para decirlo arriba. */
   const [banner, setBanner] = useState<string | null>(null)
   const latest = useRef(0)
   const here = useRef<HTMLSpanElement>(null)
-  const newAdSet = useRef<HTMLButtonElement>(null)
+  const createButton = useRef<HTMLButtonElement>(null)
+  const asking = useRef(0)
   /** Lo que se enseña: solo si es de este nivel (al cambiar de periodo, lo anterior sigue, atenuado). */
   const current = data?.ruta === route ? data : null
 
@@ -331,8 +335,73 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
     setAddingAd(false)
     setEditing(null)
     setBanner(null)
+    setPicking(null)
+    asking.current++
     // El botón pulsado desaparece: el foco, a donde se está ahora.
     requestAnimationFrame(() => here.current?.focus())
+  }
+
+  /**
+   * «Crear» crea lo de la pestaña en la que se está, como en el Administrador de anuncios: una campaña; un conjunto en
+   * la campaña elegida; un anuncio en el conjunto elegido. Si no está claro en cuál, lo pregunta.
+   */
+  const create = async (anchor: HTMLElement) => {
+    if (!meta) return
+    setBanner(null)
+    setError(null)
+    if (level === 'campana') {
+      meta.onCreate()
+      return
+    }
+    const start = () => (level === 'conjunto' ? setAdding(true) : setAddingAd(true))
+    const parents = level === 'conjunto' ? campaigns : adSets
+    if (parents.length === 1) {
+      start()
+      return
+    }
+    let options: Array<AdRef & Partial<Pick<AdRow, 'estado' | 'padres'>>> = parents
+    if (!options.length) {
+      const n = ++asking.current
+      setGathering(true)
+      try {
+        const list = await source.rows(account.id, period, { nivel: level === 'conjunto' ? 'campana' : 'conjunto', campanas: level === 'anuncio' ? campaigns : undefined }, false)
+        options = [...list.filas].sort((a, b) => Number(b.estado === 'activa') - Number(a.estado === 'activa'))
+      } catch (err) {
+        if (n === asking.current) setError(errorText(err))
+        return
+      } finally {
+        setGathering(false)
+      }
+      if (n !== asking.current) return
+    }
+    const into = (parent: AdRef) => {
+      if (level === 'conjunto') show('conjunto', [parent], [])
+      else show('anuncio', campaigns, [parent])
+      start()
+    }
+    if (options.length === 1) {
+      into({ id: options[0].id, nombre: options[0].nombre })
+    } else if (options.length) {
+      setPicking({
+        anchor,
+        title: level === 'conjunto' ? '¿En qué campaña?' : '¿En qué conjunto?',
+        items: [
+          ...options.map((o): MenuItem => ({
+            label: o.nombre,
+            note: [campaigns.length === 1 ? null : o.padres?.campana?.nombre, o.estado === 'pausada' ? 'En pausa' : null].filter(Boolean).join(' · ') || undefined,
+            run: () => into({ id: o.id, nombre: o.nombre }),
+          })),
+          'separator',
+          { label: 'Una campaña nueva', run: meta.onCreate },
+        ],
+      })
+    } else if (level === 'anuncio' && campaigns.length === 1) {
+      // Una campaña sin conjuntos: primero el conjunto, que ya lleva sus anuncios.
+      show('conjunto', campaigns, [])
+      setAdding(true)
+    } else {
+      meta.onCreate()
+    }
   }
 
   const change = async (row: AdRow, estado: AdRow['estado']) => {
@@ -479,12 +548,18 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
     })
   }
 
-  if (addingAd && scopeLevel === 'conjunto' && single && source.adder) {
+  const backToCreate = () => requestAnimationFrame(() => createButton.current?.focus())
+
+  // Con los datos ya aquí: de ellos salen la página, el presupuesto y los textos con los que empieza.
+  if (addingAd && scopeLevel === 'conjunto' && single && current && source.adder) {
     return source.adder({
       account,
       adSet: single,
       template: rows[0] ?? null,
-      onCancel: () => setAddingAd(false),
+      onCancel: () => {
+        setAddingAd(false)
+        backToCreate()
+      },
       onSaved: (message) => {
         setAddingAd(false)
         setShowPaused(true)
@@ -494,7 +569,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
     })
   }
 
-  if (adding && level === 'conjunto' && single && meta) {
+  if (adding && level === 'conjunto' && single && current && meta) {
     return (
       <AdsComposer
         account={account}
@@ -510,7 +585,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
         }}
         onCancel={() => {
           setAdding(false)
-          requestAnimationFrame(() => newAdSet.current?.focus())
+          backToCreate()
         }}
         onAdSet={(adSet) => {
           setAdding(false)
@@ -531,9 +606,9 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
     <div className={cx('ads-running', loading && 'is-loading')} aria-busy={loading}>
       <div className="ads-running-bar">
         {meta && (
-          <button type="button" className="ads-create-btn" onClick={meta.onCreate}>
+          <button ref={createButton} type="button" className="ads-create-btn" disabled={gathering} onClick={(e) => void create(e.currentTarget)}>
             <Icon.Plus />
-            Crear
+            Crear {words.nombre.toLowerCase()}
           </button>
         )}
         <Segmented value={period} options={PERIODS} label="Periodo" onChange={setPeriod} />
@@ -649,33 +724,6 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
                   )}
                 </span>
               )}
-              {level === 'conjunto' && single && meta && (
-                <button
-                  ref={newAdSet}
-                  type="button"
-                  className="btn ads-new-adset"
-                  onClick={() => {
-                    setBanner(null)
-                    setAdding(true)
-                  }}
-                >
-                  <Icon.Plus />
-                  Nuevo conjunto
-                </button>
-              )}
-              {level === 'anuncio' && scopeLevel === 'conjunto' && single && source.adder && (
-                <button
-                  type="button"
-                  className="btn ads-new-adset"
-                  onClick={() => {
-                    setBanner(null)
-                    setAddingAd(true)
-                  }}
-                >
-                  <Icon.Plus />
-                  Nuevo anuncio
-                </button>
-              )}
               {source.cards && single && current?.padre && (
                 <div className="ads-panel-facts">
                   <RowFacts row={current.padre} currency={currency} />
@@ -769,6 +817,18 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
           )}
         </section>
       </div>
+      {picking && (
+        <Menu
+          anchor={picking.anchor}
+          label={picking.title}
+          title={picking.title}
+          placement="below-start"
+          width={320}
+          className="ads-create-menu"
+          items={picking.items}
+          onClose={() => setPicking(null)}
+        />
+      )}
       {confirm && (
         <Popover anchor={confirm.anchor} placement="below-end" width={300} label={confirmLabel(confirm.kind, source)} onClose={() => setConfirm(null)}>
           <div className="ads-confirm">

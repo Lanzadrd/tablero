@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { GREETING, type AdSettings, type MetaPage } from '../ads'
 import { versionFor, type Formato } from '../placements'
+import { useStoredState } from '../util'
 import { Avatar } from './Ads'
 import { formatOfCreative, type Creative, type Draft } from './AdsMedia'
 import { chosenKeys, type PlacementMode } from './AdsPlacements'
@@ -51,6 +52,17 @@ const MOCKS: Array<{
   },
 ]
 
+/** Quien pide menos movimiento los ve parados hasta que los ponga en marcha. */
+const LESS_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** Lo que comparten los vídeos de las vistas previas: si están parados y si suena este (solo uno, o se oirían a la vez). */
+interface Player {
+  paused: boolean
+  sound: boolean
+  onPause: () => void
+  onSound: () => void
+}
+
 const RATIO: Record<Formato, number> = {
   '4:5': 4 / 5,
   '1:1': 1,
@@ -75,6 +87,8 @@ export function AdPreview({
   placements?: { ubicaciones: PlacementMode; posiciones: string[] } | null
 }) {
   const [chosen, setChosen] = useState<string | null>(null)
+  const [paused, setPaused] = useStoredState('tablero.anuncios.vista.parada', LESS_MOTION)
+  const [sounding, setSounding] = useState<Kind | null>(null)
   const draft = drafts.find((d) => d.key === chosen) ?? drafts[0] ?? null
   const name = page?.nombre ?? 'Tu página'
   const instagram = page?.instagrams.find((i) => i.id === settings.instagram)?.usuario ?? name
@@ -119,6 +133,16 @@ export function AdPreview({
           {mocks.map((m) => {
             const { formato, creative } = versionIn(m)
             const own = formato !== null && m.formats.includes(formato)
+            const player: Player = {
+              paused,
+              sound: sounding === m.kind,
+              onPause: () => setPaused(!paused),
+              // Para oírlo tiene que estar en marcha.
+              onSound: () => {
+                setSounding(sounding === m.kind ? null : m.kind)
+                if (sounding !== m.kind) setPaused(false)
+              },
+            }
             return (
               <figure key={m.kind} className="ads-preview-item">
                 <figcaption>
@@ -143,7 +167,7 @@ export function AdPreview({
                   <article className="ads-mock ads-mock-feed">
                     <MockHeader name={name} photo={page?.foto ?? null} />
                     <p className="ads-mock-text is-clamped">{text}</p>
-                    <MockMedia creative={creative} ratio={feedRatio(creative)} />
+                    <MockMedia creative={creative} ratio={feedRatio(creative)} player={player} />
                     <CtaBar title={title} description={description} />
                   </article>
                 )}
@@ -151,7 +175,7 @@ export function AdPreview({
                 {m.kind === 'instagram' && (
                   <article className="ads-mock ads-mock-feed">
                     <MockHeader name={instagram} photo={page?.foto ?? null} />
-                    <MockMedia creative={creative} ratio={feedRatio(creative)} />
+                    <MockMedia creative={creative} ratio={feedRatio(creative)} player={player} />
                     <div className="ads-mock-ig-cta">
                       Enviar mensaje de WhatsApp <span aria-hidden="true">›</span>
                     </div>
@@ -163,7 +187,7 @@ export function AdPreview({
 
                 {m.kind === 'story' && (
                   <article className="ads-mock ads-mock-story">
-                    <MockMedia creative={creative} ratio={RATIO['9:16']} fit={!own} />
+                    <MockMedia creative={creative} ratio={RATIO['9:16']} fit={!own} player={player} />
                     <div className="ads-mock-story-top">
                       <MockHeader name={instagram} photo={page?.foto ?? null} />
                     </div>
@@ -178,7 +202,7 @@ export function AdPreview({
                   <article className="ads-mock ads-mock-feed">
                     <MockHeader name={name} photo={page?.foto ?? null} />
                     <p className="ads-mock-text is-clamped-2">{text}</p>
-                    <MockMedia creative={creative} ratio={RATIO['16:9']} fit={!own || formato !== '16:9'} />
+                    <MockMedia creative={creative} ratio={RATIO['16:9']} fit={!own || formato !== '16:9'} player={player} />
                     <CtaBar title={title} description={description} />
                   </article>
                 )}
@@ -228,7 +252,7 @@ function CtaBar({ title, description }: { title: string; description: string }) 
  * La imagen o el vídeo en un marco con la proporción de la ubicación. `fit`: si no es de ese formato, va entera en el
  * centro sobre ella misma desenfocada (como hace Meta en Stories y Reels).
  */
-function MockMedia({ creative, ratio, fit = false }: { creative: Creative | undefined; ratio: number; fit?: boolean }) {
+function MockMedia({ creative, ratio, fit = false, player }: { creative: Creative | undefined; ratio: number; fit?: boolean; player: Player }) {
   if (!creative) {
     return (
       <div className="ads-mock-media is-empty" style={{ aspectRatio: ratio }}>
@@ -236,16 +260,57 @@ function MockMedia({ creative, ratio, fit = false }: { creative: Creative | unde
       </div>
     )
   }
-  const media = (className?: string) =>
+  const media = (className?: string, sound = false) =>
     creative.tipo === 'imagen' ? (
       <img className={className} src={creative.preview} alt="" referrerPolicy="no-referrer" />
     ) : (
-      <video className={className} src={creative.preview} muted loop playsInline autoPlay />
+      <MockVideo className={className} src={creative.preview} paused={player.paused} sound={sound} />
     )
   return (
     <div className="ads-mock-media" style={{ aspectRatio: ratio }}>
       {fit && media('is-backdrop')}
-      {media(fit ? 'is-contained' : undefined)}
+      {media(fit ? 'is-contained' : undefined, player.sound)}
+      {creative.tipo === 'video' && (
+        <div className="ads-video-controls">
+          <VideoButton label={player.paused ? 'Poner los vídeos en marcha' : 'Parar los vídeos'} onClick={player.onPause}>
+            {player.paused ? <Icon.Play /> : <Icon.Pause />}
+          </VideoButton>
+          <VideoButton label={player.sound ? 'Quitar el sonido' : 'Poner el sonido'} onClick={player.onSound}>
+            {player.sound ? <Icon.SoundOn /> : <Icon.SoundOff />}
+          </VideoButton>
+        </div>
+      )}
     </div>
   )
+}
+
+function VideoButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" className="ads-video-btn" aria-label={label} title={label} onClick={onClick}>
+      {children}
+    </button>
+  )
+}
+
+/** Un vídeo que va o se para con los demás. Si no se ve (más abajo, o con el formulario oculto), se para y deja de sonar. */
+function MockVideo({ src, className, paused, sound }: { src: string; className?: string; paused: boolean; sound: boolean }) {
+  const ref = useRef<HTMLVideoElement>(null)
+  const [seen, setSeen] = useState(true)
+
+  useEffect(() => {
+    if (!ref.current) return
+    const observer = new IntersectionObserver(([entry]) => setSeen(entry.isIntersecting))
+    observer.observe(ref.current)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const video = ref.current
+    if (!video) return
+    if (paused || !seen) video.pause()
+    // Si no llega a arrancar, se queda en su primer fotograma.
+    else video.play().catch(() => {})
+  }, [paused, seen, src])
+
+  return <video ref={ref} className={className} src={src} muted={!sound} loop playsInline preload="metadata" />
 }

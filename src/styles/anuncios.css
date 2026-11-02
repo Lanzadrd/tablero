@@ -727,6 +727,38 @@
   object-fit: contain;
 }
 
+/* Parar los vídeos y ponerles sonido: arriba a la derecha, que abajo va el texto de Stories. */
+.ads-video-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+}
+
+.ads-video-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  transition: background-color 120ms;
+}
+
+.ads-video-btn:hover {
+  background: rgba(0, 0, 0, 0.82);
+}
+
+.ads-video-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+}
+
 .ads-mock-cta-bar {
   display: flex;
   align-items: center;
@@ -807,6 +839,10 @@
 .ads-mock-story-top {
   top: 0;
   background: linear-gradient(rgba(0, 0, 0, 0.45), transparent);
+}
+
+.ads-mock-story-top .ads-mock-header {
+  padding-right: 84px;
 }
 
 .ads-mock-story-top .ads-mock-header span {
@@ -1977,15 +2013,6 @@
   outline-offset: 1px;
 }
 
-.ads-crumbs .ads-new-adset {
-  margin-left: auto;
-}
-
-.ads-new-adset svg {
-  width: 14px;
-  height: 14px;
-}
-
 .ads-created {
   display: flex;
   align-items: flex-start;
@@ -2932,10 +2959,6 @@
   outline-offset: 2px;
 }
 
-.ads-panel-head .ads-new-adset {
-  margin-left: auto;
-}
-
 .ads-panel-message {
   display: grid;
   justify-items: start;
@@ -3034,6 +3057,35 @@
 
 .ads .ads-create-btn:hover {
   background: var(--create-hover);
+}
+
+.ads .ads-create-btn:disabled {
+  opacity: 0.7;
+}
+
+/* «Crear» sin saber dónde: la lista de campañas o conjuntos (nombres largos y, a veces, muchos). */
+.ads-create-menu {
+  max-height: min(440px, calc(100dvh - 24px));
+}
+
+.ads-create-menu .menu-title {
+  margin: 4px 9px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.ads-create-menu .menu-item {
+  height: auto;
+  min-height: 28px;
+  padding-block: 5px;
+}
+
+.ads-create-menu .menu-item small {
+  display: block;
+  margin-top: 1px;
+  font-size: 11.5px;
+  opacity: 0.7;
 }
 
 .ads-create-btn svg {

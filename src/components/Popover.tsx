@@ -154,7 +154,7 @@ export function Popover({
 }
 
 export type MenuItem =
-  | { label: string; run: () => void; disabled?: boolean; danger?: boolean; hint?: string }
+  | { label: string; run: () => void; disabled?: boolean; danger?: boolean; hint?: string; note?: string }
   | 'separator'
 
 /** Menú desplegable al estilo macOS. */
@@ -162,11 +162,20 @@ export function Menu({
   anchor,
   items,
   label,
+  title,
+  placement = 'below-end',
+  width = 232,
+  className,
   onClose,
 }: {
   anchor: HTMLElement
   items: MenuItem[]
   label: string
+  /** Lo que pregunta, encima de las opciones. */
+  title?: string
+  placement?: Placement
+  width?: number
+  className?: string
   onClose: () => void
 }) {
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -180,13 +189,14 @@ export function Menu({
   }
 
   return (
-    <Popover anchor={anchor} placement="below-end" width={232} label={label} role="menu" className="menu" onClose={onClose} onKeyDown={onKeyDown}>
+    <Popover anchor={anchor} placement={placement} width={width} label={label} role="menu" className={cx('menu', className)} onClose={onClose} onKeyDown={onKeyDown}>
+      {title && <p className="menu-title">{title}</p>}
       {items.map((item, i) =>
         item === 'separator' ? (
           <div key={`sep-${i}`} className="menu-sep" role="separator" />
         ) : (
           <button
-            key={item.label}
+            key={`${item.label}-${i}`}
             type="button"
             role="menuitem"
             className={cx('menu-item', item.danger && 'is-danger')}
@@ -196,7 +206,10 @@ export function Menu({
               item.run()
             }}
           >
-            <span>{item.label}</span>
+            <span>
+              {item.label}
+              {item.note && <small>{item.note}</small>}
+            </span>
             {item.hint && <kbd>{item.hint}</kbd>}
           </button>
         ),

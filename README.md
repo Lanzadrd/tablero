@@ -155,12 +155,15 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
     conserva sus métricas (Meta lo vuelve a revisar). Los que usan una publicación existente, los carruseles y los
     que no llevan a WhatsApp solo cambian de nombre.
   - **Duplicar** (en pausa, con todo lo que cuelga), **archivar** y **borrar** (pide confirmación; borrar no se
-    puede deshacer). Y **Nuevo anuncio** dentro de un conjunto, empezando con los textos de uno de sus anuncios.
-- **Nuevo conjunto**: dentro de una campaña (de interacción, clientes potenciales o ventas), el mismo formulario
-  que una campaña nueva crea un conjunto de mensajes a WhatsApp con sus anuncios. Usa la página de los demás
-  conjuntos y, si mandan los mensajes a un número concreto, ese número; si la campaña reparte su presupuesto,
-  el conjunto no lleva. Se crea en pausa con los anuncios listos (se enciende con su interruptor) o, con
-  «Publicar ya», activo.
+    puede deshacer).
+- **+ Crear** crea lo de la pestaña en la que estás, como en el Administrador: una campaña, un conjunto en la
+  campaña elegida o un anuncio en el conjunto elegido (si no está claro en cuál, lo pregunta).
+  - *Anuncio*: empieza con los textos de uno de los anuncios del conjunto.
+  - *Conjunto*: dentro de una campaña (de interacción, clientes potenciales o ventas), el mismo formulario
+    que una campaña nueva crea un conjunto de mensajes a WhatsApp con sus anuncios. Usa la página de los demás
+    conjuntos y, si mandan los mensajes a un número concreto, ese número; si la campaña reparte su presupuesto,
+    el conjunto no lleva. Se crea en pausa con los anuncios listos (se enciende con su interruptor) o, con
+    «Publicar ya», activo.
 - **Nueva campaña**: eliges la cuenta (agrupadas por portfolio), una **plantilla** (página, Instagram,
   presupuesto diario, lugares, edad, sexo, Advantage+, ubicaciones, textos, chat de WhatsApp y mejoras de Meta)
   y arrastras imágenes o vídeos: cada pieza es un anuncio del mismo conjunto. Se empieza con el botón verde
@@ -173,7 +176,8 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
   anuncia, presupuesto, público (sin plantilla, **Ciudad del Este**), imágenes y vídeos con sus ubicaciones,
   texto, chat y mejoras. Con sitio, a la derecha va la **vista previa**, todas a la vez: feed de Facebook y de
   Instagram (4:5), Stories y Reels (9:16) y horizontal (16:9), cada una con la versión que le toca y avisando
-  si Meta tiene que adaptar otra; con ubicaciones elegidas, solo las que salen. Sin sitio, debajo.
+  si Meta tiene que adaptar otra; con ubicaciones elegidas, solo las que salen. Sin sitio, debajo. Los vídeos se
+  paran y se les pone sonido con sus botones (suena uno cada vez; si los paras, siguen parados la próxima vez).
 - **Texto**: texto principal, título y descripción (los dos últimos, opcionales). **Escribir con Claude** los
   escribe todos, y el chat de WhatsApp, con la API de Claude (Claude Opus 5.5): ve las imágenes, la página, el
   público, lo ya escrito y unas indicaciones opcionales; no inventa precios ni fechas, y se puede deshacer. La
