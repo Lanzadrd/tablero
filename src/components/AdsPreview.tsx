@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { GREETING, type AdSettings, type MetaPage } from '../ads'
+import { buttonLabel, GREETING, hostOf, type AdSettings, type MetaPage } from '../ads'
 import { versionFor, type Formato } from '../placements'
 import { useStoredState } from '../util'
 import { Avatar } from './Ads'
@@ -95,6 +95,10 @@ export function AdPreview({
   const text = settings.texto.trim() || 'Aquí va el texto principal.'
   const title = settings.titular.trim()
   const description = settings.descripcion.trim()
+  // Lo que se lee en el botón y de dónde: la web o WhatsApp.
+  const web = settings.destino === 'web'
+  const button = web ? buttonLabel(settings.boton) : 'Enviar mensaje de WhatsApp'
+  const bar = web ? { domain: hostOf(settings.url) || 'tu-web.com', button: buttonLabel(settings.boton) } : { domain: 'WhatsApp', button: 'Enviar mensaje' }
 
   const mode = placements?.ubicaciones ?? settings.ubicaciones
   const selected = mode === 'auto' || mode === 'meta' ? null : new Set(chosenKeys(mode, placements?.posiciones ?? settings.posiciones))
@@ -168,7 +172,7 @@ export function AdPreview({
                     <MockHeader name={name} photo={page?.foto ?? null} />
                     <p className="ads-mock-text is-clamped">{text}</p>
                     <MockMedia creative={creative} ratio={feedRatio(creative)} player={player} />
-                    <CtaBar title={title} description={description} />
+                    <CtaBar title={title} description={description} {...bar} />
                   </article>
                 )}
 
@@ -177,7 +181,7 @@ export function AdPreview({
                     <MockHeader name={instagram} photo={page?.foto ?? null} />
                     <MockMedia creative={creative} ratio={feedRatio(creative)} player={player} />
                     <div className="ads-mock-ig-cta">
-                      Enviar mensaje de WhatsApp <span aria-hidden="true">›</span>
+                      {button} <span aria-hidden="true">›</span>
                     </div>
                     <p className="ads-mock-text is-clamped-2">
                       <strong>{instagram}</strong> {text}
@@ -193,7 +197,7 @@ export function AdPreview({
                     </div>
                     <div className="ads-mock-story-bottom">
                       <p className="ads-mock-text is-clamped-2">{text}</p>
-                      <span className="ads-mock-button is-wide">Enviar mensaje de WhatsApp</span>
+                      <span className="ads-mock-button is-wide">{button}</span>
                     </div>
                   </article>
                 )}
@@ -203,7 +207,7 @@ export function AdPreview({
                     <MockHeader name={name} photo={page?.foto ?? null} />
                     <p className="ads-mock-text is-clamped-2">{text}</p>
                     <MockMedia creative={creative} ratio={RATIO['16:9']} fit={!own || formato !== '16:9'} player={player} />
-                    <CtaBar title={title} description={description} />
+                    <CtaBar title={title} description={description} {...bar} />
                   </article>
                 )}
               </figure>
@@ -212,9 +216,15 @@ export function AdPreview({
         </div>
       )}
 
-      <p className="ads-mock-chat">
-        <span>Al tocar, WhatsApp abre con:</span> «{settings.bienvenida.trim() || GREETING}»
-      </p>
+      {web ? (
+        <p className="ads-mock-chat">
+          <span>Al tocar, se abre:</span> {settings.url.trim() || 'tu web'}
+        </p>
+      ) : (
+        <p className="ads-mock-chat">
+          <span>Al tocar, WhatsApp abre con:</span> «{settings.bienvenida.trim() || GREETING}»
+        </p>
+      )}
       <p className="ads-note">Aproximada: Meta ajusta el diseño según el móvil y la ubicación.</p>
     </div>
   )
@@ -235,15 +245,15 @@ function MockHeader({ name, photo }: { name: string; photo: string | null }) {
   )
 }
 
-function CtaBar({ title, description }: { title: string; description: string }) {
+function CtaBar({ title, description, domain, button }: { title: string; description: string; domain: string; button: string }) {
   return (
     <div className="ads-mock-cta-bar">
       <div className="ads-mock-cta-text">
-        <span className="ads-mock-domain">WhatsApp</span>
+        <span className="ads-mock-domain">{domain}</span>
         {title && <strong>{title}</strong>}
         {description && <span>{description}</span>}
       </div>
-      <span className="ads-mock-button">Enviar mensaje</span>
+      <span className="ads-mock-button">{button}</span>
     </div>
   )
 }

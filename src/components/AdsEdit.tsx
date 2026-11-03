@@ -3,6 +3,7 @@ import {
   budgetText,
   DEFAULT_SETTINGS,
   ENHANCEMENTS,
+  LEAD_EVENTS,
   MAX_QUESTIONS,
   metaApi,
   uploadMedia,
@@ -23,8 +24,8 @@ import {
 import { formatOf, FORMATOS, type Formato } from '../placements'
 import { cx } from '../util'
 import { errorText } from './Ads'
-import { CHAT_STARTS, ChatPreview, Chips, Field, GENDERS, MoneyInput, PlacePicker, Questions, range } from './AdsComposer'
-import { measure, type Creative } from './AdsMedia'
+import { adsCount, CHAT_STARTS, ChatPreview, Chips, DropZone, Field, GENDERS, MoneyInput, PlacePicker, Questions, range, uploadDrafts, useDrafts, WebFields } from './AdsComposer'
+import { formatOfCreative, measure, MediaList, type Creative } from './AdsMedia'
 import { PlacementPicker, type PlacementMode } from './AdsPlacements'
 import { AdPreview } from './AdsPreview'
 import type { AdderProps, EditorProps } from './AdsRunning'
@@ -385,7 +386,8 @@ function AdSetForm({ data, onSave }: FormProps) {
         <p className="ads-hint">
           Optimización: {OPTIMIZATION[s.optimizacion ?? ''] ?? s.optimizacion ?? '—'}
           {s.destino === 'WHATSAPP' ? ' · a WhatsApp' : ''}
-          {s.whatsapp ? ` (+${s.whatsapp})` : s.destino === 'WHATSAPP' ? ' (sin número elegido: Meta usa el conectado a la página)' : ''}. Para cambiarlo, duplica el conjunto en otra campaña o crea uno nuevo.
+          {s.whatsapp ? ` (+${s.whatsapp})` : s.destino === 'WHATSAPP' ? ' (sin número elegido: Meta usa el conectado a la página)' : ''}
+          {s.web ? ` · a una web, con el evento ${LEAD_EVENTS.find((e) => e.value === s.web?.evento)?.label ?? s.web.evento ?? 'del píxel'}` : ''}. Para cambiarlo, duplica el conjunto en otra campaña o crea uno nuevo.
         </p>
       </section>
       <SaveBar changed={changed} busy={busy} error={error} onSave={() => void run(() => changes)} />
@@ -486,12 +488,17 @@ interface ContentResult {
   contentChanged: boolean
   /** Todas las versiones, solo si se ha cambiado alguna. */
   versiones?: AdVersion[]
+  /** Los anuncios nuevos, cada uno con sus versiones. */
+  anuncios?: Array<{ nombre: string; versiones: AdVersion[] }>
+  /** Los anuncios nuevos se crean encendidos. */
+  publicar?: boolean
 }
 
 /**
- * El contenido de un anuncio (uno que se edita o uno nuevo en el conjunto): una imagen o un vídeo por formato (cada
- * uno va en sus ubicaciones, que son las del conjunto), los textos (con sus otras opciones, como en el Administrador
- * de anuncios), el Instagram, el chat de WhatsApp y las mejoras; con la vista previa al lado.
+ * El contenido de un anuncio que se edita (una imagen o un vídeo por formato, cada uno en sus ubicaciones, que son las
+ * del conjunto) o de los que se añaden al conjunto (tantos como piezas se suban): los textos (con sus otras opciones, como
+ * en el Administrador de anuncios), el Instagram, adónde lleva (el chat de WhatsApp o la web) y las mejoras; con la vista
+ * previa al lado.
  */
 function AdContentEditor({
   account,
@@ -523,6 +530,11 @@ function AdContentEditor({
   const [pages, setPages] = useState<MetaPage[] | null>(null)
   const [uploading, setUploading] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
+  const { drafts: pieces, setDrafts: setPieces, addFiles } = useDrafts(setLocalError)
+  const [publish, setPublish] = useState(false)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const adding = mode === 'new'
+  const web = content.destino === 'web'
   const update = (changes: Partial<AdContent>) => setContent((c) => ({ ...c, ...changes }))
   const setVariants = (changes: Partial<Variants>) => setContent((c) => ({ ...c, variantes: { ...c.variantes, ...changes } }))
 
@@ -546,14 +558,22 @@ function AdContentEditor({
         .sort(byOrder)
         .join()
   const contentChanged = JSON.stringify(content) !== JSON.stringify(initial)
-  const changed = mode === 'new' || name.trim() !== initialName || contentChanged || versionsChanged
-  const blocked = !content.texto.trim()
-    ? 'Falta el texto principal.'
-    : !filled.length
-      ? 'Falta la imagen o el vídeo.'
-      : !single && hasVariants
-        ? 'Con varias versiones, cada texto va uno solo: quita las otras opciones o deja una versión.'
-        : null
+  const changed = adding || name.trim() !== initialName || contentChanged || versionsChanged
+  const blocked = adding && !content.pagina
+    ? 'Elige la página.'
+    : !content.texto.trim()
+      ? 'Falta el texto principal.'
+      : web && !content.url?.trim()
+        ? 'Falta la dirección de la web.'
+        : adding
+          ? pieces.length
+            ? null
+            : 'Sube al menos una imagen o un vídeo.'
+          : !filled.length
+            ? 'Falta la imagen o el vídeo.'
+            : !single && hasVariants
+              ? 'Con varias versiones, cada texto va uno solo: quita las otras opciones o deja una versión.'
+              : null
 
   const pick = async (file: File | undefined, formato: Formato) => {
     if (!file) return
@@ -588,8 +608,15 @@ function AdContentEditor({
     setUploading(true)
     setLocalError(null)
     try {
+      if (adding) {
+        const anuncios = await uploadDrafts(account.id, pieces, setPieces, (done, total) => setProgress({ done, total }))
+        setUploading(false)
+        setProgress(null)
+        onSubmit({ nombre: initialName, contenido: content, contentChanged: true, anuncios, publicar: publish })
+        return
+      }
       let versiones: AdVersion[] | undefined
-      if (versionsChanged || mode === 'new') {
+      if (versionsChanged) {
         versiones = []
         for (const formato of filled) {
           const slot = slots[formato]!
@@ -603,11 +630,12 @@ function AdContentEditor({
       onSubmit({
         nombre: name.trim() || initialName,
         contenido: content,
-        contentChanged: contentChanged || mode === 'new',
+        contentChanged,
         versiones,
       })
     } catch (err) {
       setUploading(false)
+      setProgress(null)
       setLocalError(errorText(err))
     }
   }
@@ -632,37 +660,51 @@ function AdContentEditor({
         ratio: slot.file ? slot.ratio : RATIO[f],
       }
     })
-  const drafts = items.length ? [{ key: 'anuncio', nombre: name, items }] : []
-  const video = filled.length ? slots[filled[0]]!.tipo === 'video' : null
+  const drafts = adding ? pieces : items.length ? [{ key: 'anuncio', nombre: name, items }] : []
+  const video = adding ? (pieces.length ? pieces.every((d) => d.items[0].tipo === 'video') : null) : filled.length ? slots[filled[0]]!.tipo === 'video' : null
 
   return (
     <div className="ads-composer-layout">
       <div className="ads-composer">
-        <NameCard id={`${ids}-name`} label="Anuncio" value={name} onChange={setName} />
+        {!adding && <NameCard id={`${ids}-name`} label="Anuncio" value={name} onChange={setName} />}
 
         <section className="ads-card" aria-labelledby={`${ids}-media`}>
-          <h4 id={`${ids}-media`}>Imagen o vídeo</h4>
-          <p className="ads-hint">Una por formato, todas de la misma pieza. Cada una va en las ubicaciones que le tocan; la primera que haya (4:5, si la hay), en las demás.</p>
-          <div className="ads-slots">
-            {FORMATOS.map((f) => (
-              <MediaSlot
-                key={f.value}
-                id={`${ids}-${f.value.replace(':', 'x')}`}
-                format={f}
-                slot={slots[f.value] ?? null}
-                disabled={busy || uploading}
-                onPick={(file) => void pick(file, f.value)}
-                onRemove={() => removeSlot(f.value)}
-              />
-            ))}
-          </div>
+          {adding ? (
+            <>
+              <h4 id={`${ids}-media`}>
+                Imágenes y vídeos <span className="ads-count">{pieces.length ? `· ${adsCount(pieces.length)}` : ''}</span>
+              </h4>
+              <p className="ads-hint">Cada fila es un anuncio, con el mismo texto. Si subes varios formatos de una pieza (1:1, 4:5, 9:16 y 16:9), se juntan en un solo anuncio.</p>
+              <DropZone onFiles={(files) => void addFiles(files)} disabled={busy || uploading} />
+              {pieces.length > 0 && <MediaList drafts={pieces} busy={busy || uploading} onChange={setPieces} />}
+            </>
+          ) : (
+            <>
+              <h4 id={`${ids}-media`}>Imagen o vídeo</h4>
+              <p className="ads-hint">Una por formato, todas de la misma pieza. Cada una va en las ubicaciones que le tocan; la primera que haya (4:5, si la hay), en las demás.</p>
+              <div className="ads-slots">
+                {FORMATOS.map((f) => (
+                  <MediaSlot
+                    key={f.value}
+                    id={`${ids}-${f.value.replace(':', 'x')}`}
+                    format={f}
+                    slot={slots[f.value] ?? null}
+                    disabled={busy || uploading}
+                    onPick={(file) => void pick(file, f.value)}
+                    onRemove={() => removeSlot(f.value)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
           <h5 className="ads-subtitle">Ubicaciones del conjunto</h5>
           {placements ? (
             <PlacementPicker
               mode={placements.ubicaciones}
               chosen={placements.posiciones}
-              pieces={[filled]}
+              pieces={adding ? (pieces.length ? pieces.map((d) => d.items.map(formatOfCreative)) : undefined) : [filled]}
               video={video}
+              whatsapp={!web}
               readOnly
               note={
                 placements.ubicaciones === 'auto'
@@ -702,6 +744,26 @@ function AdContentEditor({
             {mode === 'edit' && single && (
               <VariantList label="Otras opciones de la descripción" values={content.variantes.descripciones} onChange={(descripciones) => setVariants({ descripciones })} />
             )}
+            {adding && !initial.pagina && pages && (
+              <Field label="Página" htmlFor={`${ids}-page`} note="El conjunto lleva a una web y no dice con qué página se anuncia.">
+                <select
+                  id={`${ids}-page`}
+                  className="input"
+                  value={content.pagina ?? ''}
+                  onChange={(e) => {
+                    const next = pages.find((p) => p.id === e.target.value)
+                    update({ pagina: next?.id ?? null, instagram: next?.instagrams[0]?.id ?? null })
+                  }}
+                >
+                  {!content.pagina && <option value="">Elige una página…</option>}
+                  {pages.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nombre}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
             {page && (
               <Field label="Instagram" htmlFor={`${ids}-ig`}>
                 <select id={`${ids}-ig`} className="input" value={content.instagram ?? ''} onChange={(e) => update({ instagram: e.target.value || null })}>
@@ -720,6 +782,14 @@ function AdContentEditor({
           </div>
         </section>
 
+        {web ? (
+          <section className="ads-card" aria-labelledby={`${ids}-web`}>
+            <h4 id={`${ids}-web`}>La web</h4>
+            <div className="ads-fields">
+              <WebFields id={`${ids}-web`} value={content} onChange={update} />
+            </div>
+          </section>
+        ) : (
         <section className="ads-card" aria-labelledby={`${ids}-chat`}>
           <h4 id={`${ids}-chat`}>Chat de WhatsApp</h4>
           <div className="ads-chat">
@@ -749,6 +819,7 @@ function AdContentEditor({
             <ChatPreview settings={previewSettings} page={page} />
           </div>
         </section>
+        )}
 
         <section className="ads-card" aria-labelledby={`${ids}-auto`}>
           <h4 id={`${ids}-auto`}>Mejoras automáticas de Meta</h4>
@@ -783,17 +854,35 @@ function AdContentEditor({
           </div>
         </section>
 
+        {adding && (
+          <section className="ads-card" aria-labelledby={`${ids}-state`}>
+            <h4 id={`${ids}-state`} className="sr-only">
+              Cómo se crean
+            </h4>
+            <div className="ads-fields">
+              <Field
+                label="Encendidos"
+                note={publish ? 'Se entregan en cuanto Meta los apruebe, si el conjunto y la campaña están activos.' : 'Se crean en pausa: los enciendes con su interruptor.'}
+              >
+                <Switch checked={publish} label="Crear los anuncios encendidos" onChange={setPublish} />
+              </Field>
+            </div>
+          </section>
+        )}
+
         <SaveBar
           changed={changed && !blocked}
           busy={busy || uploading}
           error={localError ?? error}
-          label={submitLabel}
+          label={adding ? (pieces.length > 1 ? `Crear ${pieces.length} anuncios` : 'Crear el anuncio') : submitLabel}
           note={
             uploading
-              ? 'Subiendo la imagen o el vídeo…'
+              ? progress
+                ? `Subiendo ${progress.done + 1} de ${progress.total}…`
+                : 'Subiendo la imagen o el vídeo…'
               : (blocked ??
-                (mode === 'new'
-                  ? 'Se crea en pausa: enciéndelo con su interruptor.'
+                (adding
+                  ? `${adsCount(pieces.length)} ${publish ? 'encendidos' : 'en pausa'}.`
                   : changed
                     ? 'Al guardar, Meta vuelve a revisar el anuncio (conserva sus métricas).'
                     : 'Sin cambios.'))
@@ -944,8 +1033,12 @@ export function MetaAdder({ account, adSet, template, onCancel, onSaved }: Adder
 
   useEffect(() => heading.current?.focus(), [])
   useEffect(() => {
-    const blank = (pagina: string | null): AdContent => ({
+    const blank = (pagina: string | null, web: boolean): AdContent => ({
       pagina,
+      destino: web ? 'web' : 'whatsapp',
+      url: '',
+      boton: DEFAULT_SETTINGS.boton,
+      etiquetas: '',
       instagram: null,
       texto: '',
       titular: '',
@@ -960,21 +1053,22 @@ export function MetaAdder({ account, adSet, template, onCancel, onSaved }: Adder
     })
     Promise.all([metaApi.details(account.id, 'conjunto', adSet.id), template ? metaApi.details(account.id, 'anuncio', template.id).catch(() => null) : null]).then(
       ([set, ad]) => {
-        const pagina = set.conjunto?.pagina ?? null
+        // Los conjuntos que llevan a una web no dicen su página: la del anuncio que hay.
+        const pagina = set.conjunto?.pagina ?? ad?.anuncio?.contenido?.pagina ?? null
         if (set.conjunto)
           setPlacements({
             ubicaciones: set.conjunto.publico.ubicaciones,
             posiciones: set.conjunto.publico.posiciones,
           })
         const copied = ad?.anuncio?.editable && ad.anuncio.contenido ? { ...ad.anuncio.contenido, pagina, variantes: NO_VARIANTS } : null
-        setStart(copied ?? blank(pagina))
+        setStart(copied ?? blank(pagina, Boolean(set.conjunto?.web)))
       },
       (err) => setError(errorText(err)),
     )
   }, [account.id, adSet.id, template])
 
   const create = async (result: ContentResult) => {
-    if (!result.versiones?.length) return
+    if (!result.anuncios?.length) return
     setBusy(true)
     setSaveError(null)
     try {
@@ -982,9 +1076,16 @@ export function MetaAdder({ account, adSet, template, onCancel, onSaved }: Adder
         ...result.contenido,
         cuenta: account.id,
         conjunto: adSet.id,
-        anuncios: [{ nombre: result.nombre, versiones: result.versiones }],
+        publicar: result.publicar,
+        anuncios: result.anuncios,
       })
-      onSaved(`Anuncio «${result.nombre}» creado en pausa en «${adSet.nombre}». Enciéndelo con su interruptor cuando quieras.`)
+      const n = result.anuncios.length
+      const what = n === 1 ? `Anuncio «${result.anuncios[0].nombre}»` : `${n} anuncios`
+      onSaved(
+        result.publicar
+          ? `${what} ${n === 1 ? 'creado' : 'creados'} en «${adSet.nombre}»: ${n === 1 ? 'se entrega' : 'se entregan'} en cuanto Meta ${n === 1 ? 'lo apruebe' : 'los apruebe'}, si el conjunto y la campaña están activos.`
+          : `${what} ${n === 1 ? 'creado' : 'creados'} en pausa en «${adSet.nombre}». ${n === 1 ? 'Enciéndelo' : 'Enciéndelos'} con su interruptor cuando quieras.`,
+      )
     } catch (err) {
       setSaveError(errorText(err))
       setBusy(false)
@@ -995,7 +1096,7 @@ export function MetaAdder({ account, adSet, template, onCancel, onSaved }: Adder
     <div className="ads-edit">
       <header className="ads-composer-head">
         <h3 ref={heading} tabIndex={-1}>
-          Nuevo anuncio en «{adSet.nombre}»
+          Nuevos anuncios en «{adSet.nombre}»
         </h3>
         <button type="button" className="btn" disabled={busy} onClick={onCancel}>
           Cancelar
@@ -1013,7 +1114,7 @@ export function MetaAdder({ account, adSet, template, onCancel, onSaved }: Adder
         )
       ) : (
         <>
-          {template && <p className="ads-hint ads-edit-lead">Empieza con los textos y el chat de «{template.nombre}»: cámbialos si quieres.</p>}
+          {template && <p className="ads-hint ads-edit-lead">Empieza con los textos{start.destino === 'web' ? ' y la web' : ' y el chat'} de «{template.nombre}»: cámbialos si quieres.</p>}
           <AdContentEditor
             account={account}
             name="Anuncio nuevo"

@@ -31,6 +31,7 @@ export function PlacementPicker({
   video = null,
   readOnly = false,
   note,
+  whatsapp = true,
   onChange,
 }: {
   mode: PlacementMode
@@ -39,13 +40,15 @@ export function PlacementPicker({
   video?: boolean | null
   readOnly?: boolean
   note?: string | null
+  /** Los Estados de WhatsApp, solo en los anuncios a WhatsApp. */
+  whatsapp?: boolean
   onChange?: (mode: PlacementMode, chosen: string[]) => void
 }) {
   const ids = useId()
   const auto = mode === 'auto'
   const selected = new Set(auto ? ALL_PLACEMENTS.map((p) => p.key) : chosenKeys(mode, chosen))
   const editable = !readOnly && !auto && mode !== 'meta'
-  const usable = (p: Placement) => !(p.video && video === false)
+  const usable = (p: Placement) => !(p.video && video === false) && (whatsapp || p.key !== 'wa_status')
 
   const set = (keys: Set<string>) =>
     onChange?.(

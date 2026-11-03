@@ -93,7 +93,7 @@ test('público al guardar: cambia lo de Tablero y conserva lo demás (intereses,
 
 // ── El contenido de un anuncio ──
 
-test('contenido: un anuncio a WhatsApp con imagen se puede editar; con otro destino o una publicación, no', () => {
+test('contenido: un anuncio a WhatsApp o a una web se puede editar; una publicación o un formulario, no', () => {
   const creative = {
     object_story_spec: {
       page_id: '222',
@@ -123,8 +123,31 @@ test('contenido: un anuncio a WhatsApp con imagen se puede editar; con otro dest
   assert.deepEqual(c.ajustes.mejoras, ['retoques'])
 
   const web = structuredClone(creative)
-  web.object_story_spec.link_data.call_to_action = { type: 'LEARN_MORE', value: { link: 'https://lto.com.py' } }
-  assert.match(contentOf(web).motivo, /no lleva a WhatsApp/)
+  web.object_story_spec.link_data.call_to_action = { type: 'LEARN_MORE', value: { link: 'https://ejemplo.test/a' } }
+  web.url_tags = 'utm_source=meta'
+  const toWeb = contentOf(web)
+  assert.equal(toWeb.editable, true)
+  assert.equal(toWeb.ajustes.destino, 'web')
+  assert.equal(toWeb.ajustes.url, 'https://ejemplo.test/a')
+  assert.equal(toWeb.ajustes.boton, 'LEARN_MORE')
+  assert.equal(toWeb.ajustes.etiquetas, 'utm_source=meta')
+  const form = structuredClone(creative)
+  form.object_story_spec.link_data.call_to_action = { type: 'SIGN_UP', value: { lead_gen_form_id: '9' } }
+  assert.match(contentOf(form).motivo, /formulario instantáneo/)
+  // Varios formatos, como los del Administrador: la web sale de link_urls.
+  const feed = contentOf({
+    object_story_spec: { page_id: '222' },
+    asset_feed_spec: {
+      images: [{ hash: 'aaaaaaaa', adlabels: [{ name: 'x' }] }],
+      bodies: [{ text: 'Hola' }],
+      link_urls: [{ website_url: 'https://ejemplo.test/' }],
+      call_to_action_types: ['SEE_DETAILS'],
+    },
+  })
+  assert.equal(feed.editable, true)
+  assert.equal(feed.ajustes.destino, 'web')
+  assert.equal(feed.ajustes.url, 'https://ejemplo.test/')
+  assert.equal(feed.ajustes.boton, 'SEE_DETAILS')
   assert.match(contentOf({ object_story_id: '222_999', effective_object_story_id: '222_999' }).motivo, /publicación que ya existía/)
   const carousel = structuredClone(creative)
   carousel.object_story_spec.link_data.child_attachments = [{}, {}]
@@ -369,7 +392,7 @@ test('duplicar: campañas y conjuntos se copian pieza a pieza, en pausa; los anu
   routes['POST 31/copies'] = { copied_ad_id: '41' }
   const copy = await request('POST', '/api/meta/duplicar', { body: { cuenta: 'act_111', nivel: 'campana', id: '10' } })
   assert.equal(copy.status, 200, copy.text)
-  assert.deepEqual(copy.body, { id: '11' })
+  assert.deepEqual(copy.body, { id: '11', ids: ['11'] })
   assert.deepEqual(posted('10/copies')[0], { deep_copy: false, status_option: 'PAUSED' })
   assert.deepEqual(posted('20/copies')[0], { deep_copy: false, status_option: 'PAUSED', campaign_id: '11', rename_options: { rename_strategy: 'NO_RENAME' } })
   assert.deepEqual(posted('30/copies')[0], { adset_id: '21', status_option: 'PAUSED', rename_options: { rename_strategy: 'NO_RENAME' } })
@@ -377,11 +400,30 @@ test('duplicar: campañas y conjuntos se copian pieza a pieza, en pausa; los anu
 
   calls.length = 0
   const adSetCopy = await request('POST', '/api/meta/duplicar', { body: { cuenta: 'act_111', nivel: 'conjunto', id: '20' } })
-  assert.deepEqual(adSetCopy.body, { id: '21' })
+  assert.deepEqual(adSetCopy.body, { id: '21', ids: ['21'] })
   assert.deepEqual(posted('20/copies')[0], { deep_copy: false, status_option: 'PAUSED' }, 'el conjunto, con «- Copia»')
+
+  // Varias copias, numeradas, en otra campaña de la cuenta.
+  calls.length = 0
+  routes['GET 15'] = { name: 'Otra', account_id: '111' }
+  const many = await request('POST', '/api/meta/duplicar', { body: { cuenta: 'act_111', nivel: 'conjunto', id: '20', copias: 3, campana: '15' } })
+  assert.equal(many.status, 200, many.text)
+  assert.deepEqual(many.body.ids, ['21', '21', '21'])
+  const copies = posted('20/copies')
+  assert.equal(copies.length, 3)
+  assert.ok(copies.every((c) => c.campaign_id === '15' && c.status_option === 'PAUSED'))
+  assert.equal(copies[0].rename_options, undefined)
+  assert.deepEqual(copies[2].rename_options, { rename_strategy: 'ONLY_TOP_LEVEL_RENAME', rename_suffix: ' - Copia 3' })
+  routes['GET 16'] = { name: 'Ajena', account_id: '999' }
+  assert.match(message(await request('POST', '/api/meta/duplicar', { body: { cuenta: 'act_111', nivel: 'conjunto', id: '20', campana: '16' } })), /no es de esta cuenta/)
 
   routes['POST 31/copies'] = { error: { message: 'Límite', code: 100 } }
   assert.match(message(await request('POST', '/api/meta/duplicar', { body: { cuenta: 'act_111', nivel: 'conjunto', id: '20' } })), /Límite.*en pausa/)
+  // Si ya había copias hechas, se dice cuántas.
+  routes['POST 31/copies'] = { copied_ad_id: '41' }
+  let n = 0
+  routes['POST 20/copies'] = () => (++n > 1 ? { error: { message: 'Límite', code: 100 } } : { copied_adset_id: '21' })
+  assert.match(message(await request('POST', '/api/meta/duplicar', { body: { cuenta: 'act_111', nivel: 'conjunto', id: '20', copias: 3 } })), /Límite.*1 de 3 copias/)
 })
 
 test('archivar y borrar', async () => {
@@ -408,6 +450,36 @@ test('añadir anuncios a un conjunto: con su página, en pausa', async () => {
   const ad = posted('act_111/ads')[0]
   assert.equal(ad.adset_id, '20')
   assert.equal(ad.status, 'PAUSED')
+})
+
+test('añadir anuncios a un conjunto que lleva a una web: varios, encendidos si se pide', async () => {
+  routes['GET 20'] = { name: 'Grupo', account_id: '111', promoted_object: { pixel_id: '555', custom_event_type: 'LEAD' } }
+  routes['POST act_111/adcreatives'] = { id: '801' }
+  routes['POST act_111/ads'] = { id: '802' }
+  const res = await request('POST', '/api/meta/anuncios', {
+    body: {
+      cuenta: 'act_111',
+      conjunto: '20',
+      pagina: '222',
+      texto: 'Hola',
+      url: 'ejemplo.test',
+      boton: 'SEE_DETAILS',
+      publicar: true,
+      anuncios: [
+        { nombre: 'Uno', medio: { tipo: 'imagen', hash: 'abc123def456' } },
+        { nombre: 'Dos', medio: { tipo: 'imagen', hash: 'abc123def457' } },
+      ],
+    },
+  })
+  assert.equal(res.status, 200, res.text)
+  assert.equal(res.body.anuncios.length, 2)
+  const creative = posted('act_111/adcreatives')[0].object_story_spec
+  assert.equal(creative.page_id, '222')
+  assert.equal(creative.link_data.link, 'https://ejemplo.test/')
+  assert.equal(creative.link_data.call_to_action.type, 'SEE_DETAILS')
+  assert.equal(posted('act_111/ads')[0].status, 'ACTIVE')
+  // Sin dirección, no.
+  assert.match(message(await request('POST', '/api/meta/anuncios', { body: { cuenta: 'act_111', conjunto: '20', pagina: '222', texto: 'Hola', anuncios: [{ nombre: 'Uno', medio: { tipo: 'imagen', hash: 'abc123def456' } }] } })), /Falta la dirección/)
 })
 
 test('en marcha: los conjuntos de toda la cuenta y los anuncios de una campaña, con de quién son', async () => {

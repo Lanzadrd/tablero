@@ -1,5 +1,5 @@
-// Anuncios de mensajes a WhatsApp en Meta: lo que se manda para crear la campaña, el conjunto y los anuncios
-// (funciones puras, probadas en pruebas/anuncios.test.mjs), cómo se suben las imágenes y los vídeos, y las
+// Anuncios de Meta, de mensajes a WhatsApp o de clientes potenciales (por WhatsApp o en una web con píxel): lo que se
+// manda para crear la campaña, el conjunto y los anuncios (funciones puras, probadas en pruebas/anuncios.test.mjs), cómo se suben las imágenes y los vídeos, y las
 // plantillas y campañas creadas, en datos/anuncios.json.
 //
 // Todo se crea en pausa: Tablero solo activa una campaña cuando se pulsa «Activar».
@@ -16,6 +16,14 @@ const MAX_TEMPLATES = 200
 
 const WHATSAPP_LINK = 'https://api.whatsapp.com/send'
 const CTA_TYPE = 'WHATSAPP_MESSAGE'
+/** Los botones que puede llevar un anuncio que va a una web (el primero, el de por defecto). */
+export const WEB_BUTTONS = ['SEE_DETAILS', 'LEARN_MORE', 'GET_QUOTE', 'SIGN_UP', 'CONTACT_US', 'APPLY_NOW', 'SUBSCRIBE', 'BOOK_TRAVEL', 'GET_OFFER', 'DOWNLOAD']
+/** Los eventos del píxel para los que puede optimizar un conjunto de clientes potenciales. */
+export const LEAD_EVENTS = ['LEAD', 'COMPLETE_REGISTRATION', 'CONTACT', 'SCHEDULE', 'SUBMIT_APPLICATION', 'SUBSCRIBE']
+/** Si Meta pide esperar (muchos anuncios seguidos), lo que se espera antes de volver a probar, cada vez un poco más. */
+const LIMIT_WAIT = 30_000
+const LIMIT_TRIES = 4
+
 /** Lo que contesta la empresa en WhatsApp al abrirse la conversación. */
 export const GREETING = '¡Hola! ¿En qué podemos ayudarte?'
 
@@ -52,7 +60,7 @@ const clamp = (n, min, max) => Math.min(Math.max(Math.round(Number(n) || min), m
 export function campaignBody(plan) {
   return {
     name: plan.nombre,
-    objective: 'OUTCOME_ENGAGEMENT',
+    objective: plan.destino === 'web' || plan.objetivo === 'leads' ? 'OUTCOME_LEADS' : 'OUTCOME_ENGAGEMENT',
     status: plan.publicar ? 'ACTIVE' : 'PAUSED',
     special_ad_categories: [],
     buying_type: 'AUCTION',
@@ -129,6 +137,9 @@ export function placementKeysOf(targeting) {
   return keys
 }
 
+/** Los Estados de WhatsApp, solo en los anuncios a WhatsApp. */
+const placeable = (plan, keys) => (plan.destino === 'web' ? (keys ?? []).filter((key) => key !== 'wa_status') : (keys ?? []))
+
 /**
  * Público y ubicaciones. Con Advantage+ (advantage_audience 1), Meta solo admite la edad mínima (18–25) y
  * decide el resto; sin él, la edad y el sexo son límites.
@@ -149,7 +160,7 @@ export function targetingOf(plan) {
     if (plan.genero === 'hombres') targeting.genders = [1]
     if (plan.genero === 'mujeres') targeting.genders = [2]
   }
-  if (plan.ubicaciones === 'manual') Object.assign(targeting, positionsOf(plan.posiciones))
+  if (plan.ubicaciones === 'manual') Object.assign(targeting, positionsOf(placeable(plan, plan.posiciones)))
   else if (plan.ubicaciones === 'facebook' || plan.ubicaciones === 'instagram') targeting.publisher_platforms = [plan.ubicaciones]
   return targeting
 }
@@ -161,19 +172,19 @@ export function targetingOf(plan) {
 export const promotedNumber = (whatsapp) => (whatsapp ? { whatsapp_phone_number: whatsapp.numero } : {})
 
 /**
- * El conjunto: mensajes a WhatsApp, con su presupuesto diario (salvo `sharedBudget`: el de la campaña) y, en
- * `promoted`, el número al que llegan.
+ * El conjunto, con su presupuesto diario (salvo `sharedBudget`: el de la campaña): mensajes a WhatsApp, con el número al
+ * que llegan en `promoted`, o clientes potenciales en una web, con el píxel y el evento para el que optimiza.
  */
 export function adSetBody(plan, { campaignId, currency, today = localDay(), sharedBudget = false, promoted = {} }) {
   const body = {
     name: plan.nombre,
     campaign_id: campaignId,
     status: plan.publicar ? 'ACTIVE' : 'PAUSED',
-    destination_type: 'WHATSAPP',
-    optimization_goal: 'CONVERSATIONS',
+    destination_type: plan.destino === 'web' ? 'WEBSITE' : 'WHATSAPP',
+    optimization_goal: plan.destino === 'web' ? 'OFFSITE_CONVERSIONS' : 'CONVERSATIONS',
     billing_event: 'IMPRESSIONS',
     ...(sharedBudget ? {} : { bid_strategy: 'LOWEST_COST_WITHOUT_CAP', daily_budget: minorUnits(plan.presupuesto, currency) }),
-    promoted_object: { page_id: plan.pagina, ...promoted },
+    promoted_object: plan.destino === 'web' ? { pixel_id: plan.pixel, custom_event_type: plan.evento } : { page_id: plan.pagina, ...promoted },
     targeting: targetingOf(plan),
   }
   // Sin inicio (o hoy), empieza en cuanto se active.
@@ -281,7 +292,7 @@ export function versionsOf(ad) {
 export function placementPlan(plan, versions) {
   const video = versions[0].medio.tipo === 'video'
   const available = new Set(versions.map((v) => v.formato))
-  const keys = plan.ubicaciones === 'manual' ? (plan.posiciones ?? []) : Object.keys(PLACEMENTS)
+  const keys = placeable(plan, plan.ubicaciones === 'manual' ? plan.posiciones : Object.keys(PLACEMENTS))
   const fallback = FALLBACK_ORDER.find((f) => available.has(f))
   const groups = new Map()
   for (const key of keys) {
@@ -325,15 +336,16 @@ function placementAssets(plan, ad, { thumbs, tag }) {
   })
   const rules = [...groups].map(([formato, keys], i) => rule(formato, positionsOf(keys), i + 1))
   rules.push(rule(fallback, {}, rules.length + 1))
-  const welcome = welcomeMessage(plan)
+  const web = plan.destino === 'web'
+  const welcome = web ? null : welcomeMessage(plan)
   return {
     [video ? 'videos' : 'images']: used.map(asset),
     bodies: [{ text: plan.texto, adlabels: labels }],
     ...(titular ? { titles: [{ text: titular, adlabels: labels }] } : {}),
     ...(descripcion ? { descriptions: [{ text: descripcion, adlabels: labels }] } : {}),
-    link_urls: [{ website_url: WHATSAPP_LINK, adlabels: labels }],
-    call_to_action_types: [CTA_TYPE],
-    call_to_actions: [{ type: CTA_TYPE, value: { app_destination: 'WHATSAPP' } }],
+    link_urls: [{ website_url: web ? plan.url : WHATSAPP_LINK, adlabels: labels }],
+    call_to_action_types: [web ? plan.boton : CTA_TYPE],
+    ...(web ? {} : { call_to_actions: [{ type: CTA_TYPE, value: { app_destination: 'WHATSAPP' } }] }),
     ad_formats: [video ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE'],
     optimization_type: 'PLACEMENT',
     asset_customization_rules: rules,
@@ -354,6 +366,8 @@ export function creativeBody(plan, ad, { thumbs = new Map(), tag = randomUUID().
     degrees_of_freedom_spec: { creative_features_spec: featuresSpec(plan.mejoras) },
     // Si puede salir junto a anuncios de otras empresas (anuncios multianunciante).
     contextual_multi_ads: { enroll_status: plan.multianunciante ? 'OPT_IN' : 'OPT_OUT' },
+    // Los parámetros que se añaden a la dirección de la web (utm_source=…).
+    ...(plan.destino === 'web' && plan.etiquetas ? { url_tags: plan.etiquetas } : {}),
   }
   // Con varias versiones, todo va en asset_feed_spec; en object_story_spec, solo quién anuncia.
   const versions = versionsOf(ad)
@@ -365,7 +379,8 @@ export function creativeBody(plan, ad, { thumbs = new Map(), tag = randomUUID().
   const { fallback } = placementPlan(plan, versions)
   const medio = (versions.find((v) => v.formato === fallback) ?? versions[0]).medio
 
-  const welcome = welcomeMessage(plan)
+  const web = plan.destino === 'web'
+  const welcome = web ? null : welcomeMessage(plan)
   const greeting = welcome ? { page_welcome_message: welcome } : {}
   const titular = plan.titular?.trim()
   const descripcion = plan.descripcion?.trim()
@@ -387,11 +402,11 @@ export function creativeBody(plan, ad, { thumbs = new Map(), tag = randomUUID().
   if (medio.tipo === 'imagen') {
     spec.link_data = {
       image_hash: medio.hash,
-      link: WHATSAPP_LINK,
+      link: web ? plan.url : WHATSAPP_LINK,
       ...(texts ? { message: plan.texto } : {}),
       ...(texts && titular ? { name: titular } : {}),
       ...(texts && descripcion ? { description: descripcion } : {}),
-      call_to_action: { type: CTA_TYPE, value: { app_destination: 'WHATSAPP' } },
+      call_to_action: web ? { type: plan.boton, value: { link: plan.url } } : { type: CTA_TYPE, value: { app_destination: 'WHATSAPP' } },
       ...greeting,
     }
   } else {
@@ -403,7 +418,7 @@ export function creativeBody(plan, ad, { thumbs = new Map(), tag = randomUUID().
       ...(texts ? { message: plan.texto } : {}),
       ...(texts && titular ? { title: titular } : {}),
       ...(texts && descripcion ? { link_description: descripcion } : {}),
-      call_to_action: { type: CTA_TYPE, value: { app_destination: 'WHATSAPP', link: WHATSAPP_LINK } },
+      call_to_action: web ? { type: plan.boton, value: { link: plan.url } } : { type: CTA_TYPE, value: { app_destination: 'WHATSAPP', link: WHATSAPP_LINK } },
       ...greeting,
     }
   }
@@ -439,6 +454,9 @@ export function adsManagerLink(account, objectId, businessId, level = 'campana')
 /** Lo que se pide a Meta de cada fila (y del total) para sacar las métricas de `metricsOf`. */
 export const INSIGHT_FIELDS = 'spend,impressions,reach,inline_link_clicks,actions'
 
+/** Los clientes potenciales: `lead` los suma todos; en algunas cuentas solo está el del píxel. */
+const LEAD_ACTIONS = ['lead', 'offsite_conversion.fb_pixel_lead']
+
 /** Las acciones de mensajes que se cuentan (de WhatsApp, y también de Messenger o Instagram). */
 const MESSAGING = {
   /** Conversaciones que ha empezado alguien desde el anuncio. */
@@ -461,10 +479,14 @@ export function metricsOf(row) {
   const alcance = n(row?.reach)
   const clics = n(row?.inline_link_clicks)
   const conversaciones = action(MESSAGING.conversaciones)
+  const leads = Math.max(...LEAD_ACTIONS.map(action))
   return {
     gasto,
     conversaciones,
     coste: per(gasto, conversaciones),
+    leads,
+    costeLead: per(gasto, leads),
+    visitas: action('landing_page_view'),
     contactos: action(MESSAGING.contactos),
     alcance,
     impresiones,
@@ -585,6 +607,10 @@ export function rowOf(object, { level = 'campana', account, currency, businessId
     miniatura: level === 'anuncio' ? (object.creative?.thumbnail_url ?? null) : null,
     automaticas: level === 'anuncio' ? automaticOf(object.creative) : null,
     pagina: level === 'conjunto' ? (object.promoted_object?.page_id ?? null) : null,
+    resultado: resultOf(object, level),
+    objetivo: level === 'campana' ? (object.objective ?? null) : null,
+    // De un conjunto: si lleva a una web, con qué píxel y evento (los conjuntos nuevos de la campaña empiezan igual).
+    web: level === 'conjunto' && object.promoted_object?.pixel_id ? { pixel: String(object.promoted_object.pixel_id), evento: object.promoted_object.custom_event_type ?? 'LEAD' } : null,
     actualizada: object.updated_time ? new Date(Date.parse(object.updated_time)).toISOString() : null,
     // De qué campaña (y conjunto) es: para bajar a él desde la lista de toda la cuenta.
     padres:
@@ -594,6 +620,13 @@ export function rowOf(object, { level = 'campana', account, currency, businessId
           ? { campana: refOf(object.campaign), conjunto: refOf(object.adset) }
           : null,
   }
+}
+
+/** Lo que busca una campaña, un conjunto o un anuncio: clientes potenciales o, si no, conversaciones. */
+const LEAD_GOALS = new Set(['OFFSITE_CONVERSIONS', 'LEAD_GENERATION'])
+function resultOf(object, level) {
+  if (level === 'campana') return object.adsets?.data?.length && object.adsets.data.every((s) => LEAD_GOALS.has(s.optimization_goal)) ? 'leads' : 'conversaciones'
+  return LEAD_GOALS.has(level === 'conjunto' ? object.optimization_goal : object.adset?.optimization_goal) ? 'leads' : 'conversaciones'
 }
 
 const refOf = (object) => (object?.id ? { id: String(object.id), nombre: object.name ?? String(object.id) } : null)
@@ -635,6 +668,14 @@ export function cleanSettings(raw) {
     pagina: id(raw?.pagina),
     instagram: id(raw?.instagram),
     whatsapp: cleanNumber(raw?.whatsapp),
+    objetivo: raw?.objetivo === 'leads' ? 'leads' : 'mensajes',
+    destino: raw?.destino === 'web' ? 'web' : 'whatsapp',
+    url: cleanUrl(raw?.url),
+    // Otros botones (de anuncios hechos en el Administrador) se quedan como están.
+    boton: /^[A-Z_]{2,40}$/.test(raw?.boton ?? '') ? raw.boton : WEB_BUTTONS[0],
+    pixel: /^\d{1,32}$/.test(raw?.pixel ?? '') ? raw.pixel : null,
+    evento: LEAD_EVENTS.includes(raw?.evento) ? raw.evento : LEAD_EVENTS[0],
+    etiquetas: text(raw?.etiquetas, 500).replace(/^\?/, ''),
     presupuesto: Number(raw?.presupuesto) > 0 ? Math.round(Number(raw.presupuesto) * 100) / 100 : 0,
     lugares: places(raw?.lugares),
     edadMin: clamp(raw?.edadMin, 18, 65),
@@ -655,6 +696,18 @@ export function cleanSettings(raw) {
       .map((q) => text(q, 80))
       .filter(Boolean)
       .slice(0, MAX_QUESTIONS),
+  }
+}
+
+/** La dirección de una web («ejemplo.com» → «https://ejemplo.com»); vacía si no es una dirección. */
+export function cleanUrl(raw) {
+  const value = text(raw, 1000)
+  if (!value) return ''
+  try {
+    const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `https://${value}`)
+    return ['http:', 'https:'].includes(url.protocol) && url.hostname.includes('.') ? url.href : ''
+  } catch {
+    return ''
   }
 }
 
@@ -702,7 +755,13 @@ export function cleanPlan(raw) {
   if (!plan.nombre) throw new HttpError(400, 'Falta el nombre de la campaña.')
   if (!plan.texto) throw new HttpError(400, 'Falta el texto del anuncio.')
   if (!plan.anuncios.length) throw new HttpError(400, 'Añade al menos una imagen o un vídeo.')
+  if (plan.destino === 'web' && !plan.url) throw new HttpError(400, 'Falta la dirección de la web.')
   return plan
+}
+
+/** Un conjunto que lleva a una web optimiza para un evento del píxel: sin píxel, no se puede crear. */
+function needsPixel(plan) {
+  if (plan.destino === 'web' && !plan.pixel) throw new HttpError(400, 'Falta el píxel de la web.')
 }
 
 export function cleanTemplates(raw) {
@@ -817,15 +876,24 @@ export async function thumbnailsOf(meta, plan, options) {
   return thumbs
 }
 
+/** Si Meta pide esperar por ir muy seguido, se espera y se vuelve a probar: así no se pierde lo ya hecho. */
+export async function patiently(work, { limitWait = LIMIT_WAIT } = {}) {
+  for (let tries = 1; ; tries++) {
+    try {
+      return await work()
+    } catch (err) {
+      if (err?.code !== 'meta-limite' || tries >= LIMIT_TRIES) throw err
+      await sleep(limitWait * tries)
+    }
+  }
+}
+
 /** Un anuncio por imagen o vídeo en el conjunto; sus identificadores. */
-export async function createAds(meta, plan, adSetId, thumbs, status) {
+export async function createAds(meta, plan, adSetId, thumbs, status, options = {}) {
   const ads = []
   for (const ad of plan.anuncios) {
-    const creative = await meta.graph(`${plan.cuenta}/adcreatives`, {
-      method: 'POST',
-      body: creativeBody(plan, ad, { thumbs }),
-    })
-    const created = await meta.graph(`${plan.cuenta}/ads`, { method: 'POST', body: adBody(ad, { adSetId, creativeId: creative.id, status }) })
+    const creative = await patiently(() => meta.graph(`${plan.cuenta}/adcreatives`, { method: 'POST', body: creativeBody(plan, ad, { thumbs }) }), options)
+    const created = await patiently(() => meta.graph(`${plan.cuenta}/ads`, { method: 'POST', body: adBody(ad, { adSetId, creativeId: creative.id, status }) }), options)
     ads.push(String(created.id))
   }
   return ads
@@ -850,6 +918,7 @@ const removeObject = (meta, objectId) =>
  */
 export async function launch(meta, raw, options = {}) {
   const plan = cleanPlan(raw)
+  needsPixel(plan)
   const account = await meta.graph(plan.cuenta, { params: { fields: 'name,currency,business{id}' } })
   const thumbs = await thumbnailsOf(meta, plan, options)
 
@@ -859,7 +928,7 @@ export async function launch(meta, raw, options = {}) {
       method: 'POST',
       body: adSetBody(plan, { campaignId: campaign.id, currency: account.currency, promoted: promotedNumber(plan.whatsapp) }),
     })
-    const ads = await createAds(meta, plan, adSet.id, thumbs, plan.publicar ? 'ACTIVE' : 'PAUSED')
+    const ads = await createAds(meta, plan, adSet.id, thumbs, plan.publicar ? 'ACTIVE' : 'PAUSED', options)
     const record = {
       id: randomUUID(),
       creadoEn: new Date().toISOString(),
@@ -903,12 +972,16 @@ export async function addAdSet(meta, raw, options = {}) {
   if (!campaignId) throw new HttpError(400, 'Campaña no válida')
   if (!text(raw?.nombre, 200)) throw new HttpError(400, 'Falta el nombre del conjunto.')
   const plan = cleanPlan(raw)
+  needsPixel(plan)
   const [account, campaign] = await Promise.all([
     meta.graph(plan.cuenta, { params: { fields: 'currency' } }),
     meta.graph(campaignId, { params: { fields: 'name,account_id,objective,daily_budget,lifetime_budget,adsets.limit(100){promoted_object}' } }),
   ])
   if (`act_${campaign.account_id}` !== plan.cuenta) throw new HttpError(400, 'Esa campaña no es de esta cuenta publicitaria.')
-  if (!WHATSAPP_OBJECTIVES.has(campaign.objective)) {
+  if (plan.destino === 'web' && campaign.objective !== 'OUTCOME_LEADS') {
+    throw new HttpError(400, `A «${campaign.name}» no se le pueden añadir conjuntos de clientes potenciales en una web: su objetivo no es clientes potenciales.`)
+  }
+  if (plan.destino !== 'web' && !WHATSAPP_OBJECTIVES.has(campaign.objective)) {
     throw new HttpError(400, `A «${campaign.name}» no se le pueden añadir conjuntos de mensajes a WhatsApp: su objetivo no es interacción, clientes potenciales ni ventas.`)
   }
   const sibling = (campaign.adsets?.data ?? [])
@@ -924,7 +997,7 @@ export async function addAdSet(meta, raw, options = {}) {
     body: adSetBody(plan, { campaignId, currency: account.currency, sharedBudget, promoted }),
   })
   try {
-    const ads = await createAds(meta, plan, adSet.id, thumbs, 'ACTIVE')
+    const ads = await createAds(meta, plan, adSet.id, thumbs, 'ACTIVE', options)
     return { id: String(adSet.id), nombre: plan.nombre, campana: campaignId, anuncios: ads, activo: plan.publicar }
   } catch (err) {
     const removed = await removeObject(meta, adSet.id)

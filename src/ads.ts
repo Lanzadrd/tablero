@@ -120,9 +120,62 @@ export const ENHANCEMENTS: Array<{ key: Enhancement; label: string; note: string
 export type Placements = 'auto' | 'manual' | 'facebook' | 'instagram'
 
 /** Lo que se repite de una campaña a otra. Una plantilla es esto con nombre (y sin las creatividades). */
+/** El botón de un anuncio que lleva a una web. */
+export const WEB_BUTTONS = [
+  { value: 'SEE_DETAILS', label: 'Ver detalles' },
+  { value: 'LEARN_MORE', label: 'Más información' },
+  { value: 'GET_QUOTE', label: 'Pedir presupuesto' },
+  { value: 'SIGN_UP', label: 'Registrarte' },
+  { value: 'CONTACT_US', label: 'Contactar' },
+  { value: 'APPLY_NOW', label: 'Solicitar' },
+  { value: 'SUBSCRIBE', label: 'Suscribirte' },
+  { value: 'BOOK_TRAVEL', label: 'Reservar' },
+  { value: 'GET_OFFER', label: 'Ver la oferta' },
+  { value: 'DOWNLOAD', label: 'Descargar' },
+]
+
+/** El evento del píxel para el que optimiza un conjunto de clientes potenciales. */
+export const LEAD_EVENTS = [
+  { value: 'LEAD', label: 'Cliente potencial (Lead)' },
+  { value: 'COMPLETE_REGISTRATION', label: 'Registro completado' },
+  { value: 'CONTACT', label: 'Contacto' },
+  { value: 'SCHEDULE', label: 'Cita programada' },
+  { value: 'SUBMIT_APPLICATION', label: 'Solicitud enviada' },
+  { value: 'SUBSCRIBE', label: 'Suscripción' },
+]
+
+/** Un píxel de la cuenta. */
+export interface MetaPixel {
+  id: string
+  nombre: string
+  /** Cuándo recibió algo por última vez. */
+  ultimo: string | null
+}
+
+export const buttonLabel = (boton: string) => WEB_BUTTONS.find((b) => b.value === boton)?.label ?? 'Más información'
+
+/** «https://www.ejemplo.com/x» → «ejemplo.com». */
+export function hostOf(url: string) {
+  try {
+    return new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
 export interface AdSettings {
   cuenta: string | null
   pagina: string | null
+  /** El objetivo de la campaña: mensajes o clientes potenciales. Lo que lleva a una web siempre es de clientes potenciales. */
+  objetivo: 'mensajes' | 'leads'
+  /** Adónde lleva el anuncio: a una conversación de WhatsApp o a una web. */
+  destino: 'whatsapp' | 'web'
+  /** La web: su dirección, el botón del anuncio, los parámetros que se añaden a la dirección (utm_source=…), el píxel y el evento. */
+  url: string
+  boton: string
+  etiquetas: string
+  pixel: string | null
+  evento: string
   /** Cuenta de Instagram que firma el anuncio; null = la página. */
   instagram: string | null
   /** Adónde llegan los mensajes; null = al que Meta tenga conectado a la página. */
@@ -230,6 +283,12 @@ export interface AdRow {
   presupuesto: { cantidad: number; tipo: 'dia' | 'total'; reparte?: true } | null
   /** Dónde se abre en el sitio de anuncios (null si no hay un enlace que funcione). */
   enlace: string | null
+  /** Meta: lo que busca (según eso se enseñan unas métricas u otras). */
+  resultado?: 'leads' | 'conversaciones'
+  /** De una campaña de Meta, su objetivo. */
+  objetivo?: string | null
+  /** De un conjunto de Meta que lleva a una web, con qué píxel y evento. */
+  web?: { pixel: string; evento: string } | null
   /** De los anuncios: la imagen o el fotograma, pequeño. */
   miniatura: string | null
   /** De los anuncios: las mejoras automáticas de Meta que tienen activadas y si salen con los de otros. */
@@ -351,7 +410,8 @@ export interface Variants {
 export type AdContent = Pick<
   AdSettings,
   'pagina' | 'instagram' | 'texto' | 'titular' | 'descripcion' | 'bienvenida' | 'tipoMensaje' | 'saludo' | 'preguntas' | 'mejoras' | 'multianunciante'
-> & { variantes: Variants }
+> &
+  Partial<Pick<AdSettings, 'destino' | 'url' | 'boton' | 'etiquetas'>> & { variantes: Variants }
 
 /** Una imagen o un vídeo de un anuncio publicado, con dónde verlo. */
 export type MediaPreview = ({ tipo: 'imagen'; hash: string } | { tipo: 'video'; id: string }) & { url: string | null; ratio: number | null }
@@ -376,6 +436,8 @@ export interface EditDetails {
     publico: Audience
     pagina: string | null
     whatsapp: string | null
+    /** Si lleva a una web, con qué píxel y evento. */
+    web: { pixel: string; evento: string | null } | null
     optimizacion: string | null
     destino: string | null
   }
@@ -475,6 +537,8 @@ export interface CopyRequest {
   pagina: string
   instagram: string
   lugares: string[]
+  /** La web a la que lleva, si no es a WhatsApp. */
+  web?: string
   actuales: Copy
 }
 
@@ -527,6 +591,13 @@ export const MAX_QUESTIONS = 4
 export const DEFAULT_SETTINGS: AdSettings = {
   cuenta: null,
   pagina: null,
+  objetivo: 'mensajes',
+  destino: 'whatsapp',
+  url: '',
+  boton: 'SEE_DETAILS',
+  etiquetas: '',
+  pixel: null,
+  evento: 'LEAD',
   instagram: null,
   whatsapp: null,
   presupuesto: 10,
@@ -553,6 +624,14 @@ export const DEFAULT_SETTINGS: AdSettings = {
 export const settingsOf = (t: AdSettings): AdSettings => ({
   cuenta: t.cuenta,
   pagina: t.pagina,
+  // Las plantillas de antes no tienen nada de esto: eran de mensajes a WhatsApp.
+  objetivo: t.objetivo === 'leads' ? 'leads' : 'mensajes',
+  destino: t.destino === 'web' ? 'web' : 'whatsapp',
+  url: t.url ?? '',
+  boton: t.boton ?? 'SEE_DETAILS',
+  etiquetas: t.etiquetas ?? '',
+  pixel: t.pixel ?? null,
+  evento: t.evento ?? 'LEAD',
   instagram: t.instagram,
   // Las plantillas de antes no lo tienen.
   whatsapp: t.whatsapp ?? null,
@@ -600,11 +679,16 @@ export function automaticSummary(a: { mejoras: Enhancement[]; multianunciante: b
   return parts.length ? parts.join(' · ') : 'sin mejoras de Meta'
 }
 
-/** «Hoplon · WhatsApp · 26 oct». */
-export function campaignName(template: string | null, now = new Date()) {
+/** «Hoplon · WhatsApp · 26 oct», «Hoplon · Leads · 26 oct». */
+export function campaignName(template: string | null, now = new Date(), goal: Pick<AdSettings, 'objetivo' | 'destino'> = { objetivo: 'mensajes', destino: 'whatsapp' }) {
   const day = now.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }).replace('.', '')
-  return [template, 'WhatsApp', day].filter(Boolean).join(' · ')
+  const kind = goal.destino === 'web' ? 'Leads' : goal.objetivo === 'leads' ? 'Leads por WhatsApp' : 'WhatsApp'
+  return [template, kind, day].filter(Boolean).join(' · ')
 }
+
+/** Lo que busca una campaña, en pocas palabras. */
+export const goalText = (goal: Pick<AdSettings, 'objetivo' | 'destino'>) =>
+  goal.destino === 'web' ? 'Clientes potenciales en la web' : goal.objetivo === 'leads' ? 'Clientes potenciales por WhatsApp' : 'Mensajes a WhatsApp'
 
 /** «foto-verano.jpg» → «foto-verano». */
 export const adNameFrom = (file: string) => file.replace(/\.[a-z0-9]{2,5}$/i, '').trim() || file
@@ -621,7 +705,7 @@ export function defaultNumber(page: MetaPage | null): AdNumber | null {
 }
 
 export function missing(
-  plan: Pick<AdSettings, 'cuenta' | 'pagina' | 'whatsapp' | 'presupuesto' | 'lugares' | 'texto' | 'tipoMensaje' | 'saludo' | 'preguntas' | 'ubicaciones' | 'posiciones'> & {
+  plan: Pick<AdSettings, 'cuenta' | 'pagina' | 'destino' | 'url' | 'pixel' | 'whatsapp' | 'presupuesto' | 'lugares' | 'texto' | 'tipoMensaje' | 'saludo' | 'preguntas' | 'ubicaciones' | 'posiciones'> & {
     creatividades: number
     /** Cuántos números se pueden elegir (sin ninguno, Meta usa el conectado a la página). */
     numeros: number
@@ -629,12 +713,15 @@ export function missing(
 ) {
   if (!plan.cuenta) return 'Elige una cuenta publicitaria'
   if (!plan.pagina) return 'Elige la página de Facebook'
-  if (plan.numeros > 0 && !plan.whatsapp) return 'Elige el destino de los mensajes'
+  if (plan.destino === 'web') {
+    if (!plan.url.trim()) return 'Pon la dirección de la web'
+    if (!plan.pixel) return 'Elige el píxel de la web'
+  } else if (plan.numeros > 0 && !plan.whatsapp) return 'Elige el destino de los mensajes'
   if (!(plan.presupuesto > 0)) return 'Indica el presupuesto diario'
   if (!plan.lugares.length) return 'Añade al menos un lugar'
   if (!plan.texto.trim()) return 'Escribe el texto principal'
-  if (plan.tipoMensaje === 'escrito' && !plan.saludo.trim()) return 'Escribe el mensaje de la persona en WhatsApp'
-  if (plan.tipoMensaje === 'preguntas' && !plan.preguntas.some((q) => q.trim())) return 'Añade al menos una pregunta para WhatsApp'
+  if (plan.destino !== 'web' && plan.tipoMensaje === 'escrito' && !plan.saludo.trim()) return 'Escribe el mensaje de la persona en WhatsApp'
+  if (plan.destino !== 'web' && plan.tipoMensaje === 'preguntas' && !plan.preguntas.some((q) => q.trim())) return 'Añade al menos una pregunta para WhatsApp'
   if (!plan.creatividades) return 'Añade al menos una imagen o un vídeo'
   if (plan.ubicaciones === 'manual' && !plan.posiciones.length) return 'Elige al menos una ubicación'
   return null
@@ -650,6 +737,12 @@ export class ApiError extends Error {
     this.status = status
     this.code = code
   }
+}
+
+/** Cuántas copias y, las de un conjunto, en qué campaña (sin decirlo, en la suya). */
+export interface DuplicateOptions {
+  copias?: number
+  campana?: string | null
 }
 
 const META_LEVELS: Record<Level, string> = { campana: 'Campaña', conjunto: 'Conjunto', anuncio: 'Anuncio' }
@@ -732,6 +825,8 @@ export const metaApi = {
     call<{ paginas: MetaPage[] }>('GET', `/api/meta/paginas?cuenta=${encodeURIComponent(account)}${fresh ? '&actualizar=1' : ''}`).then(
       (r) => r.paginas,
     ),
+  pixels: (account: string, fresh = false) =>
+    call<{ pixeles: MetaPixel[] }>('GET', `/api/meta/pixeles?cuenta=${encodeURIComponent(account)}${fresh ? '&actualizar=1' : ''}`).then((r) => r.pixeles),
   places: (query: string) =>
     call<{ lugares: Place[] }>('GET', `/api/meta/lugares?q=${encodeURIComponent(query)}`).then((r) => r.lugares),
   launch: (plan: LaunchPlan) =>
@@ -756,16 +851,23 @@ export const metaApi = {
   details: (account: string, level: Level, id: string) => call<EditDetails>('GET', `/api/meta/editar?${editQuery(account, level, id)}`),
   update: (account: string, level: Level, id: string, cambios: EditChanges) =>
     announce(call<EditDetails>('POST', '/api/meta/editar', { cuenta: account, nivel: level, id, cambios }), 'No se han podido guardar los cambios', (d) => `«${d.nombre}»: cambios guardados`),
-  duplicate: (account: string, level: Level, id: string) =>
-    announce(call<{ id: string }>('POST', '/api/meta/duplicar', { cuenta: account, nivel: level, id }), 'No se ha podido duplicar', 'Copia creada en pausa'),
+  duplicate: (account: string, level: Level, id: string, options: DuplicateOptions = {}) =>
+    announce(
+      call<{ id: string; ids: string[] }>('POST', '/api/meta/duplicar', { cuenta: account, nivel: level, id, ...options }),
+      'No se ha podido duplicar',
+      (r) => (r.ids.length === 1 ? 'Copia creada en pausa' : `${r.ids.length} copias creadas en pausa`),
+    ),
   remove: (account: string, level: Level, id: string, modo: 'archivar' | 'borrar') =>
     announce(
       call<{ id: string }>('POST', '/api/meta/quitar', { cuenta: account, nivel: level, id, modo }),
       `No se ha podido ${modo}`,
       `${META_LEVELS[level]} ${modo === 'archivar' ? 'archivad' : 'borrad'}${level === 'campana' ? 'a' : 'o'}`,
     ),
-  addAds: (plan: AdContent & { cuenta: string; conjunto: string; anuncios: Array<{ nombre: string; versiones: AdVersion[] }> }) =>
-    announce(call<{ conjunto: string; anuncios: string[] }>('POST', '/api/meta/anuncios', plan), 'No se ha podido crear el anuncio', 'Anuncio creado en pausa'),
+  addAds: (plan: AdContent & { cuenta: string; conjunto: string; publicar?: boolean; anuncios: Array<{ nombre: string; versiones: AdVersion[] }> }) =>
+    announce(call<{ conjunto: string; anuncios: string[] }>('POST', '/api/meta/anuncios', plan), 'No se han podido crear los anuncios', (r) => {
+      const state = plan.publicar ? 'encendido' : 'en pausa'
+      return r.anuncios.length === 1 ? `Anuncio creado ${state}` : `${r.anuncios.length} anuncios creados ${plan.publicar ? 'encendidos' : 'en pausa'}`
+    }),
   setStatus: (account: string, level: Level, id: string, estado: AdRow['estado']) =>
     announce(
       call<{ id: string; estado: AdRow['estado']; lanzamiento: Launch | null }>('POST', '/api/meta/campanas/estado', {

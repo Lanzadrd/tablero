@@ -167,6 +167,16 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
     conjuntos y, si mandan los mensajes a un número concreto, ese número; si la campaña reparte su presupuesto,
     el conjunto no lleva. Se crea en pausa con los anuncios listos (se enciende con su interruptor) o, con
     «Publicar ya», activo.
+- **Clientes potenciales**: arriba del formulario se elige el objetivo: mensajes a WhatsApp, clientes potenciales en
+  una web o clientes potenciales por WhatsApp. En la web van la dirección, el botón, los parámetros (utm…), el píxel de
+  la cuenta y el evento (Lead, por defecto); no lleva chat. Al crear un conjunto en una campaña de clientes potenciales
+  empieza con su píxel y su evento. Esos anuncios se editan igual que los de WhatsApp, y en las tablas salen los clientes
+  potenciales y su coste en lugar de las conversaciones. Los formularios instantáneos, por ahora, en el Administrador.
+- **Subir muchos**: en un conjunto que ya existe, **+ Crear anuncio** acepta tantas piezas como quieras (un anuncio por
+  cada una; los formatos de la misma pieza se juntan), en pausa o encendidos. Si Meta pide esperar por ir muy seguido,
+  Tablero espera y sigue.
+- **Duplicar**: en el menú «…» de la fila, hasta 20 copias en pausa con sus anuncios; las de un conjunto, en su campaña
+  o en otra. Luego se cambia la imagen o el texto de cada copia con «Editar».
 - **Nueva campaña**: eliges la cuenta (agrupadas por portfolio), una **plantilla** (página, Instagram,
   presupuesto diario, lugares, edad, sexo, Advantage+, ubicaciones, textos, chat de WhatsApp y mejoras de Meta)
   y arrastras imágenes o vídeos: cada pieza es un anuncio del mismo conjunto. Se empieza con el botón verde

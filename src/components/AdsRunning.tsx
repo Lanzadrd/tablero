@@ -8,6 +8,7 @@ import {
   type AdPath,
   type AdRef,
   type AdRow,
+  type DuplicateOptions,
   type Launch,
   type Level,
   type MetricValues,
@@ -78,7 +79,7 @@ export interface RunningSource {
   /** Un anuncio nuevo en el conjunto que se está viendo. */
   adder?: (props: AdderProps) => ReactNode
   /** Una copia en pausa. */
-  duplicate?: (account: string, level: Level, id: string) => Promise<unknown>
+  duplicate?: (account: string, level: Level, id: string, options?: DuplicateOptions) => Promise<{ id: string; ids: string[] }>
   archive?: (account: string, level: Level, id: string) => Promise<unknown>
   /** Borrar (Meta) o quitar (Google Ads): no se puede deshacer. */
   remove?: { label: string; run: (account: string, level: Level, id: string) => Promise<unknown> }
@@ -136,6 +137,9 @@ const METRICS: MetricDef[] = [
   { key: 'gasto', label: 'Gasto', format: 'money' },
   { key: 'conversaciones', label: 'Conversaciones', format: 'count', hint: 'Conversaciones de WhatsApp empezadas desde el anuncio' },
   { key: 'coste', label: 'Coste por conversación', format: 'money' },
+  { key: 'leads', label: 'Clientes potenciales', format: 'count', hint: 'Los que cuenta el píxel en la web, o los de un formulario' },
+  { key: 'costeLead', label: 'Coste por cliente potencial', format: 'money' },
+  { key: 'visitas', label: 'Visitas a la web', format: 'count', hint: 'Veces que se ha llegado a cargar la web desde el anuncio' },
   { key: 'contactos', label: 'Contactos nuevos', format: 'count', hint: 'Personas que escriben por primera vez' },
   { key: 'alcance', label: 'Alcance', format: 'count', hint: 'Personas que lo han visto' },
   { key: 'impresiones', label: 'Impresiones', format: 'count', hint: 'Veces que se ha visto' },
@@ -456,15 +460,20 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
     setAdSets([])
   }
 
-  /** Duplicar, archivar o borrar, ya confirmado. */
-  const act = async ({ kind, row }: Confirm) => {
+  /** Duplicar, archivar o borrar, ya confirmado (al duplicar, cuántas copias y dónde). */
+  const act = async ({ kind, row }: Confirm, copyOptions?: DuplicateOptions) => {
     setBusy(row.id)
     setError(null)
     try {
       const words = source.levels[level]
       if (kind === 'duplicate') {
-        await source.duplicate?.(account.id, level, row.id)
-        setBanner(`Copia de «${row.nombre}» creada en pausa. Enciéndela con su interruptor cuando quieras.`)
+        const made = await source.duplicate?.(account.id, level, row.id, copyOptions)
+        const ids = made?.ids ?? []
+        setTouched((list) => new Set([...list, ...ids]))
+        const elsewhere = copyOptions?.campana && copyOptions.campana !== campaigns[0]?.id
+        setBanner(
+          `${ids.length > 1 ? `${ids.length} copias` : 'Copia'} de «${row.nombre}» ${ids.length > 1 ? 'creadas' : 'creada'} en pausa${elsewhere ? ' en la otra campaña' : ''}. ${ids.length > 1 ? 'Enciéndelas' : 'Enciéndela'} con su interruptor cuando quieras.`,
+        )
       } else if (kind === 'archive') {
         await source.archive?.(account.id, level, row.id)
         setBanner(`${words.nombre} «${row.nombre}» archivad${words.activado.endsWith('a') ? 'a' : 'o'}.`)
@@ -504,6 +513,27 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
   const words = source.levels[level]
   const currency = current?.moneda ?? account.moneda
   const rows = current?.filas ?? []
+  /**
+   * Las conversaciones no dicen nada de lo que busca clientes potenciales: en esas filas, sus métricas en su lugar (y las
+   * dos si hay de ambos). Solo en lo que se enseña: lo elegido en «Métricas» se queda.
+   */
+  const anyLeads = rows.some((r) => r.resultado === 'leads')
+  const anyChats = rows.some((r) => r.resultado !== 'leads')
+  const forResults = (list: MetricDef[]) => {
+    const lead = (key: string) => source.metrics.find((m) => m.key === key)
+    if (!anyLeads || !lead('leads')) return list
+    const out: MetricDef[] = []
+    for (const m of list) {
+      if (m.key === 'leads' || m.key === 'costeLead') continue
+      const swapped = m.key === 'conversaciones' ? lead('leads') : m.key === 'coste' ? lead('costeLead') : null
+      if (swapped && anyChats) out.push(m)
+      out.push(swapped ?? m)
+    }
+    for (const key of ['leads', 'costeLead']) if (list.some((m) => m.key === key) && !out.some((m) => m.key === key)) out.push(lead(key)!)
+    return out
+  }
+  const shownBig = forResults(bigMetrics)
+  const shownColumns = forResults(metrics)
   const shown = rows.filter((r) => r.estado === 'activa' || (r.metricas.gasto ?? 0) > 0 || touched.has(r.id))
   const folded = rows.length - shown.length
   const visible = showPaused ? rows : shown
@@ -513,7 +543,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
     row: r,
     level,
     source,
-    metrics,
+    metrics: shownColumns,
     currency,
     parentStopped: stopped(current?.padre ?? null),
     busy: busy === r.id,
@@ -586,6 +616,8 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
           presupuesto: current?.padre?.presupuesto ?? null,
           pagina: rows.find((r) => r.pagina)?.pagina ?? null,
           pausada: current?.padre?.estado === 'pausada',
+          objetivo: current?.padre?.objetivo ?? null,
+          web: rows.find((r) => r.web)?.web ?? null,
         }}
         onCancel={() => {
           setAdding(false)
@@ -661,13 +693,13 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
             className="ads-stats"
             style={
               {
-                '--cols-6': statColumns(bigMetrics.length, 6),
-                '--cols-4': statColumns(bigMetrics.length, 4),
-                '--cols-2': statColumns(bigMetrics.length, 2),
+                '--cols-6': statColumns(shownBig.length, 6),
+                '--cols-4': statColumns(shownBig.length, 4),
+                '--cols-2': statColumns(shownBig.length, 2),
               } as CSSProperties
             }
           >
-            {bigMetrics.map((m) => (
+            {shownBig.map((m) => (
               <div key={m.key} className="ads-stat">
                 <dt title={m.hint}>{m.label}</dt>
                 <dd>{formatMetric(current.totales[m.key], m.format, currency)}</dd>
@@ -793,7 +825,7 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
                           )}
                         </th>
                         {source.budgets.includes(level) && <th scope="col">Presupuesto</th>}
-                        {metrics.map((m) => (
+                        {shownColumns.map((m) => (
                           <th key={m.key} scope="col" title={m.hint}>
                             {m.label}
                           </th>
@@ -833,7 +865,21 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
           onClose={() => setPicking(null)}
         />
       )}
-      {confirm && (
+      {confirm?.kind === 'duplicate' && (
+        <DuplicatePopover
+          key={confirm.row.id}
+          confirm={confirm}
+          level={level}
+          source={source}
+          account={account}
+          period={period}
+          busy={busy === confirm.row.id}
+          currentCampaign={confirm.row.padres?.campana?.id ?? (campaigns.length === 1 ? campaigns[0].id : null)}
+          onCancel={() => setConfirm(null)}
+          onDuplicate={(options) => void act(confirm, options)}
+        />
+      )}
+      {confirm && confirm.kind !== 'duplicate' && (
         <Popover anchor={confirm.anchor} placement="below-end" width={300} label={confirmLabel(confirm.kind, source)} onClose={() => setConfirm(null)}>
           <div className="ads-confirm">
             <p>{confirmText(confirm, level, source)}</p>
@@ -854,6 +900,87 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
         </Popover>
       )}
     </div>
+  )
+}
+
+/** Duplicar: cuántas copias y, las de un conjunto, en qué campaña. Todas en pausa. */
+function DuplicatePopover({
+  confirm,
+  level,
+  source,
+  account,
+  period,
+  busy,
+  currentCampaign,
+  onCancel,
+  onDuplicate,
+}: {
+  confirm: Confirm
+  level: Level
+  source: RunningSource
+  account: AdAccount
+  period: Period
+  busy: boolean
+  currentCampaign: string | null
+  onCancel: () => void
+  onDuplicate: (options: DuplicateOptions) => void
+}) {
+  const [copies, setCopies] = useState(1)
+  const [campaign, setCampaign] = useState(currentCampaign ?? '')
+  const [campaignList, setCampaignList] = useState<AdRow[] | null>(null)
+  useEffect(() => {
+    if (level !== 'conjunto') return
+    source.rows(account.id, period, { nivel: 'campana' }, false).then(
+      (list) => setCampaignList(list.filas),
+      () => setCampaignList([]),
+    )
+  }, [account.id, level, period, source])
+
+  return (
+    <Popover anchor={confirm.anchor} placement="below-end" width={320} label="Duplicar" onClose={onCancel}>
+      <form
+        className="ads-confirm"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!busy) onDuplicate({ copias: copies, campana: level === 'conjunto' ? campaign || null : null })
+        }}
+      >
+        <p>{confirmText(confirm, level, source)}</p>
+        <label className="ads-confirm-field">
+          <span>Copias</span>
+          <select className="input" value={copies} onChange={(e) => setCopies(Number(e.target.value))}>
+            {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        {level === 'conjunto' && (
+          <label className="ads-confirm-field">
+            <span>En la campaña</span>
+            <select className="input" value={campaign} disabled={!campaignList} onChange={(e) => setCampaign(e.target.value)}>
+              {!campaign && <option value="">La misma</option>}
+              {campaignList?.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre}
+                  {c.id === currentCampaign ? ' (la misma)' : ''}
+                </option>
+              ))}
+              {campaign && !campaignList?.some((c) => c.id === campaign) && <option value={campaign}>La misma</option>}
+            </select>
+          </label>
+        )}
+        <div className="ads-form-foot">
+          <button type="button" className="link-btn" onClick={onCancel}>
+            Cancelar
+          </button>
+          <button type="submit" className="btn is-accent" disabled={busy}>
+            {busy ? 'Duplicando…' : copies === 1 ? 'Duplicar' : `Hacer ${copies} copias`}
+          </button>
+        </div>
+      </form>
+    </Popover>
   )
 }
 

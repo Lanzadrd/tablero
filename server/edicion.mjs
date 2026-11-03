@@ -15,6 +15,7 @@ import {
   createAds,
   creativeBody,
   GREETING,
+  patiently,
   localDateTime,
   majorUnits,
   minorUnits,
@@ -223,10 +224,15 @@ function chatOf(json) {
 
 const isWhatsApp = (cta) => cta?.type === 'WHATSAPP_MESSAGE'
 
+const FORM_AD = 'Este anuncio usa un formulario instantáneo: su contenido se cambia en el Administrador de anuncios.'
+
+/** Adónde lleva un anuncio a una web, con su botón y sus parámetros; null si no se sabe. */
+const webOf = (creative, type, link) => (link ? { destino: 'web', url: link, boton: type ?? 'NO_BUTTON', etiquetas: creative?.url_tags ?? '' } : null)
+
 /**
- * Lo que se puede editar de un anuncio: sus textos, su imagen o vídeo (y la vertical), el chat de WhatsApp, las
- * mejoras… tal como lo crea Tablero. De los que son de otra forma (una publicación que ya existía, un carrusel, uno
- * que lleva a una web), `motivo` dice por qué no.
+ * Lo que se puede editar de un anuncio: sus textos, su imagen o vídeo (y la vertical), adónde lleva (el chat de WhatsApp
+ * o la web)… tal como lo crea Tablero. De los que son de otra forma (una publicación que ya existía, un carrusel, un
+ * formulario instantáneo), `motivo` dice por qué no.
  */
 export function contentOf(creative) {
   const spec = creative?.object_story_spec ?? {}
@@ -260,9 +266,9 @@ export function contentOf(creative) {
     const video = Boolean(feed.videos?.length)
     const assets = (video ? feed.videos : feed.images) ?? []
     if (!assets.length || !feed.bodies?.length) return no('Este anuncio tiene un formato que Tablero no edita.')
-    if (feed.call_to_action_types?.length && !feed.call_to_action_types.includes('WHATSAPP_MESSAGE')) {
-      return no('Este anuncio no lleva a WhatsApp: su contenido se cambia en el Administrador de anuncios.')
-    }
+    const whatsapp = !feed.call_to_action_types?.length || feed.call_to_action_types.includes('WHATSAPP_MESSAGE')
+    const web = whatsapp ? null : webOf(creative, feed.call_to_action_types[0], feed.link_urls?.[0]?.website_url)
+    if (!whatsapp && !web) return no('Este anuncio tiene un formato que Tablero no edita.')
     const toMedia = (a) => (video ? { tipo: 'video', id: String(a.video_id) } : { tipo: 'imagen', hash: a.hash })
     return {
       editable: true,
@@ -272,6 +278,7 @@ export function contentOf(creative) {
         ...texts({ texto: feed.bodies[0]?.text, titular: feed.titles?.[0]?.text, descripcion: feed.descriptions?.[0]?.text }),
         variantes: { textos: [], titulos: [], descripciones: [] },
         ...chatOf(feed.additional_data?.page_welcome_message),
+        ...web,
       },
       versiones: formatsOfAssets(feed, assets, video).map((formato, i) => ({ formato, medio: toMedia(assets[i]) })),
       miniaturas: video ? assets.filter((a) => a.thumbnail_hash).map((a) => [String(a.video_id), a.thumbnail_hash]) : [],
@@ -280,23 +287,27 @@ export function contentOf(creative) {
   if (spec.link_data) {
     const link = spec.link_data
     if (link.child_attachments?.length) return no('Este anuncio es un carrusel: Tablero aún no edita carruseles.')
-    if (!isWhatsApp(link.call_to_action)) return no('Este anuncio no lleva a WhatsApp: su contenido se cambia en el Administrador de anuncios.')
+    if (link.call_to_action?.value?.lead_gen_form_id) return no(FORM_AD)
+    const web = isWhatsApp(link.call_to_action) ? null : webOf(creative, link.call_to_action?.type, link.call_to_action?.value?.link ?? link.link)
+    if (!isWhatsApp(link.call_to_action) && !web) return no('Este anuncio tiene un formato que Tablero no edita.')
     if (!link.image_hash) return no('Este anuncio tiene un formato que Tablero no edita.')
     return {
       editable: true,
       motivo: null,
-      ajustes: { ...base, ...fromVariants(texts({ texto: link.message, titular: link.name, descripcion: link.description })), ...chatOf(link.page_welcome_message) },
+      ajustes: { ...base, ...fromVariants(texts({ texto: link.message, titular: link.name, descripcion: link.description })), ...chatOf(link.page_welcome_message), ...web },
       versiones: [{ formato: '4:5', medio: { tipo: 'imagen', hash: link.image_hash } }],
       miniaturas: [],
     }
   }
   if (spec.video_data) {
     const video = spec.video_data
-    if (!isWhatsApp(video.call_to_action)) return no('Este anuncio no lleva a WhatsApp: su contenido se cambia en el Administrador de anuncios.')
+    if (video.call_to_action?.value?.lead_gen_form_id) return no(FORM_AD)
+    const web = isWhatsApp(video.call_to_action) ? null : webOf(creative, video.call_to_action?.type, video.call_to_action?.value?.link)
+    if (!isWhatsApp(video.call_to_action) && !web) return no('Este anuncio tiene un formato que Tablero no edita.')
     return {
       editable: true,
       motivo: null,
-      ajustes: { ...base, ...fromVariants(texts({ texto: video.message, titular: video.title, descripcion: video.link_description })), ...chatOf(video.page_welcome_message) },
+      ajustes: { ...base, ...fromVariants(texts({ texto: video.message, titular: video.title, descripcion: video.link_description })), ...chatOf(video.page_welcome_message), ...web },
       versiones: [{ formato: '4:5', medio: { tipo: 'video', id: String(video.video_id) } }],
       miniaturas: video.image_hash ? [[String(video.video_id), video.image_hash]] : [],
     }
@@ -393,7 +404,7 @@ async function adSetPlacements(meta, adSetId) {
   return placementsForAds(targeting)
 }
 
-const CONTENT_KEYS = ['instagram', 'texto', 'titular', 'descripcion', 'bienvenida', 'tipoMensaje', 'saludo', 'preguntas', 'mejoras', 'multianunciante']
+const CONTENT_KEYS = ['url', 'boton', 'etiquetas', 'instagram', 'texto', 'titular', 'descripcion', 'bienvenida', 'tipoMensaje', 'saludo', 'preguntas', 'mejoras', 'multianunciante']
 
 // ── Leer ──
 
@@ -402,7 +413,7 @@ const ADSET_FIELDS =
   'name,status,account_id,daily_budget,lifetime_budget,start_time,end_time,targeting,promoted_object,optimization_goal,destination_type,' +
   'bid_strategy,bid_amount,campaign{id,name,daily_budget,lifetime_budget,bid_strategy}'
 const AD_FIELDS =
-  'name,status,account_id,adset_id,adset{targeting},creative{id,object_story_spec,asset_feed_spec,degrees_of_freedom_spec,contextual_multi_ads,instagram_user_id,object_story_id,effective_object_story_id}'
+  'name,status,account_id,adset_id,adset{targeting},creative{id,object_story_spec,asset_feed_spec,degrees_of_freedom_spec,contextual_multi_ads,instagram_user_id,object_story_id,effective_object_story_id,url_tags}'
 
 /** Cómo está ahora una campaña, un conjunto o un anuncio, para el formulario de editar. */
 export async function details(meta, raw, { now = Date.now() } = {}) {
@@ -448,6 +459,7 @@ export async function details(meta, raw, { now = Date.now() } = {}) {
         publico: audienceOf(s.targeting),
         pagina: s.promoted_object?.page_id ?? null,
         whatsapp: s.promoted_object?.whatsapp_phone_number ?? null,
+        web: s.promoted_object?.pixel_id ? { pixel: String(s.promoted_object.pixel_id), evento: s.promoted_object.custom_event_type ?? null } : null,
         optimizacion: s.optimization_goal ?? null,
         destino: s.destination_type ?? null,
       },
@@ -557,6 +569,7 @@ export async function update(meta, raw, options = {}) {
       const settings = cleanSettings({ ...current.ajustes, ...pick(cambios.contenido ?? {}, CONTENT_KEYS) })
       const versiones = cambios.versiones !== undefined ? cleanVersions(cambios.versiones) : current.versiones
       if (!settings.texto) throw new HttpError(400, 'Falta el texto del anuncio.')
+      if (settings.destino === 'web' && !settings.url) throw new HttpError(400, 'Falta la dirección de la web.')
       const plan = {
         ...settings,
         // Las ubicaciones del conjunto, para saber dónde va cada versión.
@@ -595,39 +608,60 @@ async function liveChildren(meta, parentId, edge) {
   return (page.data ?? []).map((item) => String(item.id))
 }
 
-/** Copia un conjunto (en su campaña o en `campaignId`) y, uno a uno, sus anuncios. */
-async function copyAdSet(meta, adSetId, campaignId, rename) {
-  const copy = await meta.graph(`${adSetId}/copies`, {
-    method: 'POST',
-    body: { deep_copy: false, status_option: 'PAUSED', ...(campaignId ? { campaign_id: campaignId } : {}), ...(rename ? {} : { rename_options: NO_RENAME }) },
-  })
+/** Cómo se llama cada copia: la primera, como dice Meta; las siguientes, «- Copia 2», «- Copia 3»… */
+const copyName = (n) => (n > 1 ? { rename_options: { rename_strategy: 'ONLY_TOP_LEVEL_RENAME', rename_suffix: ` - Copia ${n}` } } : {})
+
+/** Copia un conjunto (en su campaña o en `campaignId`) y, uno a uno, sus anuncios. `name`: cómo se llama (sin él, igual). */
+async function copyAdSet(meta, adSetId, campaignId, name, options) {
+  const copy = await patiently(
+    () =>
+      meta.graph(`${adSetId}/copies`, {
+        method: 'POST',
+        body: { deep_copy: false, status_option: 'PAUSED', ...(campaignId ? { campaign_id: campaignId } : {}), ...(name ?? { rename_options: NO_RENAME }) },
+      }),
+    options,
+  )
   const adSetCopy = String(copy.copied_adset_id)
   for (const adId of await liveChildren(meta, adSetId, 'ads')) {
-    await meta.graph(`${adId}/copies`, { method: 'POST', body: { adset_id: adSetCopy, status_option: 'PAUSED', rename_options: NO_RENAME } })
+    await patiently(() => meta.graph(`${adId}/copies`, { method: 'POST', body: { adset_id: adSetCopy, status_option: 'PAUSED', rename_options: NO_RENAME } }), options)
   }
   return adSetCopy
 }
 
+/** Más copias de una vez, no: Meta frena y se tardaría demasiado. */
+const MAX_COPIES = 20
+
 /**
- * Una copia en pausa (con todo lo que cuelga: conjuntos y anuncios), con «- Copia» en el nombre. Se copia pieza a
- * pieza: Meta no copia de una vez más de 3 anuncios. Si falla a medias, lo copiado se queda en pausa.
+ * Una o varias (`copias`) copias en pausa, con todo lo que cuelga (conjuntos y anuncios), con «- Copia» en el nombre. Las
+ * de un conjunto, en su campaña o en otra (`campana`). Se copia pieza a pieza: Meta no copia de una vez más de 3 anuncios.
+ * Si falla a medias, lo copiado se queda en pausa.
  */
-export async function duplicate(meta, raw) {
+export async function duplicate(meta, raw, options = {}) {
   const { cuenta, nivel, id } = target(raw)
+  const copies = Math.min(Math.max(Math.round(Number(raw?.copias)) || 1, 1), MAX_COPIES)
+  const toCampaign = nivel === 'conjunto' && ID.test(raw?.campana ?? '') ? raw.campana : null
   const source = await meta.graph(id, { params: { fields: 'name,account_id' } })
   own(source, cuenta)
+  if (toCampaign) own(await meta.graph(toCampaign, { params: { fields: 'account_id' } }), cuenta)
+  const ids = []
   try {
-    if (nivel === 'anuncio') {
-      const copy = await meta.graph(`${id}/copies`, { method: 'POST', body: { status_option: 'PAUSED' } })
-      return { id: String(copy.copied_ad_id) }
+    for (let n = 1; n <= copies; n++) {
+      if (nivel === 'anuncio') {
+        const copy = await patiently(() => meta.graph(`${id}/copies`, { method: 'POST', body: { status_option: 'PAUSED', ...copyName(n) } }), options)
+        ids.push(String(copy.copied_ad_id))
+      } else if (nivel === 'conjunto') {
+        ids.push(await copyAdSet(meta, id, toCampaign, copyName(n), options))
+      } else {
+        const copy = await patiently(() => meta.graph(`${id}/copies`, { method: 'POST', body: { deep_copy: false, status_option: 'PAUSED', ...copyName(n) } }), options)
+        const campaignCopy = String(copy.copied_campaign_id)
+        for (const adSetId of await liveChildren(meta, id, 'adsets')) await copyAdSet(meta, adSetId, campaignCopy, null, options)
+        ids.push(campaignCopy)
+      }
     }
-    if (nivel === 'conjunto') return { id: await copyAdSet(meta, id, null, true) }
-    const copy = await meta.graph(`${id}/copies`, { method: 'POST', body: { deep_copy: false, status_option: 'PAUSED' } })
-    const campaignCopy = String(copy.copied_campaign_id)
-    for (const adSetId of await liveChildren(meta, id, 'adsets')) await copyAdSet(meta, adSetId, campaignCopy, false)
-    return { id: campaignCopy }
+    return { id: ids[0], ids }
   } catch (err) {
-    throw new HttpError(err?.status ?? 502, `${err?.message ?? err} (Si se ha copiado algo, está en pausa.)`, err?.code)
+    const done = ids.length ? `Se han hecho ${ids.length} de ${copies} copias, en pausa.` : 'Si se ha copiado algo, está en pausa.'
+    throw new HttpError(err?.status ?? 502, `${err?.message ?? err} (${done})`, err?.code)
   }
 }
 
@@ -644,15 +678,19 @@ export async function remove(meta, raw) {
 
 /**
  * Anuncios nuevos en un conjunto que ya existe (uno por pieza, con sus versiones de cada formato), con la
- * página del conjunto. Se crean en pausa: se encienden con su interruptor.
+ * página del conjunto. Se crean en pausa (se encienden con su interruptor) o, con `publicar`, encendidos.
  */
 export async function addAds(meta, raw, options = {}) {
   const adSetId = typeof raw?.conjunto === 'string' && ID.test(raw.conjunto) ? raw.conjunto : null
   if (!adSetId) throw new HttpError(400, 'Conjunto no válido')
   const adSet = await meta.graph(adSetId, { params: { fields: 'name,account_id,promoted_object,targeting' } })
   // Con las ubicaciones del conjunto, para saber dónde va cada versión.
-  const plan = { ...cleanPlan({ ...raw, nombre: adSet.name ?? 'Conjunto', pagina: adSet.promoted_object?.page_id ?? raw?.pagina }), ...placementsForAds(adSet.targeting) }
+  const plan = {
+    // Si el conjunto lleva a una web, sus anuncios también.
+    ...cleanPlan({ ...raw, nombre: adSet.name ?? 'Conjunto', pagina: adSet.promoted_object?.page_id ?? raw?.pagina, destino: adSet.promoted_object?.pixel_id ? 'web' : raw?.destino }),
+    ...placementsForAds(adSet.targeting),
+  }
   own(adSet, plan.cuenta)
   const thumbs = await thumbnailsOf(meta, plan, options)
-  return { conjunto: adSetId, anuncios: await createAds(meta, plan, adSetId, thumbs, 'PAUSED') }
+  return { conjunto: adSetId, anuncios: await createAds(meta, plan, adSetId, thumbs, plan.publicar ? 'ACTIVE' : 'PAUSED', options) }
 }

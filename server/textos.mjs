@@ -38,6 +38,8 @@ Escribe en el español de donde se anuncia: en Paraguay, Argentina y Uruguay, co
 - Título: hasta 40 caracteres. Descripción: hasta 30 caracteres.
 - Chat de WhatsApp: el mensaje de la empresa es un saludo breve y cálido que invita a preguntar (hasta 200 caracteres). El mensaje de la persona va en primera persona, natural y corto (hasta 80 caracteres), como lo escribiría alguien interesado. Las preguntas frecuentes, de 3 a ${MAX_QUESTIONS}, también en boca de la persona y de hasta 80 caracteres.
 
+Si el encargo dice que el anuncio lleva a una web, la llamada a la acción invita a entrar o a pedir información en ella, sin hablar de WhatsApp; el chat no se usa (escríbelo igual, breve).
+
 No inventes precios, fechas, horarios, direcciones, porcentajes ni promesas que no estén en las imágenes, en las indicaciones o en los textos que ya hay. Si falta un dato, escribe sin él. Nada de hashtags.`
 
 // ── La clave ──
@@ -93,6 +95,7 @@ function cleanRequest(raw) {
     pagina: text(raw?.pagina, 200),
     instagram: text(raw?.instagram, 100),
     lugares,
+    web: text(raw?.web, 1000),
     actuales: {
       texto: text(raw?.actuales?.texto, 3000),
       titular: text(raw?.actuales?.titular, 255),
@@ -114,6 +117,7 @@ function brief(r) {
   const lines = [
     r.pagina && `Página que anuncia: ${r.pagina}${r.instagram ? ` (Instagram @${r.instagram})` : ''}`,
     r.lugares.length && `Se anuncia en: ${r.lugares.join('; ')}`,
+    r.web && `El anuncio lleva a la web ${r.web}, para conseguir clientes potenciales.`,
     r.indicaciones && `Indicaciones:\n${r.indicaciones}`,
   ]
   const now = Object.entries(r.actuales).filter(([, v]) => (Array.isArray(v) ? v.length : v))

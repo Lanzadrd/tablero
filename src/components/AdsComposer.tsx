@@ -8,7 +8,9 @@ import {
   defaultNumber,
   DEFAULT_SETTINGS,
   ENHANCEMENTS,
+  goalText,
   GREETING,
+  LEAD_EVENTS,
   MAX_QUESTIONS,
   metaApi,
   missing,
@@ -16,6 +18,7 @@ import {
   sameSettings,
   settingsOf,
   uploadMedia,
+  WEB_BUTTONS,
   type AdAccount,
   type AdNumber,
   type AdRow,
@@ -26,6 +29,7 @@ import {
   type Launch,
   type Media,
   type MetaPage,
+  type MetaPixel,
   type NewAdSet,
   type Place,
   type Template,
@@ -93,11 +97,40 @@ export interface AdSetTarget {
   pagina: string | null
   /** La campaña está en pausa: lo que se publique en ella no gasta hasta activarla. */
   pausada?: boolean
+  /** El objetivo de la campaña (el conjunto nuevo tiene que encajar) y, si sus conjuntos llevan a una web, su píxel y evento. */
+  objetivo?: string | null
+  web?: { pixel: string; evento: string } | null
+}
+
+/** Lo que busca una campaña nueva. */
+type Goal = 'mensajes' | 'leads-web' | 'leads-whatsapp'
+const GOALS: Array<{ value: Goal; label: string; note: string; settings: Pick<AdSettings, 'objetivo' | 'destino'> }> = [
+  { value: 'mensajes', label: 'Mensajes a WhatsApp', note: 'Interacción: abre una conversación de WhatsApp con la empresa.', settings: { objetivo: 'mensajes', destino: 'whatsapp' } },
+  {
+    value: 'leads-web',
+    label: 'Clientes potenciales en la web',
+    note: 'Lleva a tu web y Meta busca a quienes acaban en el evento del píxel (Lead, por ejemplo).',
+    settings: { objetivo: 'leads', destino: 'web' },
+  },
+  {
+    value: 'leads-whatsapp',
+    label: 'Clientes potenciales por WhatsApp',
+    note: 'Objetivo de clientes potenciales, con la conversación en WhatsApp.',
+    settings: { objetivo: 'leads', destino: 'whatsapp' },
+  },
+]
+const goalOf = (s: Pick<AdSettings, 'objetivo' | 'destino'>): Goal => (s.destino === 'web' ? 'leads-web' : s.objetivo === 'leads' ? 'leads-whatsapp' : 'mensajes')
+
+/** Lo que deja crear una campaña que ya existe, y cómo empieza un conjunto nuevo en ella. */
+function goalIn(target: AdSetTarget): Partial<AdSettings> {
+  if (target.objetivo !== 'OUTCOME_LEADS') return { objetivo: 'mensajes', destino: 'whatsapp' }
+  const web = Boolean(target.web) || !target.pagina
+  return { objetivo: 'leads', destino: web ? 'web' : 'whatsapp', ...(target.web ?? {}) }
 }
 
 /**
- * Nueva campaña de mensajes a WhatsApp en una cuenta publicitaria: las opciones (de una plantilla o a mano),
- * las imágenes o vídeos (uno por anuncio) y «Crear en pausa» o «Publicar ya». Debajo, las últimas creadas en la cuenta.
+ * Nueva campaña, de mensajes a WhatsApp o de clientes potenciales, en una cuenta publicitaria: las opciones (de una
+ * plantilla o a mano), las imágenes o vídeos (uno por anuncio) y «Crear en pausa» o «Publicar ya». Debajo, las últimas creadas en la cuenta.
  * Con `adSetIn`, lo mismo para un conjunto nuevo en esa campaña.
  */
 export function AdsComposer({
@@ -126,6 +159,7 @@ export function AdsComposer({
     const base = {
       ...(t ? settingsOf(t) : DEFAULT_SETTINGS),
       cuenta: account.id,
+      ...(adSetIn ? goalIn(adSetIn) : {}),
     }
     return adSetIn?.pagina && base.pagina !== adSetIn.pagina ? { ...base, pagina: null, instagram: null, whatsapp: null } : base
   }
@@ -140,13 +174,15 @@ export function AdsComposer({
   const [settings, setSettings] = useState<AdSettings>(() => startFrom(template))
   const [pages, setPages] = useState<MetaPage[] | null>(null)
   const [pagesError, setPagesError] = useState<string | null>(null)
-  const [drafts, setDrafts] = useState<Draft[]>([])
+  const [pixels, setPixels] = useState<MetaPixel[] | null>(null)
+  const [pixelsError, setPixelsError] = useState<string | null>(null)
   const [name, setName] = useState<string | null>(null)
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   const [error, setError] = useState<string | null>(null)
   const [saveAs, setSaveAs] = useState<HTMLElement | null>(null)
+  const { drafts, setDrafts, addFiles } = useDrafts(setError)
 
   const update = useCallback((changes: Partial<AdSettings>) => setSettings((s) => ({ ...s, ...changes })), [])
   const toggleEnhancement = (key: Enhancement, on: boolean) =>
@@ -163,6 +199,27 @@ export function AdsComposer({
     [account.id],
   )
   useEffect(() => loadPages(), [loadPages])
+  // ── Píxeles de la cuenta (para lo que lleva a una web); si solo hay uno, ese ──
+  const loadPixels = useCallback(
+    (fresh = false) => {
+      setPixelsError(null)
+      metaApi.pixels(account.id, fresh).then(setPixels, (err) => setPixelsError(errorText(err)))
+    },
+    [account.id],
+  )
+  const wantsPixels = settings.destino === 'web'
+  useEffect(() => {
+    if (wantsPixels) loadPixels()
+  }, [wantsPixels, loadPixels])
+  useEffect(() => {
+    if (!wantsPixels || !pixels) return
+    setSettings((s) => {
+      if (pixels.some((p) => p.id === s.pixel)) return s
+      const pixel = pixels.length === 1 ? pixels[0].id : null
+      return pixel === s.pixel ? s : { ...s, pixel }
+    })
+  }, [wantsPixels, pixels, settings.pixel])
+
   // Al abrir un conjunto nuevo, el foco va a su título.
   useEffect(() => heading.current?.focus(), [])
 
@@ -231,48 +288,6 @@ export function AdsComposer({
     }
   }
 
-  // ── Imágenes y vídeos: un anuncio por cada una, o por pareja (la del feed y la vertical) ──
-  const draftsRef = useRef(drafts)
-  draftsRef.current = drafts
-  useEffect(() => () => draftsRef.current.forEach((d) => d.items.forEach((c) => URL.revokeObjectURL(c.preview))), [])
-  const creativeCount = drafts.reduce((n, d) => n + d.items.length, 0)
-
-  const addFiles = async (files: FileList | File[]) => {
-    const accepted: Array<{ file: File; tipo: Creative['tipo'] }> = []
-    const rejected: string[] = []
-    for (const file of files) {
-      const tipo = file.type.startsWith('image/') ? 'imagen' : file.type.startsWith('video/') ? 'video' : null
-      if (!tipo || file.size > (tipo === 'imagen' ? MAX_IMAGE : MAX_VIDEO)) rejected.push(file.name)
-      else accepted.push({ file, tipo })
-    }
-    const refused = rejected.length ? `No se pueden usar: ${rejected.join(', ')} (solo imágenes de hasta 30 MB y vídeos de hasta 1 GB).` : null
-    setError(refused)
-    if (refused) notify('error', refused)
-    if (phase.kind === 'done') setPhase({ kind: 'idle' })
-    // Se mide cada una para saber si es vertical y juntarla con la otra versión de su pieza.
-    const added = await Promise.all(
-      accepted.map(async ({ file, tipo }): Promise<Draft> => {
-        const preview = URL.createObjectURL(file)
-        const ratio = await measure(file, tipo, preview)
-        return {
-          key: crypto.randomUUID(),
-          nombre: adNameFrom(file.name),
-          items: [
-            {
-              key: crypto.randomUUID(),
-              file,
-              tipo,
-              preview,
-              medio: null,
-              ratio,
-            },
-          ],
-        }
-      }),
-    )
-    if (added.length) setDrafts((list) => addDrafts(list, added))
-  }
-
   // ── Textos con Claude ──
   /** Lo que había antes de que escribiera Claude (para deshacerlo). */
   const [undo, setUndo] = useState<Copy | null>(null)
@@ -283,6 +298,7 @@ export function AdsComposer({
     pagina: page?.nombre ?? '',
     instagram: page?.instagrams.find((i) => i.id === settings.instagram)?.usuario ?? '',
     lugares: settings.lugares.map((l) => [l.nombre, l.detalle].filter(Boolean).join(', ')),
+    ...(settings.destino === 'web' ? { web: settings.url } : {}),
     actuales: {
       texto: settings.texto,
       titular: settings.titular,
@@ -296,7 +312,7 @@ export function AdsComposer({
   // ── Crear ──
   // Con Advantage+, Meta no admite una edad mínima por encima de 25 (se manda así; anuncios.mjs igual).
   const minAge = settings.advantage ? Math.min(settings.edadMin, 25) : settings.edadMin
-  const campaign = name ?? campaignName(template?.nombre ?? null)
+  const campaign = name ?? campaignName(template?.nombre ?? null, undefined, settings)
   const blocked = missing({
     ...settings,
     presupuesto: shared ? 1 : settings.presupuesto,
@@ -310,20 +326,7 @@ export function AdsComposer({
     if (blocked || busy || !settings.pagina) return
     setError(null)
     try {
-      const media = new Map<string, Media>()
-      for (const [i, creative] of drafts.flatMap((d) => d.items).entries()) {
-        setPhase({ kind: 'uploading', done: i, total: creativeCount })
-        const medio = creative.medio ?? (await uploadMedia(account.id, creative.file))
-        media.set(creative.key, medio)
-        if (!creative.medio) {
-          setDrafts((list) =>
-            list.map((d) => ({
-              ...d,
-              items: d.items.map((c) => (c.key === creative.key ? { ...c, medio } : c)),
-            })),
-          )
-        }
-      }
+      const anuncios = await uploadDrafts(account.id, drafts, setDrafts, (done, total) => setPhase({ kind: 'uploading', done, total }))
       setPhase({ kind: 'creating', publish })
       const plan = {
         ...settings,
@@ -334,14 +337,7 @@ export function AdsComposer({
         inicio: start || null,
         fin: end || null,
         publicar: publish,
-        // Cada versión con su formato: Meta pone cada una en sus ubicaciones.
-        anuncios: drafts.map(({ nombre, items }) => ({
-          nombre,
-          versiones: items.map((c) => ({
-            formato: formatOfCreative(c),
-            medio: media.get(c.key)!,
-          })),
-        })),
+        anuncios,
       }
       if (adSetIn) {
         onAdSet?.(await metaApi.addAdSet({ ...plan, campana: adSetIn.id }))
@@ -384,6 +380,19 @@ export function AdsComposer({
             <input id={`${ids}-name`} className="input ads-wide" value={campaign} disabled={busy} onChange={(e) => setName(e.target.value)} />
           </Field>
         </section>
+
+        {(!adSetIn || adSetIn.objetivo === 'OUTCOME_LEADS') && (
+          <section className="ads-card" aria-labelledby={`${ids}-goal`}>
+            <h4 id={`${ids}-goal`}>Objetivo</h4>
+            <Chips
+              label="Objetivo"
+              options={adSetIn ? GOALS.filter((g) => g.settings.objetivo === 'leads') : GOALS}
+              value={goalOf(settings)}
+              onChange={(goal) => update(GOALS.find((g) => g.value === goal)!.settings)}
+            />
+            <p className="ads-hint">{GOALS.find((g) => g.value === goalOf(settings))?.note}</p>
+          </section>
+        )}
 
         <section className="ads-card ads-templates" aria-labelledby={`${ids}-tpl`}>
           <h4 id={`${ids}-tpl`}>Plantilla</h4>
@@ -487,9 +496,56 @@ export function AdsComposer({
                 <option value="">{page?.instagrams.length ? 'Sin Instagram (como la página)' : 'La página no tiene Instagram conectado'}</option>
               </select>
             </Field>
-            <NumberField id={`${ids}-whatsapp`} page={page} value={settings.whatsapp} onChange={(whatsapp) => update({ whatsapp })} />
+            {settings.destino !== 'web' && <NumberField id={`${ids}-whatsapp`} page={page} value={settings.whatsapp} onChange={(whatsapp) => update({ whatsapp })} />}
           </div>
         </section>
+
+        {settings.destino === 'web' && (
+          <section className="ads-card" aria-labelledby={`${ids}-web`}>
+            <h4 id={`${ids}-web`}>La web</h4>
+            <div className="ads-fields">
+              <WebFields id={`${ids}-web`} value={settings} onChange={update} />
+              <Field
+                label="Píxel"
+                htmlFor={`${ids}-pixel`}
+                note={pixels?.find((p) => p.id === settings.pixel)?.ultimo ? `Última actividad: ${formatWhen(pixels.find((p) => p.id === settings.pixel)!.ultimo!)}` : null}
+              >
+                {pixels ? (
+                  pixels.length ? (
+                    <select id={`${ids}-pixel`} className="input" value={settings.pixel ?? ''} onChange={(e) => update({ pixel: e.target.value || null })}>
+                      {!settings.pixel && <option value="">Elige un píxel…</option>}
+                      {pixels.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="ads-note is-error">Esta cuenta no tiene ningún píxel: créalo en el Administrador de eventos.</span>
+                  )
+                ) : pixelsError ? (
+                  <span className="ads-note is-error">
+                    {pixelsError}{' '}
+                    <button type="button" className="link-btn" onClick={() => loadPixels(true)}>
+                      Reintentar
+                    </button>
+                  </span>
+                ) : (
+                  <span className="ads-note">Cargando píxeles…</span>
+                )}
+              </Field>
+              <Field label="Evento" htmlFor={`${ids}-event`} note="Meta busca a quienes acaban haciéndolo. Tiene que dispararse en tu web.">
+                <select id={`${ids}-event`} className="input" value={settings.evento} onChange={(e) => update({ evento: e.target.value })}>
+                  {LEAD_EVENTS.map((event) => (
+                    <option key={event.value} value={event.value}>
+                      {event.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          </section>
+        )}
 
         <section className="ads-card" aria-labelledby={`${ids}-budget`}>
           <h4 id={`${ids}-budget`}>Presupuesto y fechas</h4>
@@ -522,7 +578,7 @@ export function AdsComposer({
               label="Advantage+"
               note={
                 settings.advantage
-                  ? 'Meta decide la edad máxima y el sexo según dónde encuentre más conversaciones.'
+                  ? `Meta decide la edad máxima y el sexo según dónde encuentre más ${settings.destino === 'web' ? 'clientes potenciales' : 'conversaciones'}.`
                   : 'Desactivado: la edad y el sexo son límites estrictos.'
               }
             >
@@ -573,7 +629,13 @@ export function AdsComposer({
             Cada fila es un anuncio, con el mismo texto, en el mismo conjunto. Si subes varios formatos de una pieza (1:1, 4:5, 9:16 y 16:9), se juntan en un
             solo anuncio: cada uno va en las ubicaciones que le toquen.
           </p>
-          <DropZone onFiles={(files) => void addFiles(files)} disabled={busy} />
+          <DropZone
+            onFiles={(files) => {
+              if (phase.kind === 'done') setPhase({ kind: 'idle' })
+              void addFiles(files)
+            }}
+            disabled={busy}
+          />
           {drafts.length > 0 && <MediaList drafts={drafts} busy={busy} onChange={setDrafts} />}
           <h5 className="ads-subtitle">Ubicaciones</h5>
           <PlacementPicker
@@ -581,6 +643,7 @@ export function AdsComposer({
             chosen={settings.posiciones}
             pieces={drafts.length ? drafts.map((d) => d.items.map(formatOfCreative)) : undefined}
             video={drafts.length ? drafts.every((d) => d.items[0].tipo === 'video') : null}
+            whatsapp={settings.destino !== 'web'}
             onChange={(ubicaciones, posiciones) =>
               update({
                 ubicaciones: ubicaciones === 'meta' ? 'manual' : ubicaciones,
@@ -652,6 +715,7 @@ export function AdsComposer({
           </div>
         </section>
 
+        {settings.destino !== 'web' && (
         <section className="ads-card" aria-labelledby={`${ids}-chat`}>
           <h4 id={`${ids}-chat`}>Chat de WhatsApp</h4>
           <p className="ads-hint">Lo que ve la persona al abrir WhatsApp desde el anuncio.</p>
@@ -683,6 +747,7 @@ export function AdsComposer({
             <ChatPreview settings={settings} page={page} />
           </div>
         </section>
+        )}
 
         <section className="ads-card" aria-labelledby={`${ids}-auto`}>
           <h4 id={`${ids}-auto`}>
@@ -745,8 +810,8 @@ export function AdsComposer({
                       ? `${phase.publish ? 'Publicando' : 'Creando'} ${adSetIn ? 'el conjunto' : 'la campaña'} y los anuncios…`
                       : (blocked ??
                         (adSetIn
-                          ? `Mensajes a WhatsApp · ${shared ? 'con el presupuesto de la campaña' : `${money(settings.presupuesto, account.moneda)} al día`} · ${adsCount(drafts.length)} · ${automaticSummary(settings)}`
-                          : `Mensajes a WhatsApp · ${money(settings.presupuesto, account.moneda)} al día · ${adsCount(drafts.length)} · ${automaticSummary(settings)}`))}
+                          ? `${goalText(settings)} · ${shared ? 'con el presupuesto de la campaña' : `${money(settings.presupuesto, account.moneda)} al día`} · ${adsCount(drafts.length)} · ${automaticSummary(settings)}`
+                          : `${goalText(settings)} · ${money(settings.presupuesto, account.moneda)} al día · ${adsCount(drafts.length)} · ${automaticSummary(settings)}`))}
                 </p>
                 <div className="ads-launch-actions">
                   <button type="button" className="btn" disabled={Boolean(blocked) || busy} onClick={() => void create(false)}>
@@ -783,7 +848,114 @@ export function AdsComposer({
   )
 }
 
-const adsCount = (n: number) => (n === 1 ? '1 anuncio' : `${n} anuncios`)
+export const adsCount = (n: number) => (n === 1 ? '1 anuncio' : `${n} anuncios`)
+
+/**
+ * Las piezas subidas a un formulario: un anuncio por cada una, o por las versiones de la misma pieza (se juntan por el
+ * nombre del archivo). `onRefused`: lo que no se puede usar, dicho (o null si todo va bien).
+ */
+export function useDrafts(onRefused: (message: string | null) => void) {
+  const [drafts, setDrafts] = useState<Draft[]>([])
+  const draftsRef = useRef(drafts)
+  draftsRef.current = drafts
+  useEffect(() => () => draftsRef.current.forEach((d) => d.items.forEach((c) => URL.revokeObjectURL(c.preview))), [])
+
+  const addFiles = async (files: FileList | File[]) => {
+    const accepted: Array<{ file: File; tipo: Creative['tipo'] }> = []
+    const rejected: string[] = []
+    for (const file of files) {
+      const tipo = file.type.startsWith('image/') ? 'imagen' : file.type.startsWith('video/') ? 'video' : null
+      if (!tipo || file.size > (tipo === 'imagen' ? MAX_IMAGE : MAX_VIDEO)) rejected.push(file.name)
+      else accepted.push({ file, tipo })
+    }
+    const refused = rejected.length ? `No se pueden usar: ${rejected.join(', ')} (solo imágenes de hasta 30 MB y vídeos de hasta 1 GB).` : null
+    onRefused(refused)
+    if (refused) notify('error', refused)
+    // Se mide cada una para saber si es vertical y juntarla con la otra versión de su pieza.
+    const added = await Promise.all(
+      accepted.map(async ({ file, tipo }): Promise<Draft> => {
+        const preview = URL.createObjectURL(file)
+        const ratio = await measure(file, tipo, preview)
+        return {
+          key: crypto.randomUUID(),
+          nombre: adNameFrom(file.name),
+          items: [{ key: crypto.randomUUID(), file, tipo, preview, medio: null, ratio }],
+        }
+      }),
+    )
+    if (added.length) setDrafts((list) => addDrafts(list, added))
+  }
+  return { drafts, setDrafts, addFiles }
+}
+
+/**
+ * Sube lo que falte de cada pieza, una a una, y devuelve los anuncios. Lo ya subido se apunta: si algo falla y se vuelve a
+ * intentar, no se repite. Cada versión, con su formato: Meta pone cada una en sus ubicaciones.
+ */
+export async function uploadDrafts(account: string, drafts: Draft[], setDrafts: (update: (list: Draft[]) => Draft[]) => void, onProgress: (done: number, total: number) => void) {
+  const media = new Map<string, Media>()
+  const all = drafts.flatMap((d) => d.items)
+  for (const [i, creative] of all.entries()) {
+    onProgress(i, all.length)
+    const medio = creative.medio ?? (await uploadMedia(account, creative.file))
+    media.set(creative.key, medio)
+    if (!creative.medio) setDrafts((list) => list.map((d) => ({ ...d, items: d.items.map((c) => (c.key === creative.key ? { ...c, medio } : c)) })))
+  }
+  return drafts.map(({ nombre, items }) => ({
+    nombre,
+    versiones: items.map((c) => ({ formato: formatOfCreative(c), medio: media.get(c.key)! })),
+  }))
+}
+
+/** Adónde lleva un anuncio a una web: la dirección, el botón y, si se quieren medir, los parámetros de la dirección. */
+export function WebFields({
+  id,
+  value,
+  onChange,
+}: {
+  id: string
+  value: { url?: string; boton?: string; etiquetas?: string }
+  onChange: (changes: { url?: string; boton?: string; etiquetas?: string }) => void
+}) {
+  const known = WEB_BUTTONS.some((b) => b.value === value.boton)
+  return (
+    <>
+      <Field label="Dirección" htmlFor={`${id}-url`}>
+        <input
+          id={`${id}-url`}
+          className="input ads-wide"
+          inputMode="url"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="https://tu-web.com/pagina"
+          value={value.url ?? ''}
+          onChange={(e) => onChange({ url: e.target.value })}
+        />
+      </Field>
+      <Field label="Botón" htmlFor={`${id}-button`}>
+        <select id={`${id}-button`} className="input" value={value.boton ?? WEB_BUTTONS[0].value} onChange={(e) => onChange({ boton: e.target.value })}>
+          {WEB_BUTTONS.map((b) => (
+            <option key={b.value} value={b.value}>
+              {b.label}
+            </option>
+          ))}
+          {!known && value.boton && <option value={value.boton}>El que tiene ahora ({value.boton})</option>}
+        </select>
+      </Field>
+      <Field label="Parámetros" htmlFor={`${id}-tags`} note="Opcional: se añaden a la dirección para medir de dónde vienen.">
+        <input
+          id={`${id}-tags`}
+          className="input ads-wide"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="utm_source=meta&utm_medium=paid"
+          value={value.etiquetas ?? ''}
+          onChange={(e) => onChange({ etiquetas: e.target.value })}
+        />
+      </Field>
+    </>
+  )
+}
 
 export const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
 
@@ -1093,7 +1265,7 @@ export function PlacePicker({ id, places, onChange }: { id: string; places: Plac
   )
 }
 
-function DropZone({ onFiles, disabled }: { onFiles: (files: FileList) => void; disabled: boolean }) {
+export function DropZone({ onFiles, disabled }: { onFiles: (files: FileList) => void; disabled: boolean }) {
   const [over, setOver] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const onDrop = (e: DragEvent) => {

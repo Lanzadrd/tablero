@@ -51,15 +51,15 @@ const LEVELS = {
     insights: 'campaign',
     states: ['ACTIVE', 'PAUSED', 'IN_PROCESS', 'WITH_ISSUES'],
     fields:
-      'id,name,status,effective_status,daily_budget,lifetime_budget,stop_time,updated_time,' +
-      'adsets.limit(100){status,effective_status,daily_budget,lifetime_budget,start_time,end_time}',
+      'id,name,status,effective_status,objective,daily_budget,lifetime_budget,stop_time,updated_time,' +
+      'adsets.limit(100){status,effective_status,daily_budget,lifetime_budget,start_time,end_time,optimization_goal}',
   },
   conjunto: {
     edge: 'adsets',
     insights: 'adset',
     states: ['ACTIVE', 'PAUSED', 'CAMPAIGN_PAUSED', 'IN_PROCESS', 'WITH_ISSUES'],
     fields:
-      'id,name,status,effective_status,daily_budget,lifetime_budget,start_time,end_time,updated_time,promoted_object,campaign{id,name},' +
+      'id,name,status,effective_status,daily_budget,lifetime_budget,start_time,end_time,updated_time,promoted_object,optimization_goal,campaign{id,name},' +
       'ads.limit(100){status,effective_status}',
   },
   anuncio: {
@@ -78,7 +78,7 @@ const LEVELS = {
       'PENDING_BILLING_INFO',
     ],
     fields:
-      'id,name,status,effective_status,updated_time,campaign{id,name},adset{id,name},' +
+      'id,name,status,effective_status,updated_time,campaign{id,name},adset{id,name,optimization_goal},' +
       'creative{thumbnail_url,degrees_of_freedom_spec,contextual_multi_ads}',
   },
 }
@@ -560,6 +560,18 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
     })
   }
 
+  /** Los píxeles de la cuenta, para medir lo que pasa en la web: primero el que ha recibido algo más recientemente. */
+  function pixels(account, fresh = false) {
+    if (!/^act_\d+$/.test(account ?? '')) throw new HttpError(400, 'Cuenta publicitaria no válida')
+    return cached(`pixels:${account}`, fresh, async () => {
+      const list = await all(`${account}/adspixels`, { fields: 'name,last_fired_time,is_unavailable' }, 50)
+      return list
+        .filter((p) => !p.is_unavailable)
+        .map((p) => ({ id: String(p.id), nombre: p.name ?? String(p.id), ultimo: p.last_fired_time ?? null }))
+        .sort((a, b) => (b.ultimo ?? '').localeCompare(a.ultimo ?? ''))
+    })
+  }
+
   /**
    * «En marcha»: las campañas, los conjuntos o los anuncios (`level`; sin él, el que toca bajo `campaigns` o
    * `adSets`), activos y en pausa, con sus métricas del periodo, y el total (de Meta: el alcance no se puede sumar).
@@ -636,5 +648,5 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
       }))
   }
 
-  return { graph, status, saveApp, saveToken, connectUrl, finishConnect, disconnect, portfolios, pages, places, performance, forget }
+  return { graph, status, saveApp, saveToken, connectUrl, finishConnect, disconnect, portfolios, pages, pixels, places, performance, forget }
 }

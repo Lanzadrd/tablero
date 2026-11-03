@@ -100,6 +100,98 @@ test('campaña y conjunto: mensajes a WhatsApp, en pausa, presupuesto en el conj
   assert.deepEqual(shared.promoted_object, { page_id: '222', whatsapp_phone_number: '34600' })
 })
 
+const webPlan = (extra = {}) => plan({ destino: 'web', objetivo: 'leads', url: 'https://ejemplo.test/oferta', boton: 'GET_QUOTE', pixel: '555', evento: 'LEAD', ...extra })
+
+test('clientes potenciales en una web: objetivo, conjunto con píxel y evento, sin número de WhatsApp', () => {
+  assert.equal(ads.campaignBody(plan()).objective, 'OUTCOME_ENGAGEMENT')
+  assert.equal(ads.campaignBody(plan({ objetivo: 'leads' })).objective, 'OUTCOME_LEADS')
+  assert.equal(ads.campaignBody(webPlan()).objective, 'OUTCOME_LEADS')
+  const body = ads.adSetBody(webPlan(), { campaignId: 'c', currency: 'EUR' })
+  assert.equal(body.destination_type, 'WEBSITE')
+  assert.equal(body.optimization_goal, 'OFFSITE_CONVERSIONS')
+  assert.deepEqual(body.promoted_object, { pixel_id: '555', custom_event_type: 'LEAD' })
+  // Clientes potenciales por WhatsApp: como los mensajes, con otro objetivo.
+  const chat = ads.adSetBody(plan({ objetivo: 'leads' }), { campaignId: 'c', currency: 'EUR' })
+  assert.equal(chat.destination_type, 'WHATSAPP')
+  assert.equal(chat.optimization_goal, 'CONVERSATIONS')
+})
+
+test('anuncio a una web: su dirección, su botón y sus parámetros; nada del chat', () => {
+  const p = webPlan({ etiquetas: 'utm_source=meta' })
+  const body = ads.creativeBody(p, p.anuncios[0])
+  const link = body.object_story_spec.link_data
+  assert.equal(link.link, 'https://ejemplo.test/oferta')
+  assert.deepEqual(link.call_to_action, { type: 'GET_QUOTE', value: { link: 'https://ejemplo.test/oferta' } })
+  assert.equal(link.page_welcome_message, undefined)
+  assert.equal(body.url_tags, 'utm_source=meta')
+
+  const clip = webPlan({ anuncios: [{ nombre: 'v', medio: { tipo: 'video', id: '77' } }] })
+  const video = ads.creativeBody(clip, clip.anuncios[0], { thumbs: new Map([['77', 'hash77']]) }).object_story_spec.video_data
+  assert.deepEqual(video.call_to_action, { type: 'GET_QUOTE', value: { link: 'https://ejemplo.test/oferta' } })
+  assert.equal(video.page_welcome_message, undefined)
+
+  // Con varios formatos, todo en asset_feed_spec, y sin los Estados de WhatsApp.
+  const versions = webPlan({
+    anuncios: [
+      {
+        nombre: 'tres',
+        versiones: [
+          { formato: '4:5', medio: { tipo: 'imagen', hash: 'aaaaaaaa' } },
+          { formato: '9:16', medio: { tipo: 'imagen', hash: 'bbbbbbbb' } },
+        ],
+      },
+    ],
+  })
+  const feed = ads.creativeBody(versions, versions.anuncios[0]).asset_feed_spec
+  assert.equal(feed.link_urls[0].website_url, 'https://ejemplo.test/oferta')
+  assert.deepEqual(feed.call_to_action_types, ['GET_QUOTE'])
+  assert.equal(feed.call_to_actions, undefined)
+  assert.equal(feed.additional_data, undefined)
+  assert.ok(!JSON.stringify(feed.asset_customization_rules).includes('whatsapp'))
+  assert.equal(ads.targetingOf(webPlan({ ubicaciones: 'manual', posiciones: ['fb_feed', 'wa_status'] })).whatsapp_positions, undefined)
+})
+
+test('la dirección de la web: con https si no lo lleva; lo que no es una dirección, vacío', () => {
+  assert.equal(ads.cleanUrl('ejemplo.test'), 'https://ejemplo.test/')
+  assert.equal(ads.cleanUrl(' http://ejemplo.test/a?b=1 '), 'http://ejemplo.test/a?b=1')
+  assert.equal(ads.cleanUrl('javascript:alert(1)'), '')
+  assert.equal(ads.cleanUrl('ftp://ejemplo.test'), '')
+  assert.equal(ads.cleanUrl('sin-punto'), '')
+  assert.equal(ads.cleanUrl(''), '')
+  assert.equal(ads.cleanSettings({ etiquetas: '?utm_source=meta' }).etiquetas, 'utm_source=meta')
+  assert.equal(ads.cleanSettings({ pixel: 'x' }).pixel, null)
+  assert.equal(ads.cleanSettings({ evento: 'COMPRAR' }).evento, 'LEAD')
+  assert.throws(() => ads.cleanPlan(plan({ destino: 'web', url: 'nada' })), /Falta la dirección/)
+})
+
+test('los clientes potenciales: su métrica y su coste; y qué busca cada fila', () => {
+  const m = ads.metricsOf({ spend: '100', actions: [{ action_type: 'lead', value: '20' }, { action_type: 'landing_page_view', value: '50' }] })
+  assert.equal(m.leads, 20)
+  assert.equal(m.costeLead, 5)
+  assert.equal(m.visitas, 50)
+  assert.equal(ads.metricsOf({ spend: '10', actions: [{ action_type: 'offsite_conversion.fb_pixel_lead', value: '2' }] }).leads, 2)
+  const options = { account: 'act_1', currency: 'EUR' }
+  assert.equal(ads.rowOf({ id: '1', adsets: { data: [{ optimization_goal: 'OFFSITE_CONVERSIONS' }] }, objective: 'OUTCOME_LEADS' }, options).resultado, 'leads')
+  assert.equal(ads.rowOf({ id: '1', adsets: { data: [{ optimization_goal: 'CONVERSATIONS' }] }, objective: 'OUTCOME_LEADS' }, options).resultado, 'conversaciones')
+  const set = ads.rowOf({ id: '2', optimization_goal: 'OFFSITE_CONVERSIONS', promoted_object: { pixel_id: '555', custom_event_type: 'LEAD' } }, { ...options, level: 'conjunto' })
+  assert.equal(set.resultado, 'leads')
+  assert.deepEqual(set.web, { pixel: '555', evento: 'LEAD' })
+  assert.equal(ads.rowOf({ id: '3', adset: { optimization_goal: 'LEAD_GENERATION' } }, { ...options, level: 'anuncio' }).resultado, 'leads')
+})
+
+test('si Meta pide esperar, se espera y se vuelve a probar; otros errores, no', async () => {
+  const limit = Object.assign(new Error('espera'), { code: 'meta-limite' })
+  let n = 0
+  assert.equal(await ads.patiently(async () => (++n < 3 ? Promise.reject(limit) : 'hecho'), { limitWait: 0 }), 'hecho')
+  assert.equal(n, 3)
+  n = 0
+  await assert.rejects(ads.patiently(async () => (n++, Promise.reject(limit)), { limitWait: 0 }), /espera/)
+  assert.equal(n, 4, 'no insiste para siempre')
+  n = 0
+  await assert.rejects(ads.patiently(async () => (n++, Promise.reject(new Error('otro'))), { limitWait: 0 }), /otro/)
+  assert.equal(n, 1)
+})
+
 test('fechas: inicio futuro y fin, con la zona del Mac; hoy no lleva inicio', () => {
   const later = ads.adSetBody(plan({ inicio: '2026-11-02', fin: '2026-11-30' }), { campaignId: 'c', currency: 'EUR', today: '2026-10-26' })
   assert.match(later.start_time, /^2026-11-02T00:00:00[+-]\d{2}:\d{2}$/)
@@ -345,6 +437,9 @@ test('métricas: lo que da Meta y los cocientes, null cuando no hay de qué', ()
     gasto: 200,
     conversaciones: 50,
     coste: 4,
+    leads: 0,
+    costeLead: null,
+    visitas: 0,
     contactos: 45,
     alcance: 25000,
     impresiones: 40000,
@@ -360,6 +455,9 @@ test('métricas: lo que da Meta y los cocientes, null cuando no hay de qué', ()
     gasto: 0,
     conversaciones: 0,
     coste: null,
+    leads: 0,
+    costeLead: null,
+    visitas: 0,
     contactos: 0,
     alcance: 0,
     impresiones: 0,
@@ -913,6 +1011,48 @@ test('crear: los mensajes llegan al número elegido (sin elegirlo, Meta usa el d
   const res = await request('POST', '/api/meta/lanzar', { body: plan({ whatsapp: { id: '900', numero: '+1 555-010-0191' } }) })
   assert.equal(res.status, 200, res.text)
   assert.deepEqual(calls.find((c) => c.method === 'POST' && c.path === 'act_111/adsets').body.promoted_object, { page_id: '222', whatsapp_phone_number: '15550100191' })
+})
+
+test('crear a una web: con píxel; un conjunto solo en una campaña de clientes potenciales', async () => {
+  await connect()
+  launchRoutes()
+  const missing = await request('POST', '/api/meta/lanzar', { body: webPlan({ pixel: null }) })
+  assert.equal(missing.status, 400)
+  assert.match(missing.body.mensaje ?? missing.body.error, /Falta el píxel/)
+  assert.ok(!calls.some((c) => c.method === 'POST' && c.path === 'act_111/campaigns'), 'sin crear nada')
+
+  const res = await request('POST', '/api/meta/lanzar', { body: webPlan() })
+  assert.equal(res.status, 200, res.text)
+  const posts = calls.filter((c) => c.method === 'POST')
+  assert.equal(posts.find((c) => c.path === 'act_111/campaigns').body.objective, 'OUTCOME_LEADS')
+  assert.deepEqual(posts.find((c) => c.path === 'act_111/adsets').body.promoted_object, { pixel_id: '555', custom_event_type: 'LEAD' })
+
+  routes['GET 10'] = { name: 'Mensajes', account_id: '111', objective: 'OUTCOME_ENGAGEMENT', adsets: { data: [] } }
+  const wrong = await request('POST', '/api/meta/conjuntos', { body: webPlan({ campana: '10', nombre: 'Otro' }) })
+  assert.equal(wrong.status, 400)
+  assert.match(wrong.body.mensaje ?? wrong.body.error, /su objetivo no es clientes potenciales/)
+  routes['GET 10'] = { name: 'Leads', account_id: '111', objective: 'OUTCOME_LEADS', daily_budget: '1000', adsets: { data: [{ promoted_object: { pixel_id: '555' } }] } }
+  calls.length = 0
+  const ok = await request('POST', '/api/meta/conjuntos', { body: webPlan({ campana: '10', nombre: 'Otro', presupuesto: 0 }) })
+  assert.equal(ok.status, 200, ok.text)
+  const created = calls.find((c) => c.method === 'POST' && c.path === 'act_111/adsets').body
+  assert.equal(created.daily_budget, undefined)
+  assert.deepEqual(created.promoted_object, { pixel_id: '555', custom_event_type: 'LEAD' })
+})
+
+test('los píxeles de la cuenta: el más reciente primero, sin los que no están disponibles', async () => {
+  await connect()
+  routes['GET act_111/adspixels'] = {
+    data: [
+      { id: '1', name: 'Viejo', last_fired_time: '2026-01-01T00:00:00+0000' },
+      { id: '2', name: 'Nuevo', last_fired_time: '2026-11-01T00:00:00+0000' },
+      { id: '3', name: 'Roto', is_unavailable: true },
+    ],
+  }
+  const res = await request('GET', '/api/meta/pixeles?cuenta=act_111')
+  assert.equal(res.status, 200, res.text)
+  assert.deepEqual(res.body.pixeles.map((p) => p.nombre), ['Nuevo', 'Viejo'])
+  assert.equal((await request('GET', '/api/meta/pixeles?cuenta=111')).status, 400)
 })
 
 test('crear: el #200 de Meta se explica', async () => {
