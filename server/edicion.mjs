@@ -7,6 +7,7 @@
 // enseña (lugares, edad, sexo, Advantage+, ubicaciones); lo demás (intereses, públicos personalizados…) se queda.
 import { HttpError, localDay } from './almacen.mjs'
 import {
+  adBody,
   automaticOf,
   FORMATS,
   cleanMedia,
@@ -603,16 +604,25 @@ const pick = (object, keys) => Object.fromEntries(keys.filter((key) => object[ke
 
 const NO_RENAME = { rename_strategy: 'NO_RENAME' }
 
-async function liveChildren(meta, parentId, edge) {
-  const page = await meta.graph(`${parentId}/${edge}`, { params: { fields: 'id', effective_status: LIVE, limit: 100 } })
-  return (page.data ?? []).map((item) => String(item.id))
+async function liveChildren(meta, parentId, edge, fields = 'id') {
+  const page = await meta.graph(`${parentId}/${edge}`, { params: { fields, effective_status: LIVE, limit: 100 } })
+  return page.data ?? []
 }
 
 /** Cómo se llama cada copia: la primera, como dice Meta; las siguientes, «- Copia 2», «- Copia 3»… */
 const copyName = (n) => (n > 1 ? { rename_options: { rename_strategy: 'ONLY_TOP_LEVEL_RENAME', rename_suffix: ` - Copia ${n}` } } : {})
 
+/**
+ * Un anuncio más con el mismo creativo, en pausa. Con /copies, no: Meta rehace el creativo y rechaza los que llevan
+ * `standard_enhancements`, como los hechos en el Administrador de anuncios.
+ */
+async function copyAd(meta, cuenta, ad, adSetId, nombre, options) {
+  const created = await patiently(() => meta.graph(`${cuenta}/ads`, { method: 'POST', body: adBody({ nombre }, { adSetId, creativeId: ad.creative?.id }) }), options)
+  return String(created.id)
+}
+
 /** Copia un conjunto (en su campaña o en `campaignId`) y, uno a uno, sus anuncios. `name`: cómo se llama (sin él, igual). */
-async function copyAdSet(meta, adSetId, campaignId, name, options) {
+async function copyAdSet(meta, cuenta, adSetId, campaignId, name, options) {
   const copy = await patiently(
     () =>
       meta.graph(`${adSetId}/copies`, {
@@ -622,9 +632,7 @@ async function copyAdSet(meta, adSetId, campaignId, name, options) {
     options,
   )
   const adSetCopy = String(copy.copied_adset_id)
-  for (const adId of await liveChildren(meta, adSetId, 'ads')) {
-    await patiently(() => meta.graph(`${adId}/copies`, { method: 'POST', body: { adset_id: adSetCopy, status_option: 'PAUSED', rename_options: NO_RENAME } }), options)
-  }
+  for (const ad of await liveChildren(meta, adSetId, 'ads', 'name,creative{id}')) await copyAd(meta, cuenta, ad, adSetCopy, ad.name, options)
   return adSetCopy
 }
 
@@ -640,21 +648,20 @@ export async function duplicate(meta, raw, options = {}) {
   const { cuenta, nivel, id } = target(raw)
   const copies = Math.min(Math.max(Math.round(Number(raw?.copias)) || 1, 1), MAX_COPIES)
   const toCampaign = nivel === 'conjunto' && ID.test(raw?.campana ?? '') ? raw.campana : null
-  const source = await meta.graph(id, { params: { fields: 'name,account_id' } })
+  const source = await meta.graph(id, { params: { fields: nivel === 'anuncio' ? 'name,account_id,adset_id,creative{id}' : 'name,account_id' } })
   own(source, cuenta)
   if (toCampaign) own(await meta.graph(toCampaign, { params: { fields: 'account_id' } }), cuenta)
   const ids = []
   try {
     for (let n = 1; n <= copies; n++) {
       if (nivel === 'anuncio') {
-        const copy = await patiently(() => meta.graph(`${id}/copies`, { method: 'POST', body: { status_option: 'PAUSED', ...copyName(n) } }), options)
-        ids.push(String(copy.copied_ad_id))
+        ids.push(await copyAd(meta, cuenta, source, source.adset_id, `${source.name} - Copia${n > 1 ? ` ${n}` : ''}`, options))
       } else if (nivel === 'conjunto') {
-        ids.push(await copyAdSet(meta, id, toCampaign, copyName(n), options))
+        ids.push(await copyAdSet(meta, cuenta, id, toCampaign, copyName(n), options))
       } else {
         const copy = await patiently(() => meta.graph(`${id}/copies`, { method: 'POST', body: { deep_copy: false, status_option: 'PAUSED', ...copyName(n) } }), options)
         const campaignCopy = String(copy.copied_campaign_id)
-        for (const adSetId of await liveChildren(meta, id, 'adsets')) await copyAdSet(meta, adSetId, campaignCopy, null, options)
+        for (const adSet of await liveChildren(meta, id, 'adsets')) await copyAdSet(meta, cuenta, String(adSet.id), campaignCopy, null, options)
         ids.push(campaignCopy)
       }
     }

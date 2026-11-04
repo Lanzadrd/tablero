@@ -1,7 +1,7 @@
 {
   "name": "tablero",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "description": "Tareas en columnas, en local",
   "scripts": {

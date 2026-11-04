@@ -176,7 +176,7 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
   cada una; los formatos de la misma pieza se juntan), en pausa o encendidos. Si Meta pide esperar por ir muy seguido,
   Tablero espera y sigue.
 - **Duplicar**: en el menú «…» de la fila, hasta 20 copias en pausa con sus anuncios; las de un conjunto, en su campaña
-  o en otra. Luego se cambia la imagen o el texto de cada copia con «Editar».
+  o en otra. Con una sola copia se abre su configuración al momento; con varias, se cambia cada una con «Editar».
 - **Nueva campaña**: eliges la cuenta (agrupadas por portfolio), una **plantilla** (página, Instagram,
   presupuesto diario, lugares, edad, sexo, Advantage+, ubicaciones, textos, chat de WhatsApp y mejoras de Meta)
   y arrastras imágenes o vídeos: cada pieza es un anuncio del mismo conjunto. Se empieza con el botón verde

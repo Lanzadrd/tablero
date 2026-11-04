@@ -474,6 +474,8 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
         setBanner(
           `${ids.length > 1 ? `${ids.length} copias` : 'Copia'} de «${row.nombre}» ${ids.length > 1 ? 'creadas' : 'creada'} en pausa${elsewhere ? ' en la otra campaña' : ''}. ${ids.length > 1 ? 'Enciéndelas' : 'Enciéndela'} con su interruptor cuando quieras.`,
         )
+        // Una sola copia: directa a su configuración, para cambiarle lo que haga falta. Al cancelar, se queda en pausa.
+        if (ids.length === 1 && source.editor) setEditing({ ...row, id: ids[0], nombre: `${row.nombre} - Copia`, estado: 'pausada' })
       } else if (kind === 'archive') {
         await source.archive?.(account.id, level, row.id)
         setBanner(`${words.nombre} «${row.nombre}» archivad${words.activado.endsWith('a') ? 'a' : 'o'}.`)
@@ -971,12 +973,13 @@ function DuplicatePopover({
             </select>
           </label>
         )}
+        {source.editor && <p>{copies > 1 ? 'Luego se cambia cada una con «Editar…».' : 'Después se abre su configuración, para cambiar lo que quieras.'}</p>}
         <div className="ads-form-foot">
           <button type="button" className="link-btn" onClick={onCancel}>
             Cancelar
           </button>
           <button type="submit" className="btn is-accent" disabled={busy}>
-            {busy ? 'Duplicando…' : copies === 1 ? 'Duplicar' : `Hacer ${copies} copias`}
+            {busy ? 'Duplicando…' : copies > 1 ? `Hacer ${copies} copias` : source.editor ? 'Duplicar y configurar' : 'Duplicar'}
           </button>
         </div>
       </form>
