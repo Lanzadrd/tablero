@@ -225,6 +225,11 @@ async function metaRoute(req, res, url, meta, options) {
     case '/api/meta/paginas':
       only(req, 'GET')
       return send(res, 200, { paginas: await meta.pages(url.searchParams.get('cuenta'), url.searchParams.has('actualizar')) })
+    case '/api/meta/numeros': {
+      only(req, 'POST')
+      const body = await readJson(req)
+      return send(res, 200, await meta.addNumber(body.cuenta, body.pagina, body.numero))
+    }
     case '/api/meta/pixeles':
       only(req, 'GET')
       return send(res, 200, { pixeles: await meta.pixels(url.searchParams.get('cuenta'), url.searchParams.has('actualizar')) })

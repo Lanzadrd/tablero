@@ -865,6 +865,54 @@ test('páginas: las de la cuenta y las de su portfolio, con su Instagram, los qu
   assert.equal((await request('GET', '/api/meta/paginas?cuenta=111')).status, 400)
 })
 
+test('otro número de WhatsApp: se comprueba con Meta (sin crear nada) y se recuerda para la página', async () => {
+  await connect()
+  routes['GET act_111/promote_pages'] = { data: [{ id: '501', name: 'Hoplon' }] }
+  routes['GET act_111'] = { business: { id: 'b9' }, id: 'act_111' }
+  routes['GET b9/owned_pages'] = { data: [{ id: '501', name: 'Hoplon' }] }
+  routes['GET b9/client_pages'] = { data: [] }
+  // De modelo, un conjunto de WhatsApp de la cuenta (sin la ubicación que Meta ya no deja elegir).
+  routes['GET act_111/adsets'] = {
+    data: [
+      {
+        campaign_id: '7',
+        targeting: { geo_locations: { countries: ['AR'] }, instagram_positions: ['stream', 'explore'] },
+        optimization_goal: 'CONVERSATIONS',
+        billing_event: 'IMPRESSIONS',
+        bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+        daily_budget: '1000',
+        destination_type: 'WHATSAPP',
+      },
+    ],
+  }
+  routes['POST act_111/adsets'] = ({ body }) =>
+    body.promoted_object.whatsapp_phone_number === '15550100199'
+      ? { error: { message: 'Error al crear la campaña:This WhatsApp phone number is not linked to your account', code: 100 } }
+      : { success: true }
+  const added = await request('POST', '/api/meta/numeros', { body: { cuenta: 'act_111', pagina: '501', numero: '+1 555-010-0198' } })
+  assert.equal(added.status, 200, added.text)
+  assert.deepEqual(added.body, { numero: { id: null, numero: '15550100198', texto: '+15550100198', nombre: null, usos: 0, conectado: false }, comprobado: true })
+  const check = calls.find((c) => c.method === 'POST' && c.path === 'act_111/adsets').body
+  assert.deepEqual(check.execution_options, ['validate_only'], 'solo se valida: no se crea nada')
+  assert.deepEqual(check.promoted_object, { page_id: '501', whatsapp_phone_number: '15550100198' })
+  assert.deepEqual(check.targeting.instagram_positions, ['stream'])
+  assert.equal(check.campaign_id, '7')
+
+  // Si Meta dice que no está conectado, no se guarda.
+  const refused = await request('POST', '/api/meta/numeros', { body: { cuenta: 'act_111', pagina: '501', numero: '15550100199' } })
+  assert.equal(refused.status, 400)
+  assert.match(JSON.stringify(refused.body), /no está conectado a esta página/)
+  assert.equal((await request('POST', '/api/meta/numeros', { body: { cuenta: 'act_111', pagina: '501', numero: '123' } })).status, 400)
+
+  // Sale en la lista de la página (al final), también la próxima vez.
+  const pages = await request('GET', '/api/meta/paginas?cuenta=act_111&actualizar=1')
+  assert.equal(pages.status, 200, pages.text)
+  assert.deepEqual(
+    pages.body.paginas[0].numeros.map((n) => n.numero),
+    ['15550100198'],
+  )
+})
+
 test('pasados los 60 días, la conexión cuenta como no conectada', async () => {
   const later = createMeta({ fetch: fakeFetch, now: () => Date.now() + 61 * 86_400_000 })
   await connect()

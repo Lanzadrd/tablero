@@ -9,7 +9,7 @@ import { createHmac, randomBytes } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { DATA_DIR, HttpError } from './almacen.mjs'
-import { INSIGHT_FIELDS, metricsOf, rowOf, rowsOf } from './anuncios.mjs'
+import { INSIGHT_FIELDS, metricsOf, readAds, rememberNumber, rowOf, rowsOf, withoutRetired } from './anuncios.mjs'
 
 /** Versión de la API de Meta. Cada una dura unos dos años; TABLERO_META_VERSION la cambia sin tocar el código. */
 export const META_VERSION = process.env.TABLERO_META_VERSION || 'v26.0'
@@ -86,13 +86,20 @@ const LEVELS = {
 /** La cuenta de WhatsApp que Meta crea para probar la API: su número no sirve para anunciarse. */
 const TEST_WABA = /^test whatsapp business account$/i
 const digits = (value) => String(value ?? '').replace(/\D/g, '')
+/** Lo que dice Meta cuando el número no está conectado a la página. */
+const NOT_LINKED = /not linked to your account|no está vinculado/i
 
-/** Los números de una página: el que más usan sus conjuntos, el conectado a ella y, después, los demás. */
-function numbersOfPage(pageId, connected, { numbers, uses }) {
+/**
+ * Los números de una página: el que más usan sus conjuntos, el conectado a ella y, después, los demás (al final, los
+ * escritos a mano: `typed`).
+ */
+function numbersOfPage(pageId, connected, { numbers, uses }, typed = []) {
   const own = uses.get(pageId) ?? new Map()
   const link = digits(connected)
   const list = [...numbers.values()]
-  if (link && !numbers.has(link)) list.push({ id: null, numero: link, texto: `+${link}`, nombre: null })
+  for (const numero of [link, ...typed]) {
+    if (numero && !list.some((n) => n.numero === numero)) list.push({ id: null, numero, texto: `+${numero}`, nombre: null })
+  }
   return list
     .map((n) => ({ ...n, usos: own.get(n.numero) ?? 0, conectado: n.numero === link }))
     .sort((a, b) => b.usos - a.usos || Number(b.conectado) - Number(a.conectado))
@@ -515,7 +522,12 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
   function pages(account, fresh = false) {
     if (!/^act_\d+$/.test(account ?? '')) throw new HttpError(400, 'Cuenta publicitaria no válida')
     return cached(`pages:${account}`, fresh, async () => {
-      const [list, used, whatsapps] = await Promise.all([accountPages(account), adInstagrams(account, fresh), whatsappNumbers(account)])
+      const [list, used, whatsapps, { numeros: typed }] = await Promise.all([
+        accountPages(account),
+        adInstagrams(account, fresh),
+        whatsappNumbers(account),
+        readAds(),
+      ])
       const found = await Promise.all(
         list.map(async (page) => {
           const [ig, wa] = await Promise.all([
@@ -553,11 +565,66 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
             foto: page.picture?.data?.url ?? null,
             instagrams,
             whatsapp: wa.whatsapp_number ?? null,
-            numeros: numbersOfPage(page.id, wa.whatsapp_number, whatsapps),
+            numeros: numbersOfPage(page.id, wa.whatsapp_number, whatsapps, typed[page.id] ?? []),
           }
         }),
       )
     })
+  }
+
+  /**
+   * Si Meta deja mandar los mensajes de `pageId` a `numero`: un conjunto de prueba (sin crearlo: validate_only) como uno
+   * de WhatsApp de la cuenta. true, sí; false, no está conectado a la página; null, no se ha podido saber (la cuenta no
+   * tiene conjuntos de WhatsApp, o Meta se queja de otra cosa).
+   */
+  async function numberLinked(account, pageId, numero) {
+    const sets = await maybe(
+      all(`${account}/adsets`, { fields: 'campaign_id,targeting,optimization_goal,billing_event,bid_strategy,daily_budget,destination_type', effective_status: ['ACTIVE', 'PAUSED'] }, 100),
+      [],
+    )
+    // Mejor uno con presupuesto diario propio: con el de la campaña (o total, que pide fecha de fin) puede quejarse de eso.
+    const chat = sets.filter((s) => String(s.destination_type).includes('WHATSAPP') && s.optimization_goal === 'CONVERSATIONS')
+    const model = chat.find((s) => Number(s.daily_budget) > 0) ?? chat[0]
+    if (!model) return null
+    const budget = Number(model.daily_budget) > 0 ? { daily_budget: model.daily_budget, bid_strategy: model.bid_strategy ?? 'LOWEST_COST_WITHOUT_CAP' } : {}
+    const body = {
+      name: 'Tablero · comprobar número',
+      campaign_id: model.campaign_id,
+      status: 'PAUSED',
+      targeting: withoutRetired(model.targeting),
+      optimization_goal: 'CONVERSATIONS',
+      billing_event: model.billing_event ?? 'IMPRESSIONS',
+      destination_type: 'WHATSAPP',
+      promoted_object: { page_id: pageId, whatsapp_phone_number: numero },
+      ...budget,
+      execution_options: ['validate_only'],
+    }
+    try {
+      await graph(`${account}/adsets`, { method: 'POST', body })
+      return true
+    } catch (err) {
+      return NOT_LINKED.test(err?.message ?? '') ? false : null
+    }
+  }
+
+  /**
+   * Un número de WhatsApp que Meta no enseña (los conectados a mano a la página no se pueden leer): se comprueba con
+   * Meta y, si no dice que no, se recuerda para la página.
+   */
+  async function addNumber(account, pageId, raw) {
+    if (!/^act_\d+$/.test(account ?? '')) throw new HttpError(400, 'Cuenta publicitaria no válida')
+    if (!/^\d{1,32}$/.test(pageId ?? '')) throw new HttpError(400, 'Página no válida')
+    const numero = digits(raw)
+    if (numero.length < 8 || numero.length > 15) {
+      throw new HttpError(400, 'Escribe el número entero, con el prefijo del país: +54 9 223 …', 'meta-numero')
+    }
+    const linked = await numberLinked(account, pageId, numero)
+    if (linked === false) {
+      throw new HttpError(400, `Meta dice que el +${numero} no está conectado a esta página. Conéctalo a la página en Meta y vuelve a probar.`, 'meta-numero')
+    }
+    await rememberNumber(pageId, numero)
+    cache.delete(`pages:${account}`)
+    return { numero: { id: null, numero, texto: `+${numero}`, nombre: null, usos: 0, conectado: false }, comprobado: linked }
   }
 
   /** Los píxeles de la cuenta, para medir lo que pasa en la web: primero el que ha recibido algo más recientemente. */
@@ -648,5 +715,5 @@ export function createMeta({ fetch: fetchImpl = globalThis.fetch, now = () => Da
       }))
   }
 
-  return { graph, status, saveApp, saveToken, connectUrl, finishConnect, disconnect, portfolios, pages, pixels, places, performance, forget }
+  return { graph, status, saveApp, saveToken, connectUrl, finishConnect, disconnect, portfolios, pages, addNumber, pixels, places, performance, forget }
 }

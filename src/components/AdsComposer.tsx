@@ -33,6 +33,7 @@ import {
   type NewAdSet,
   type Place,
   type Template,
+  type WhatsappOption,
 } from '../ads'
 import { formatWhen } from '../dates'
 import { notify } from '../notices'
@@ -496,7 +497,20 @@ export function AdsComposer({
                 <option value="">{page?.instagrams.length ? 'Sin Instagram (como la página)' : 'La página no tiene Instagram conectado'}</option>
               </select>
             </Field>
-            {settings.destino !== 'web' && <NumberField id={`${ids}-whatsapp`} page={page} value={settings.whatsapp} onChange={(whatsapp) => update({ whatsapp })} />}
+            {settings.destino !== 'web' && (
+              <NumberField
+                id={`${ids}-whatsapp`}
+                account={account.id}
+                page={page}
+                value={settings.whatsapp}
+                onChange={(whatsapp) => update({ whatsapp })}
+                onAdded={(added) =>
+                  setPages((list) =>
+                    list?.map((p) => (p.id === page?.id && !p.numeros.some((n) => n.numero === added.numero) ? { ...p, numeros: [...p.numeros, added] } : p)) ?? list,
+                  )
+                }
+              />
+            )}
           </div>
         </section>
 
@@ -977,16 +991,108 @@ export function Field({ label, htmlFor, note, children }: { label: string; htmlF
   )
 }
 
-/** Adónde llegan los mensajes de un conjunto (como «Destino de los mensajes» en el Administrador de anuncios). */
-function NumberField({ id, page, value, onChange }: { id: string; page: MetaPage | null; value: AdNumber | null; onChange: (value: AdNumber | null) => void }) {
+/** En «Destino de los mensajes»: escribir un número que no está en la lista. */
+const OTHER_NUMBER = '__otro'
+
+/**
+ * Adónde llegan los mensajes de un conjunto (como «Destino de los mensajes» en el Administrador de anuncios). Los
+ * números conectados a mano a la página no los enseña Meta: «Otro número…» deja escribirlo una vez (Tablero lo
+ * comprueba con Meta y lo recuerda para la página).
+ */
+function NumberField({
+  id,
+  account,
+  page,
+  value,
+  onChange,
+  onAdded,
+}: {
+  id: string
+  account: string
+  page: MetaPage | null
+  value: AdNumber | null
+  onChange: (value: AdNumber | null) => void
+  onAdded: (added: WhatsappOption) => void
+}) {
   const numbers = page?.numeros ?? []
   const chosen = numbers.find((n) => n.numero === value?.numero)
+  const [typing, setTyping] = useState(false)
+  const [typed, setTyped] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const close = () => {
+    setTyping(false)
+    setTyped('')
+    setError(null)
+  }
+  const add = async () => {
+    if (!page || checking || !typed.trim()) return
+    setChecking(true)
+    setError(null)
+    try {
+      const { numero } = await metaApi.addNumber(account, page.id, typed)
+      onAdded(numero)
+      onChange({ id: numero.id, numero: numero.numero })
+      close()
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const adder = typing && (
+    <>
+      <div className="ads-number-add">
+        <input
+          className="input"
+          type="tel"
+          inputMode="tel"
+          autoFocus
+          aria-label="Otro número de WhatsApp"
+          placeholder="Con el prefijo del país: +54 9 …"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void add()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              close()
+            }
+          }}
+        />
+        <button type="button" className="btn" disabled={checking || !typed.trim()} onClick={() => void add()}>
+          {checking ? 'Comprobando…' : 'Añadir'}
+        </button>
+        <button type="button" className="link-btn" onClick={close}>
+          Cancelar
+        </button>
+      </div>
+      {error ? (
+        <span className="ads-note is-error" role="alert">
+          {error}
+        </span>
+      ) : (
+        <span className="ads-note">Los conectados a mano a la página no los enseña Meta. Tablero lo comprueba con Meta y lo recuerda para esta página.</span>
+      )}
+    </>
+  )
+
   if (!numbers.length) {
     return (
       <Field label="Destino de los mensajes">
         <span className="ads-note">
           {page?.whatsapp ? `Los mensajes llegan al ${page.whatsapp}.` : 'Al WhatsApp conectado a la página. Si la página no tiene ninguno, Meta no deja crear el anuncio.'}
         </span>
+        {adder ||
+          (page && (
+            <button type="button" className="link-btn ads-number-other" onClick={() => setTyping(true)}>
+              Usar otro número…
+            </button>
+          ))}
       </Field>
     )
   }
@@ -995,9 +1101,11 @@ function NumberField({ id, page, value, onChange }: { id: string; page: MetaPage
       label="Destino de los mensajes"
       htmlFor={id}
       note={
-        chosen?.usos
-          ? `WhatsApp. Lo ${chosen.usos === 1 ? 'usa 1 conjunto' : `usan ${chosen.usos} conjuntos`} de esta página.`
-          : 'WhatsApp. Tiene que estar conectado a la página: si no, Meta no deja crear el anuncio.'
+        typing
+          ? null
+          : chosen?.usos
+            ? `WhatsApp. Lo ${chosen.usos === 1 ? 'usa 1 conjunto' : `usan ${chosen.usos} conjuntos`} de esta página.`
+            : 'WhatsApp. Tiene que estar conectado a la página: si no, Meta no deja crear el anuncio.'
       }
     >
       <select
@@ -1005,6 +1113,7 @@ function NumberField({ id, page, value, onChange }: { id: string; page: MetaPage
         className="input"
         value={value?.numero ?? ''}
         onChange={(e) => {
+          if (e.target.value === OTHER_NUMBER) return setTyping(true)
           const next = numbers.find((n) => n.numero === e.target.value)
           onChange(next ? { id: next.id, numero: next.numero } : null)
         }}
@@ -1015,7 +1124,9 @@ function NumberField({ id, page, value, onChange }: { id: string; page: MetaPage
             {n.nombre ? `${n.texto} · ${n.nombre}` : n.texto}
           </option>
         ))}
+        <option value={OTHER_NUMBER}>Otro número…</option>
       </select>
+      {adder}
     </Field>
   )
 }

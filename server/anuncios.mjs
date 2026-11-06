@@ -785,6 +785,8 @@ export async function readAds() {
   return {
     plantillas: Array.isArray(data?.plantillas) ? data.plantillas : [],
     lanzamientos: Array.isArray(data?.lanzamientos) ? data.lanzamientos : [],
+    /** Los números de WhatsApp escritos a mano, por página: los conectados a ella que Meta no deja leer. */
+    numeros: data?.numeros && typeof data.numeros === 'object' && !Array.isArray(data.numeros) ? data.numeros : {},
   }
 }
 
@@ -807,6 +809,23 @@ function changeAds(fn) {
   queue = run.catch(() => {})
   return run
 }
+
+/** Ubicaciones que Meta ya no deja elegir y que llevan conjuntos de antes: al copiarlos (o usarlos de modelo), se quitan. */
+const RETIRED_POSITIONS = { instagram_positions: ['explore'] }
+
+export const withoutRetired = (targeting) => {
+  const out = { ...targeting }
+  for (const [key, gone] of Object.entries(RETIRED_POSITIONS)) if (Array.isArray(out[key])) out[key] = out[key].filter((p) => !gone.includes(p))
+  return out
+}
+
+/** Recuerda un número de WhatsApp escrito a mano para una página (los conectados a ella no se pueden leer de Meta). */
+export const rememberNumber = (pageId, numero) =>
+  changeAds((data) => {
+    const list = Array.isArray(data.numeros[pageId]) ? data.numeros[pageId] : []
+    if (!list.includes(numero)) data.numeros[pageId] = [...list, numero]
+    return data.numeros[pageId]
+  })
 
 export const saveTemplates = (raw) =>
   changeAds((data) => {

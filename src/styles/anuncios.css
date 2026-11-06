@@ -130,6 +130,23 @@
   color: var(--overdue);
 }
 
+/* «Otro número…» en el destino de los mensajes: escribirlo y comprobarlo. */
+.ads-number-add {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 8px;
+}
+
+.ads-number-add .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ads-number-other {
+  justify-self: start;
+}
+
 /* ───────── Conectar ───────── */
 
 .ads-setup {

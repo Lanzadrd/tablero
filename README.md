@@ -189,7 +189,9 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
   anuncios.
 - **Destino de los mensajes**: en «Quién anuncia», el número de WhatsApp al que llegan: empieza con el que ya usan
   los conjuntos de la página o el conectado a ella; si no está claro, hay que elegirlo. Sale de los conjuntos de la
-  cuenta y de los números del portfolio. Sin ninguno que elegir, Meta usa el conectado a la página.
+  cuenta y de los números del portfolio. Sin ninguno que elegir, Meta usa el conectado a la página. Los conectados a
+  mano a la página no los deja leer Meta: con **Otro número…** se escribe una vez, Tablero lo comprueba con Meta (sin
+  crear nada) y lo recuerda para esa página.
 - **Orden del formulario**: nombre de la campaña (o del conjunto) arriba del todo; luego plantilla, quién
   anuncia, presupuesto, público (sin plantilla, **Ciudad del Este**), imágenes y vídeos con sus ubicaciones,
   texto, chat y mejoras. Con sitio, a la derecha va la **vista previa**, todas a la vez: feed de Facebook y de

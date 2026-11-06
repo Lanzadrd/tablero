@@ -24,6 +24,7 @@ import {
   positionsOf,
   text,
   thumbnailsOf,
+  withoutRetired,
 } from './anuncios.mjs'
 
 const LEVELS = ['campana', 'conjunto', 'anuncio']
@@ -624,15 +625,6 @@ async function copyAd(meta, cuenta, ad, adSetId, nombre, options, status = 'PAUS
 const COPY_FIELDS =
   'name,status,campaign_id,targeting,optimization_goal,billing_event,bid_strategy,bid_amount,bid_constraints,daily_budget,lifetime_budget,' +
   'destination_type,promoted_object,pacing_type,start_time,end_time,frequency_control_specs,dsa_beneficiary,dsa_payor,is_dynamic_creative,optimization_sub_event'
-
-/** Ubicaciones que Meta ya no deja elegir y que llevan conjuntos de antes: al copiarlos, se quitan. */
-const RETIRED_POSITIONS = { instagram_positions: ['explore'] }
-
-const withoutRetired = (targeting) => {
-  const out = { ...targeting }
-  for (const [key, gone] of Object.entries(RETIRED_POSITIONS)) if (Array.isArray(out[key])) out[key] = out[key].filter((p) => !gone.includes(p))
-  return out
-}
 
 /**
  * Un conjunto nuevo con lo mismo que `set` (leído con COPY_FIELDS), para los que Meta no deja copiar: los de WhatsApp

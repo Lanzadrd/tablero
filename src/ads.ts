@@ -827,6 +827,16 @@ export const metaApi = {
     call<{ paginas: MetaPage[] }>('GET', `/api/meta/paginas?cuenta=${encodeURIComponent(account)}${fresh ? '&actualizar=1' : ''}`).then(
       (r) => r.paginas,
     ),
+  /** Un número de WhatsApp que Meta no enseña (los conectados a mano a la página): se comprueba con Meta y se recuerda. */
+  addNumber: (account: string, page: string, numero: string) =>
+    announce(
+      call<{ numero: WhatsappOption; comprobado: boolean | null }>('POST', '/api/meta/numeros', { cuenta: account, pagina: page, numero }),
+      'No se ha podido añadir el número',
+      (r) =>
+        r.comprobado
+          ? `${r.numero.texto} añadido: Meta confirma que está conectado a la página`
+          : `${r.numero.texto} añadido, sin comprobar: si no está conectado a la página, Meta no dejará crear el conjunto`,
+    ),
   pixels: (account: string, fresh = false) =>
     call<{ pixeles: MetaPixel[] }>('GET', `/api/meta/pixeles?cuenta=${encodeURIComponent(account)}${fresh ? '&actualizar=1' : ''}`).then((r) => r.pixeles),
   places: (query: string) =>
