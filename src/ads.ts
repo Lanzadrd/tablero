@@ -739,10 +739,12 @@ export class ApiError extends Error {
   }
 }
 
-/** Cuántas copias y, las de un conjunto, en qué campaña (sin decirlo, en la suya). */
+/** Cuántas copias y, las de un conjunto, en qué campaña (sin decirlo, en la suya; 'nueva', en una como la suya). */
 export interface DuplicateOptions {
   copias?: number
   campana?: string | null
+  /** El nombre de la campaña nueva. */
+  nombreCampana?: string
 }
 
 const META_LEVELS: Record<Level, string> = { campana: 'Campaña', conjunto: 'Conjunto', anuncio: 'Anuncio' }
@@ -853,7 +855,7 @@ export const metaApi = {
     announce(call<EditDetails>('POST', '/api/meta/editar', { cuenta: account, nivel: level, id, cambios }), 'No se han podido guardar los cambios', (d) => `«${d.nombre}»: cambios guardados`),
   duplicate: (account: string, level: Level, id: string, options: DuplicateOptions = {}) =>
     announce(
-      call<{ id: string; ids: string[] }>('POST', '/api/meta/duplicar', { cuenta: account, nivel: level, id, ...options }),
+      call<{ id: string; ids: string[]; campana?: string }>('POST', '/api/meta/duplicar', { cuenta: account, nivel: level, id, ...options }),
       'No se ha podido duplicar',
       (r) => (r.ids.length === 1 ? 'Copia creada en pausa' : `${r.ids.length} copias creadas en pausa`),
     ),

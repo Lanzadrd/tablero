@@ -79,7 +79,7 @@ export interface RunningSource {
   /** Un anuncio nuevo en el conjunto que se está viendo. */
   adder?: (props: AdderProps) => ReactNode
   /** Una copia en pausa. */
-  duplicate?: (account: string, level: Level, id: string, options?: DuplicateOptions) => Promise<{ id: string; ids: string[] }>
+  duplicate?: (account: string, level: Level, id: string, options?: DuplicateOptions) => Promise<{ id: string; ids: string[]; campana?: string }>
   archive?: (account: string, level: Level, id: string) => Promise<unknown>
   /** Borrar (Meta) o quitar (Google Ads): no se puede deshacer. */
   remove?: { label: string; run: (account: string, level: Level, id: string) => Promise<unknown> }
@@ -470,10 +470,14 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
         const made = await source.duplicate?.(account.id, level, row.id, copyOptions)
         const ids = made?.ids ?? []
         setTouched((list) => new Set([...list, ...ids]))
-        const elsewhere = copyOptions?.campana && copyOptions.campana !== campaigns[0]?.id
-        setBanner(
-          `${ids.length > 1 ? `${ids.length} copias` : 'Copia'} de «${row.nombre}» ${ids.length > 1 ? 'creadas' : 'creada'} en pausa${elsewhere ? ' en la otra campaña' : ''}. ${ids.length > 1 ? 'Enciéndelas' : 'Enciéndela'} con su interruptor cuando quieras.`,
-        )
+        const many = ids.length > 1
+        const what = `${many ? `${ids.length} copias` : 'Copia'} de «${row.nombre}» ${many ? 'creadas' : 'creada'}`
+        if (made?.campana) {
+          setBanner(`${what} en la campaña nueva «${copyOptions?.nombreCampana}». Todo está en pausa: enciende la campaña y ${many ? 'las copias' : 'la copia'} cuando quieras.`)
+        } else {
+          const elsewhere = copyOptions?.campana && copyOptions.campana !== campaigns[0]?.id
+          setBanner(`${what} en pausa${elsewhere ? ' en la otra campaña' : ''}. ${many ? 'Enciéndelas' : 'Enciéndela'} con su interruptor cuando quieras.`)
+        }
         // Una sola copia: directa a su configuración, para cambiarle lo que haga falta. Al cancelar, se queda en pausa.
         if (ids.length === 1 && source.editor) setEditing({ ...row, id: ids[0], nombre: `${row.nombre} - Copia`, estado: 'pausada' })
       } else if (kind === 'archive') {
@@ -905,7 +909,10 @@ export function RunningCampaigns({ account, source, meta }: { account: AdAccount
   )
 }
 
-/** Duplicar: cuántas copias y, las de un conjunto, en qué campaña. Todas en pausa. */
+/** En «En la campaña» de duplicar: una campaña nueva, como la del conjunto. */
+const NEW_CAMPAIGN = 'nueva'
+
+/** Duplicar: cuántas copias y, las de un conjunto, en qué campaña (o en una nueva). Todas en pausa. */
 function DuplicatePopover({
   confirm,
   level,
@@ -930,6 +937,11 @@ function DuplicatePopover({
   const [copies, setCopies] = useState(1)
   const [campaign, setCampaign] = useState(currentCampaign ?? '')
   const [campaignList, setCampaignList] = useState<AdRow[] | null>(null)
+  /** El nombre de la campaña nueva (sin tocarlo, el de la de ahora con «- Copia»). */
+  const [newName, setNewName] = useState<string | null>(null)
+  const fresh = campaign === NEW_CAMPAIGN
+  const currentName = campaignList?.find((c) => c.id === currentCampaign)?.nombre ?? confirm.row.padres?.campana?.nombre ?? null
+  const name = newName ?? (currentName ? `${currentName} - Copia` : '')
   useEffect(() => {
     if (level !== 'conjunto') return
     source.rows(account.id, period, { nivel: 'campana' }, false).then(
@@ -944,7 +956,8 @@ function DuplicatePopover({
         className="ads-confirm"
         onSubmit={(e) => {
           e.preventDefault()
-          if (!busy) onDuplicate({ copias: copies, campana: level === 'conjunto' ? campaign || null : null })
+          if (busy || (fresh && !name.trim())) return
+          onDuplicate({ copias: copies, campana: level === 'conjunto' ? campaign || null : null, ...(fresh ? { nombreCampana: name.trim() } : {}) })
         }}
       >
         <p>{confirmText(confirm, level, source)}</p>
@@ -962,6 +975,7 @@ function DuplicatePopover({
           <label className="ads-confirm-field">
             <span>En la campaña</span>
             <select className="input" value={campaign} disabled={!campaignList} onChange={(e) => setCampaign(e.target.value)}>
+              <option value={NEW_CAMPAIGN}>Nueva campaña…</option>
               {!campaign && <option value="">La misma</option>}
               {campaignList?.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -969,16 +983,27 @@ function DuplicatePopover({
                   {c.id === currentCampaign ? ' (la misma)' : ''}
                 </option>
               ))}
-              {campaign && !campaignList?.some((c) => c.id === campaign) && <option value={campaign}>La misma</option>}
+              {campaign && !fresh && !campaignList?.some((c) => c.id === campaign) && <option value={campaign}>La misma</option>}
             </select>
           </label>
+        )}
+        {fresh && (
+          <>
+            <label className="ads-confirm-field">
+              <span>Nombre</span>
+              <input className="input" value={name} placeholder="La campaña nueva" autoFocus onChange={(e) => setNewName(e.target.value)} />
+            </label>
+            <p>
+              {currentName ? `Como «${currentName}»` : 'Como la de ahora'}: el mismo objetivo y presupuesto, en pausa y sin sus otros conjuntos.
+            </p>
+          </>
         )}
         {source.editor && <p>{copies > 1 ? 'Luego se cambia cada una con «Editar…».' : 'Después se abre su configuración, para cambiar lo que quieras.'}</p>}
         <div className="ads-form-foot">
           <button type="button" className="link-btn" onClick={onCancel}>
             Cancelar
           </button>
-          <button type="submit" className="btn is-accent" disabled={busy}>
+          <button type="submit" className="btn is-accent" disabled={busy || (fresh && !name.trim())}>
             {busy ? 'Duplicando…' : copies > 1 ? `Hacer ${copies} copias` : source.editor ? 'Duplicar y configurar' : 'Duplicar'}
           </button>
         </div>
@@ -993,7 +1018,10 @@ const confirmLabel = (kind: Confirm['kind'], source: RunningSource) =>
 /** Lo que pasa al confirmar, dicho antes. */
 function confirmText({ kind, row }: Confirm, level: Level, source: RunningSource) {
   const children = level === 'campana' ? ` con sus ${source.levels.conjunto.plural} y anuncios` : level === 'conjunto' ? ' con sus anuncios' : ''
-  if (kind === 'duplicate') return `Se crea una copia de «${row.nombre}»${children}, en pausa.`
+  if (kind === 'duplicate') {
+    if (level === 'anuncio') return `Se crea una copia de «${row.nombre}», en pausa.`
+    return `Se crea una copia de «${row.nombre}» en pausa,${children} encendidos o apagados como ahora: salen al encender la copia.`
+  }
   if (kind === 'archive') return `«${row.nombre}» deja de entregarse y sale de «En marcha». Se puede recuperar en ${source.where}.`
   return `«${row.nombre}»${children} se ${source.remove?.label === 'Quitar' ? 'quita' : 'borra'} de ${source.where === 'Google Ads' ? 'Google Ads' : 'Meta'}. No se puede deshacer.`
 }

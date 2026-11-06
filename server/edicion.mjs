@@ -613,27 +613,46 @@ async function liveChildren(meta, parentId, edge, fields = 'id') {
 const copyName = (n) => (n > 1 ? { rename_options: { rename_strategy: 'ONLY_TOP_LEVEL_RENAME', rename_suffix: ` - Copia ${n}` } } : {})
 
 /**
- * Un anuncio más con el mismo creativo, en pausa. Con /copies, no: Meta rehace el creativo y rechaza los que llevan
- * `standard_enhancements`, como los hechos en el Administrador de anuncios.
+ * Un anuncio más con el mismo creativo (en pausa o, con `status`, como se diga). Con /copies, no: Meta rehace el
+ * creativo y rechaza los que llevan `standard_enhancements`, como los hechos en el Administrador de anuncios.
  */
-async function copyAd(meta, cuenta, ad, adSetId, nombre, options) {
-  const created = await patiently(() => meta.graph(`${cuenta}/ads`, { method: 'POST', body: adBody({ nombre }, { adSetId, creativeId: ad.creative?.id }) }), options)
+async function copyAd(meta, cuenta, ad, adSetId, nombre, options, status = 'PAUSED') {
+  const created = await patiently(() => meta.graph(`${cuenta}/ads`, { method: 'POST', body: adBody({ nombre }, { adSetId, creativeId: ad.creative?.id, status }) }), options)
   return String(created.id)
 }
 
-/** Copia un conjunto (en su campaña o en `campaignId`) y, uno a uno, sus anuncios. `name`: cómo se llama (sin él, igual). */
+/**
+ * Copia un conjunto (en su campaña o en `campaignId`) y, uno a uno, sus anuncios. `name`: cómo se llama (sin él, igual).
+ * La copia, en pausa (dentro de una campaña copiada, como estaba); sus anuncios, encendidos o no como los de ahora: salen
+ * al encender la copia.
+ */
 async function copyAdSet(meta, cuenta, adSetId, campaignId, name, options) {
   const copy = await patiently(
     () =>
       meta.graph(`${adSetId}/copies`, {
         method: 'POST',
-        body: { deep_copy: false, status_option: 'PAUSED', ...(campaignId ? { campaign_id: campaignId } : {}), ...(name ?? { rename_options: NO_RENAME }) },
+        body: {
+          deep_copy: false,
+          status_option: name ? 'PAUSED' : 'INHERITED_FROM_SOURCE',
+          ...(campaignId ? { campaign_id: campaignId } : {}),
+          ...(name ?? { rename_options: NO_RENAME }),
+        },
       }),
     options,
   )
   const adSetCopy = String(copy.copied_adset_id)
-  for (const ad of await liveChildren(meta, adSetId, 'ads', 'name,creative{id}')) await copyAd(meta, cuenta, ad, adSetCopy, ad.name, options)
+  for (const ad of await liveChildren(meta, adSetId, 'ads', 'name,status,creative{id}')) {
+    await copyAd(meta, cuenta, ad, adSetCopy, ad.name, options, ad.status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED')
+  }
   return adSetCopy
+}
+
+/** Una campaña nueva como `campaignId` (el mismo objetivo y presupuesto), en pausa y sin sus conjuntos. Con `nombre`, se llama así. */
+async function newCampaignLike(meta, campaignId, nombre, options) {
+  const copy = await patiently(() => meta.graph(`${campaignId}/copies`, { method: 'POST', body: { deep_copy: false, status_option: 'PAUSED' } }), options)
+  const id = String(copy.copied_campaign_id)
+  if (nombre) await meta.graph(id, { method: 'POST', body: { name: nombre } })
+  return id
 }
 
 /** Más copias de una vez, no: Meta frena y se tardaría demasiado. */
@@ -641,18 +660,22 @@ const MAX_COPIES = 20
 
 /**
  * Una o varias (`copias`) copias en pausa, con todo lo que cuelga (conjuntos y anuncios), con «- Copia» en el nombre. Las
- * de un conjunto, en su campaña o en otra (`campana`). Se copia pieza a pieza: Meta no copia de una vez más de 3 anuncios.
- * Si falla a medias, lo copiado se queda en pausa.
+ * de un conjunto, en su campaña, en otra (`campana`) o en una nueva como la suya (`campana: 'nueva'`, que se llama
+ * `nombreCampana`). Se copia pieza a pieza: Meta no copia de una vez más de 3 anuncios. Si falla a medias, lo copiado
+ * se queda en pausa.
  */
 export async function duplicate(meta, raw, options = {}) {
   const { cuenta, nivel, id } = target(raw)
   const copies = Math.min(Math.max(Math.round(Number(raw?.copias)) || 1, 1), MAX_COPIES)
-  const toCampaign = nivel === 'conjunto' && ID.test(raw?.campana ?? '') ? raw.campana : null
-  const source = await meta.graph(id, { params: { fields: nivel === 'anuncio' ? 'name,account_id,adset_id,creative{id}' : 'name,account_id' } })
+  const toNew = nivel === 'conjunto' && raw?.campana === 'nueva'
+  let toCampaign = nivel === 'conjunto' && ID.test(raw?.campana ?? '') ? raw.campana : null
+  const fields = { anuncio: 'name,account_id,adset_id,creative{id}', conjunto: 'name,account_id,campaign_id' }[nivel] ?? 'name,account_id'
+  const source = await meta.graph(id, { params: { fields } })
   own(source, cuenta)
   if (toCampaign) own(await meta.graph(toCampaign, { params: { fields: 'account_id' } }), cuenta)
   const ids = []
   try {
+    if (toNew) toCampaign = await newCampaignLike(meta, String(source.campaign_id), text(raw?.nombreCampana, 400), options)
     for (let n = 1; n <= copies; n++) {
       if (nivel === 'anuncio') {
         ids.push(await copyAd(meta, cuenta, source, source.adset_id, `${source.name} - Copia${n > 1 ? ` ${n}` : ''}`, options))
@@ -665,7 +688,7 @@ export async function duplicate(meta, raw, options = {}) {
         ids.push(campaignCopy)
       }
     }
-    return { id: ids[0], ids }
+    return { id: ids[0], ids, ...(toNew ? { campana: toCampaign } : {}) }
   } catch (err) {
     const done = ids.length ? `Se han hecho ${ids.length} de ${copies} copias, en pausa.` : 'Si se ha copiado algo, está en pausa.'
     throw new HttpError(err?.status ?? 502, `${err?.message ?? err} (${done})`, err?.code)

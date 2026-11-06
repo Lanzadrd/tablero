@@ -383,20 +383,21 @@ test('anuncio: cambiar el texto crea otro contenido con lo demás igual y se lo 
 
 test('duplicar: campañas y conjuntos se copian pieza a pieza, en pausa; los anuncios, con su nombre y su creativo', async () => {
   routes['GET 10'] = { name: 'LTO', account_id: '111' }
-  routes['GET 20'] = { name: 'Grupo', account_id: '111' }
+  routes['GET 20'] = { name: 'Grupo', account_id: '111', campaign_id: '10' }
   routes['POST 10/copies'] = { copied_campaign_id: '11' }
   routes['GET 10/adsets'] = { data: [{ id: '20' }] }
   routes['POST 20/copies'] = { copied_adset_id: '21' }
-  routes['GET 20/ads'] = { data: [{ id: '30', name: 'Uno', creative: { id: '50' } }, { id: '31', name: 'Dos', creative: { id: '51' } }] }
+  routes['GET 20/ads'] = { data: [{ id: '30', name: 'Uno', status: 'ACTIVE', creative: { id: '50' } }, { id: '31', name: 'Dos', status: 'PAUSED', creative: { id: '51' } }] }
   routes['POST act_111/ads'] = { id: '40' }
   const copy = await request('POST', '/api/meta/duplicar', { body: { cuenta: 'act_111', nivel: 'campana', id: '10' } })
   assert.equal(copy.status, 200, copy.text)
   assert.deepEqual(copy.body, { id: '11', ids: ['11'] })
   assert.deepEqual(posted('10/copies')[0], { deep_copy: false, status_option: 'PAUSED' })
-  assert.deepEqual(posted('20/copies')[0], { deep_copy: false, status_option: 'PAUSED', campaign_id: '11', rename_options: { rename_strategy: 'NO_RENAME' } })
+  // Dentro de la copia (en pausa), todo como estaba: sale al encenderla.
+  assert.deepEqual(posted('20/copies')[0], { deep_copy: false, status_option: 'INHERITED_FROM_SOURCE', campaign_id: '11', rename_options: { rename_strategy: 'NO_RENAME' } })
   // Con /copies, Meta rechaza los creativos con mejoras estándar (los del Administrador de anuncios).
   assert.deepEqual(posted('act_111/ads'), [
-    { name: 'Uno', adset_id: '21', creative: { creative_id: '50' }, status: 'PAUSED' },
+    { name: 'Uno', adset_id: '21', creative: { creative_id: '50' }, status: 'ACTIVE' },
     { name: 'Dos', adset_id: '21', creative: { creative_id: '51' }, status: 'PAUSED' },
   ])
   assert.equal(posted('30/copies').length, 0)
@@ -420,6 +421,17 @@ test('duplicar: campañas y conjuntos se copian pieza a pieza, en pausa; los anu
   assert.deepEqual(copies[2].rename_options, { rename_strategy: 'ONLY_TOP_LEVEL_RENAME', rename_suffix: ' - Copia 3' })
   routes['GET 16'] = { name: 'Ajena', account_id: '999' }
   assert.match(message(await request('POST', '/api/meta/duplicar', { body: { cuenta: 'act_111', nivel: 'conjunto', id: '20', campana: '16' } })), /no es de esta cuenta/)
+
+  // En una campaña nueva, como la del conjunto (sin sus conjuntos) y con el nombre que se diga.
+  calls.length = 0
+  routes['POST 11'] = { success: true }
+  const toNew = await request('POST', '/api/meta/duplicar', { body: { cuenta: 'act_111', nivel: 'conjunto', id: '20', campana: 'nueva', nombreCampana: ' ABO 4 ' } })
+  assert.equal(toNew.status, 200, toNew.text)
+  assert.deepEqual(toNew.body, { id: '21', ids: ['21'], campana: '11' })
+  assert.deepEqual(posted('10/copies'), [{ deep_copy: false, status_option: 'PAUSED' }])
+  assert.deepEqual(posted('11'), [{ name: 'ABO 4' }])
+  assert.deepEqual(posted('20/copies')[0], { deep_copy: false, status_option: 'PAUSED', campaign_id: '11' })
+  assert.deepEqual(posted('act_111/ads').map((ad) => ad.status), ['ACTIVE', 'PAUSED'])
 
   // Un anuncio suelto: en su conjunto, con el mismo creativo y numerado.
   calls.length = 0
