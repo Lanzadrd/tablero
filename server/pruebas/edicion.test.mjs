@@ -10,7 +10,7 @@ import { after, before, beforeEach, test } from 'node:test'
 const dir = await mkdtemp(path.join(os.tmpdir(), 'tablero-edicion-'))
 process.env.TABLERO_DATA_DIR = path.join(dir, 'datos')
 const { createApi } = await import('../api.mjs')
-const { audienceOf, contentOf, mergeTargeting } = await import('../edicion.mjs')
+const { adSetCopyBody, audienceOf, contentOf, mergeTargeting } = await import('../edicion.mjs')
 const { createMeta, META_VERSION } = await import('../meta.mjs')
 
 const welcome = (format) => JSON.stringify({ type: 'VISUAL_EDITOR', version: 2, landing_screen_type: 'welcome_message', media_type: 'text', text_format: format })
@@ -450,6 +450,83 @@ test('duplicar: campañas y conjuntos se copian pieza a pieza, en pausa; los anu
   let n = 0
   routes['POST 20/copies'] = () => (++n > 1 ? { error: { message: 'Límite', code: 100 } } : { copied_adset_id: '21' })
   assert.match(message(await request('POST', '/api/meta/duplicar', { body: { cuenta: 'act_111', nivel: 'conjunto', id: '20', copias: 3 } })), /Límite.*1 de 3 copias/)
+})
+
+test('duplicar un conjunto de WhatsApp: se crea con sus datos (Meta no deja copiarlo), en pausa y con sus anuncios', async () => {
+  const past = '2026-01-05T10:00:00-0300'
+  routes['GET 22'] = {
+    name: 'AB1 (1527)',
+    status: 'ACTIVE',
+    account_id: '111',
+    campaign_id: '10',
+    targeting: { geo_locations: { countries: ['AR'] }, instagram_positions: ['stream', 'explore', 'explore_home'] },
+    optimization_goal: 'CONVERSATIONS',
+    billing_event: 'IMPRESSIONS',
+    bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+    daily_budget: '2700000',
+    lifetime_budget: '0',
+    destination_type: 'WHATSAPP',
+    promoted_object: { page_id: '222', smart_pse_enabled: false, whats_app_business_phone_number_id: '777', whatsapp_phone_number: '15550100191' },
+    pacing_type: ['standard'],
+    start_time: past,
+    optimization_sub_event: 'NONE',
+  }
+  routes['GET 22/ads'] = { data: [{ id: '32', name: 'Uno', status: 'ACTIVE', creative: { id: '52' } }] }
+  routes['POST act_111/adsets'] = { id: '23' }
+  routes['POST act_111/ads'] = { id: '42' }
+  const copy = await request('POST', '/api/meta/duplicar', { body: { cuenta: 'act_111', nivel: 'conjunto', id: '22', copias: 2 } })
+  assert.equal(copy.status, 200, copy.text)
+  assert.deepEqual(copy.body, { id: '23', ids: ['23', '23'] })
+  assert.equal(posted('22/copies').length, 0)
+  const [first, second] = posted('act_111/adsets')
+  assert.deepEqual(first, {
+    name: 'AB1 (1527) - Copia',
+    campaign_id: '10',
+    status: 'PAUSED',
+    // Sin la ubicación que Meta ya no deja elegir.
+    targeting: { geo_locations: { countries: ['AR'] }, instagram_positions: ['stream', 'explore_home'] },
+    optimization_goal: 'CONVERSATIONS',
+    billing_event: 'IMPRESSIONS',
+    destination_type: 'WHATSAPP',
+    // El número solo: con su identificador, Meta da error de permisos.
+    promoted_object: { page_id: '222', whatsapp_phone_number: '15550100191' },
+    daily_budget: '2700000',
+    bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+  })
+  assert.equal(second.name, 'AB1 (1527) - Copia 2')
+  assert.deepEqual(posted('act_111/ads')[0], { name: 'Uno', adset_id: '23', creative: { creative_id: '52' }, status: 'ACTIVE' })
+
+  // En una campaña nueva: la campaña se copia, el conjunto se crea dentro.
+  calls.length = 0
+  routes['POST 10/copies'] = { copied_campaign_id: '11' }
+  routes['POST 11'] = { success: true }
+  const toNew = await request('POST', '/api/meta/duplicar', { body: { cuenta: 'act_111', nivel: 'conjunto', id: '22', campana: 'nueva', nombreCampana: 'ABO 4' } })
+  assert.deepEqual(toNew.body, { id: '23', ids: ['23'], campana: '11' })
+  assert.equal(posted('act_111/adsets')[0].campaign_id, '11')
+})
+
+test('copiar un conjunto con presupuesto de campaña: sin presupuesto ni estrategia propios; lo que aún no ha pasado, sí', () => {
+  const body = adSetCopyBody(
+    {
+      name: 'CBO',
+      targeting: {},
+      optimization_goal: 'CONVERSATIONS',
+      billing_event: 'IMPRESSIONS',
+      bid_strategy: 'COST_CAP',
+      bid_amount: '500',
+      daily_budget: '0',
+      promoted_object: { page_id: '222', whats_app_business_phone_number_id: '777' },
+      start_time: '2030-01-01T00:00:00+0000',
+      end_time: '2030-02-01T00:00:00+0000',
+    },
+    { campaignId: '10', name: 'CBO - Copia', status: 'PAUSED', now: Date.parse('2029-12-01') },
+  )
+  assert.equal(body.daily_budget, undefined)
+  assert.equal(body.bid_strategy, undefined)
+  assert.equal(body.bid_amount, '500')
+  assert.deepEqual(body.promoted_object, { page_id: '222', whats_app_business_phone_number_id: '777' }, 'sin número, el identificador')
+  assert.equal(body.start_time, '2030-01-01T00:00:00+0000')
+  assert.equal(body.end_time, '2030-02-01T00:00:00+0000')
 })
 
 test('archivar y borrar', async () => {

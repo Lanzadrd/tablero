@@ -621,26 +621,87 @@ async function copyAd(meta, cuenta, ad, adSetId, nombre, options, status = 'PAUS
   return String(created.id)
 }
 
+const COPY_FIELDS =
+  'name,status,campaign_id,targeting,optimization_goal,billing_event,bid_strategy,bid_amount,bid_constraints,daily_budget,lifetime_budget,' +
+  'destination_type,promoted_object,pacing_type,start_time,end_time,frequency_control_specs,dsa_beneficiary,dsa_payor,is_dynamic_creative,optimization_sub_event'
+
+/** Ubicaciones que Meta ya no deja elegir y que llevan conjuntos de antes: al copiarlos, se quitan. */
+const RETIRED_POSITIONS = { instagram_positions: ['explore'] }
+
+const withoutRetired = (targeting) => {
+  const out = { ...targeting }
+  for (const [key, gone] of Object.entries(RETIRED_POSITIONS)) if (Array.isArray(out[key])) out[key] = out[key].filter((p) => !gone.includes(p))
+  return out
+}
+
 /**
- * Copia un conjunto (en su campaña o en `campaignId`) y, uno a uno, sus anuncios. `name`: cómo se llama (sin él, igual).
- * La copia, en pausa (dentro de una campaña copiada, como estaba); sus anuncios, encendidos o no como los de ahora: salen
- * al encender la copia.
+ * Un conjunto nuevo con lo mismo que `set` (leído con COPY_FIELDS), para los que Meta no deja copiar: los de WhatsApp
+ * («This WhatsApp phone number is not linked to your account», aunque el número sí lo esté). Lo que ya ha pasado
+ * (empezar, terminar) no se copia, ni la ventana de atribución (Meta rechaza las de antes; sin decirla, pone la suya).
+ * El número va solo (con su identificador también, Meta da error de permisos).
  */
-async function copyAdSet(meta, cuenta, adSetId, campaignId, name, options) {
-  const copy = await patiently(
-    () =>
-      meta.graph(`${adSetId}/copies`, {
-        method: 'POST',
-        body: {
-          deep_copy: false,
-          status_option: name ? 'PAUSED' : 'INHERITED_FROM_SOURCE',
-          ...(campaignId ? { campaign_id: campaignId } : {}),
-          ...(name ?? { rename_options: NO_RENAME }),
-        },
-      }),
-    options,
-  )
-  const adSetCopy = String(copy.copied_adset_id)
+export function adSetCopyBody(set, { campaignId, name, status, now = Date.now() }) {
+  const { smart_pse_enabled: _, whats_app_business_phone_number_id: phoneId, ...promoted } = set.promoted_object ?? {}
+  if (phoneId && !promoted.whatsapp_phone_number) promoted.whats_app_business_phone_number_id = phoneId
+  const positive = (value) => Number(value) > 0
+  const ahead = (time) => Boolean(time) && Date.parse(time) > now
+  const ownBudget = positive(set.daily_budget) || positive(set.lifetime_budget)
+  return {
+    name,
+    campaign_id: campaignId,
+    status,
+    targeting: withoutRetired(set.targeting),
+    optimization_goal: set.optimization_goal,
+    billing_event: set.billing_event,
+    ...(set.destination_type ? { destination_type: set.destination_type } : {}),
+    ...(Object.keys(promoted).length ? { promoted_object: promoted } : {}),
+    // Con presupuesto de campaña (CBO), la estrategia es la de la campaña; el importe de la puja, si lo hay, va aquí.
+    ...(positive(set.daily_budget) ? { daily_budget: set.daily_budget } : {}),
+    ...(positive(set.lifetime_budget) ? { lifetime_budget: set.lifetime_budget } : {}),
+    ...(ownBudget && set.bid_strategy ? { bid_strategy: set.bid_strategy } : {}),
+    ...(positive(set.bid_amount) ? { bid_amount: set.bid_amount } : {}),
+    ...(set.bid_constraints ? { bid_constraints: set.bid_constraints } : {}),
+    ...(ahead(set.start_time) ? { start_time: set.start_time } : {}),
+    ...(ahead(set.end_time) ? { end_time: set.end_time } : {}),
+    ...(set.pacing_type?.length && set.pacing_type.join() !== 'standard' ? { pacing_type: set.pacing_type } : {}),
+    ...(set.frequency_control_specs?.length ? { frequency_control_specs: set.frequency_control_specs } : {}),
+    ...(set.dsa_beneficiary ? { dsa_beneficiary: set.dsa_beneficiary, dsa_payor: set.dsa_payor ?? set.dsa_beneficiary } : {}),
+    ...(set.optimization_sub_event && set.optimization_sub_event !== 'NONE' ? { optimization_sub_event: set.optimization_sub_event } : {}),
+    ...(set.is_dynamic_creative ? { is_dynamic_creative: true } : {}),
+  }
+}
+
+const sendsToWhatsApp = (set) => Boolean(set.promoted_object?.whatsapp_phone_number || set.promoted_object?.whats_app_business_phone_number_id)
+
+/**
+ * Copia un conjunto (en su campaña o en `campaignId`) y, uno a uno, sus anuncios. `n`: el número de copia, para su nombre
+ * («- Copia», «- Copia 2»…); sin él (dentro de una campaña copiada), se llama igual. La copia, en pausa (dentro de una
+ * campaña copiada, como estaba); sus anuncios, encendidos o no como los de ahora: salen al encender la copia.
+ */
+async function copyAdSet(meta, cuenta, adSetId, campaignId, n, options) {
+  const set = await meta.graph(adSetId, { params: { fields: COPY_FIELDS } })
+  let adSetCopy
+  if (sendsToWhatsApp(set)) {
+    const name = n ? `${set.name} - Copia${n > 1 ? ` ${n}` : ''}` : set.name
+    const status = n || set.status !== 'ACTIVE' ? 'PAUSED' : 'ACTIVE'
+    const body = adSetCopyBody(set, { campaignId: campaignId ?? String(set.campaign_id), name, status })
+    adSetCopy = String((await patiently(() => meta.graph(`${cuenta}/adsets`, { method: 'POST', body }), options)).id)
+  } else {
+    const copy = await patiently(
+      () =>
+        meta.graph(`${adSetId}/copies`, {
+          method: 'POST',
+          body: {
+            deep_copy: false,
+            status_option: n ? 'PAUSED' : 'INHERITED_FROM_SOURCE',
+            ...(campaignId ? { campaign_id: campaignId } : {}),
+            ...(n ? copyName(n) : { rename_options: NO_RENAME }),
+          },
+        }),
+      options,
+    )
+    adSetCopy = String(copy.copied_adset_id)
+  }
   for (const ad of await liveChildren(meta, adSetId, 'ads', 'name,status,creative{id}')) {
     await copyAd(meta, cuenta, ad, adSetCopy, ad.name, options, ad.status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED')
   }
@@ -680,7 +741,7 @@ export async function duplicate(meta, raw, options = {}) {
       if (nivel === 'anuncio') {
         ids.push(await copyAd(meta, cuenta, source, source.adset_id, `${source.name} - Copia${n > 1 ? ` ${n}` : ''}`, options))
       } else if (nivel === 'conjunto') {
-        ids.push(await copyAdSet(meta, cuenta, id, toCampaign, copyName(n), options))
+        ids.push(await copyAdSet(meta, cuenta, id, toCampaign, n, options))
       } else {
         const copy = await patiently(() => meta.graph(`${id}/copies`, { method: 'POST', body: { deep_copy: false, status_option: 'PAUSED', ...copyName(n) } }), options)
         const campaignCopy = String(copy.copied_campaign_id)
