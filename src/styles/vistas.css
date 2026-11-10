@@ -353,6 +353,286 @@
   transform: rotate(90deg);
 }
 
+/* ───────── Hoy: los anuncios, por empresa ───────── */
+
+/* Con sitio, al lado de las tareas; si no, debajo. Lo mide .today-layout: el ancho libre, con o sin menú lateral. */
+.today-layout {
+  container: hoy / inline-size;
+}
+
+.today-ads {
+  container: anuncios / inline-size;
+  display: grid;
+  gap: 10px;
+  max-width: 600px;
+  margin: 28px auto 0;
+}
+
+@container hoy (min-width: 1140px) {
+  .today-columns:has(.today-ads) {
+    display: grid;
+    grid-template-columns: minmax(0, 560px) minmax(0, 680px);
+    justify-content: center;
+    align-items: start;
+    gap: 28px;
+  }
+
+  .today-columns:has(.today-ads) > .today-page,
+  .today-columns > .today-ads {
+    max-width: none;
+    margin: 0;
+  }
+
+  /* A la altura de «Hoy» y su fecha: las primeras tarjetas de las dos columnas empiezan a la vez. */
+  .today-columns > .today-ads .today-ads-head {
+    min-height: 60px;
+    align-items: flex-end;
+  }
+}
+
+.today-ads-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.today-ads-updated {
+  flex: 1;
+  min-width: 0;
+  min-height: 26px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 26px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.today-ads-head .icon-btn {
+  margin-bottom: -1px;
+}
+
+.today-company {
+  display: grid;
+  gap: 1px;
+  padding: 6px;
+}
+
+/* Cada fila: de quién es y, en columnas, lo gastado, lo conseguido y lo que cuesta cada uno. */
+.today-ad-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 140px 96px;
+  column-gap: 10px;
+  align-items: baseline;
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.today-company-head {
+  align-items: center;
+  min-height: 34px;
+}
+
+.today-company-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.today-company-name h4 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.today-fig,
+.today-fig-label {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.today-fig-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+/* Una línea por cada cosa que se busca (conversaciones y clientes potenciales, si hay de las dos). */
+.today-fig {
+  display: grid;
+}
+
+.today-fig-word,
+.today-fig-unit {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-2);
+}
+
+/* «c/u» lo dice la cabecera; solo hace falta cuando las cifras van en una línea, sin ella. */
+.today-fig-unit {
+  display: none;
+}
+
+.today-fig-none {
+  color: var(--text-3);
+}
+
+.today-account + .today-account {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 0.5px solid var(--separator);
+}
+
+.today-ad-row.is-account {
+  font-weight: 600;
+}
+
+.today-account-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin: -3px -6px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  transition: background-color 120ms;
+}
+
+.today-account-name:hover {
+  background: var(--hover);
+}
+
+.today-account-name:active {
+  background: var(--press);
+}
+
+.today-account-name svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.today-account-name span,
+.today-campaign-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Lo que le pasa («En pausa», «Limitada por políticas»), debajo del nombre: así no le quita sitio. */
+.today-campaign {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr);
+  column-gap: 7px;
+  align-items: baseline;
+  min-width: 0;
+  padding-left: 4px;
+}
+
+.today-campaign-dot {
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.today-campaign-dot.is-ok {
+  background: var(--ads-ok);
+}
+
+.today-campaign-dot.is-warning {
+  background: var(--ads-warning);
+}
+
+.today-campaign-state {
+  grid-column: 2;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+
+.today-campaign-state.is-warning {
+  font-weight: 500;
+  color: var(--ads-warning);
+}
+
+.today-ads-note,
+.today-ads-resting {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.today-ads-note {
+  padding: 3px 8px 5px 29px;
+}
+
+.today-ads-note.is-error {
+  color: var(--overdue);
+}
+
+.today-ads-resting {
+  padding: 2px 8px 0;
+}
+
+/* Con poco ancho, las cifras bajan a una línea debajo del nombre. */
+@container anuncios (max-width: 500px) {
+  .today-ad-row {
+    grid-template-columns: repeat(3, auto) minmax(0, 1fr);
+    column-gap: 12px;
+  }
+
+  .today-ad-row > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  .today-fig-label {
+    display: none;
+  }
+
+  .today-fig {
+    padding-left: 17px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-2);
+  }
+
+  .today-fig ~ .today-fig {
+    padding-left: 0;
+  }
+
+  .today-fig-unit {
+    display: inline;
+  }
+
+  .today-ads-updated {
+    visibility: hidden;
+  }
+}
+
 /* ───────── Interruptor ───────── */
 
 .switch {

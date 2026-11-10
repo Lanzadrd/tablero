@@ -59,6 +59,10 @@ sincronización se guarda en `datos/sincronizacion.json` y su registro en `datos
 - **Hoy** (D): lo que vence hoy o está atrasado, de todas las columnas. «Lo primero» arriba
   (F), «Pasar todas a hoy», y la siguiente tarea de cada proyecto sin nada para hoy. El
   icono del Dock muestra cuántas quedan; la primera vez que se abre cada día, arranca aquí.
+  Con Meta o Google Ads conectados es el resumen de todo: al lado de las tareas (debajo, si la ventana es
+  estrecha), los **anuncios de todas las cuentas por empresa** (cada portfolio de Meta con las cuentas de Google
+  Ads que son suyas: las que comparten resumen diario o se llaman igual), con lo gastado, lo conseguido y lo que
+  cuesta cada resultado de cada campaña en marcha, de hoy, de ayer o de 7 días. El nombre de la cuenta abre su vista.
 - **Escribir en lenguaje natural**: «Llamar a Marta mañana 10:30 #Trabajo», «Copias cada
   lunes», «Leer Sapiens algún día», «Pagar seguro 15/10». Solo se entienden fechas y horas
   al principio o al final; ⌥↩ guarda el texto tal cual.

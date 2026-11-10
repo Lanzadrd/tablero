@@ -1,5 +1,6 @@
-// Vista «Hoy»: lo primero, lo atrasado y lo de hoy por columna; debajo, lo hecho hoy y la
-// siguiente tarea de cada proyecto que no tiene nada para hoy.
+// Vista «Hoy», el resumen de todo: lo primero, lo atrasado y lo de hoy por columna; debajo, lo hecho hoy y la
+// siguiente tarea de cada proyecto que no tiene nada para hoy. Al lado (o debajo, si no cabe), los anuncios de
+// todas las cuentas, por empresa (TodayAds.tsx).
 import { useEffect, useId, useMemo, useRef, useState, type ClipboardEvent, type MouseEvent } from 'react'
 import { progress } from '../checklist'
 import { useActions, useBoard, useNow, useUI } from '../context'
@@ -14,6 +15,7 @@ import { Linkified } from './Links'
 import { draftFrom, ParsePreview, useAddDrafts, useParser, type Draft } from './NaturalAdd'
 import { Menu } from './Popover'
 import { CheckButton, RepeatMark, taskRowA11y, useCompletion } from './TaskRow'
+import { TodayAds } from './TodayAds'
 import '../styles/vistas.css'
 
 /** Nombre con el que «Nueva tarea para hoy» se registra en ui.registerQuickAdd (N, atajo del Dock). */
@@ -59,101 +61,106 @@ export function TodayView() {
 
   return (
     <main className="today">
-      <div className="today-page" data-task-list>
-        <header className="today-head">
-          <h2>Hoy</h2>
-          <p>{formatToday(now)}</p>
-        </header>
-
-        {data.count > TOO_MUCH && dismissed !== today && (
-          <div className="today-notice" role="status">
-            <span>Mucho para un día: ¿pasas algo a mañana?</span>
-            <button type="button" className="icon-btn" aria-label="Descartar el aviso" title="Descartar" onClick={() => setDismissed(today)}>
-              <Icon.Close />
-            </button>
-          </div>
-        )}
-
-        {data.count > 0 && (
-          <section className="today-first" aria-label="Lo primero">
-            <h3 className="today-label">
-              <Icon.Star />
-              Lo primero
-            </h3>
-            {data.first ? (
-              <TodayRow item={data.first} today={today} showDate={data.first.task.due !== today} showColumn />
-            ) : (
-              <p className="today-first-empty">
-                Marca con <Icon.Star /> la tarea que harás antes que nada.
-              </p>
-            )}
-          </section>
-        )}
-
-        {data.overdue.length > 0 && (
-          <section className="today-section is-overdue" aria-labelledby={overdueId}>
-            <header className="today-section-head">
-              <h3 id={overdueId} className="today-label">
-                Atrasadas
-                <span className="today-count">{data.overdue.length}</span>
-              </h3>
-              <button type="button" className="link-btn" onClick={moveAll}>
-                Pasar todas a hoy
-              </button>
+      <div className="today-layout">
+        <div className="today-columns">
+          <div className="today-page" data-task-list>
+            <header className="today-head">
+              <h2>Hoy</h2>
+              <p>{formatToday(now)}</p>
             </header>
-            <div className="today-card">
-              {data.overdue.map((item) => (
-                <TodayRow key={item.task.id} item={item} today={today} showDate showColumn invite={invite} />
-              ))}
-            </div>
-          </section>
-        )}
 
-        <section className="today-card today-main" aria-label="Para hoy">
-          {data.groups.map(({ column, items }) => (
-            <div key={column.id} className="today-group" style={tint(column.color)} role="group" aria-label={column.name}>
-              <h3 className="today-group-title">
-                <span className="cal-dot" />
-                {column.name}
-              </h3>
-              {items.map((item) => (
-                <TodayRow key={item.task.id} item={item} today={today} invite={invite} />
-              ))}
-            </div>
-          ))}
-          {data.count === 0 && <p className="today-empty">Nada pendiente para hoy.</p>}
-          <TodayAdd today={today} />
-        </section>
-
-        {data.done.length > 0 && (
-          <section className="today-done" aria-label="Hechas hoy">
-            <button type="button" className="completed-toggle" aria-expanded={showDone} onClick={() => setShowDone(!showDone)}>
-              <Icon.Chevron />
-              Hechas hoy
-              <span className="completed-count">{data.done.length}</span>
-            </button>
-            {showDone && (
-              <div className="today-card">
-                {data.done.map((item) => (
-                  <TodayRow key={item.task.id} item={item} today={today} showColumn />
-                ))}
+            {data.count > TOO_MUCH && dismissed !== today && (
+              <div className="today-notice" role="status">
+                <span>Mucho para un día: ¿pasas algo a mañana?</span>
+                <button type="button" className="icon-btn" aria-label="Descartar el aviso" title="Descartar" onClick={() => setDismissed(today)}>
+                  <Icon.Close />
+                </button>
               </div>
             )}
-          </section>
-        )}
 
-        {data.next.length > 0 && (
-          <section className="today-section" aria-labelledby={nextId}>
-            <h3 id={nextId} className="today-label">
-              Siguiente en cada proyecto
-            </h3>
-            <div className="today-card">
-              {data.next.map((item) => (
-                <NextRow key={item.task.id} item={item} today={today} />
+            {data.count > 0 && (
+              <section className="today-first" aria-label="Lo primero">
+                <h3 className="today-label">
+                  <Icon.Star />
+                  Lo primero
+                </h3>
+                {data.first ? (
+                  <TodayRow item={data.first} today={today} showDate={data.first.task.due !== today} showColumn />
+                ) : (
+                  <p className="today-first-empty">
+                    Marca con <Icon.Star /> la tarea que harás antes que nada.
+                  </p>
+                )}
+              </section>
+            )}
+
+            {data.overdue.length > 0 && (
+              <section className="today-section is-overdue" aria-labelledby={overdueId}>
+                <header className="today-section-head">
+                  <h3 id={overdueId} className="today-label">
+                    Atrasadas
+                    <span className="today-count">{data.overdue.length}</span>
+                  </h3>
+                  <button type="button" className="link-btn" onClick={moveAll}>
+                    Pasar todas a hoy
+                  </button>
+                </header>
+                <div className="today-card">
+                  {data.overdue.map((item) => (
+                    <TodayRow key={item.task.id} item={item} today={today} showDate showColumn invite={invite} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section className="today-card today-main" aria-label="Para hoy">
+              {data.groups.map(({ column, items }) => (
+                <div key={column.id} className="today-group" style={tint(column.color)} role="group" aria-label={column.name}>
+                  <h3 className="today-group-title">
+                    <span className="cal-dot" />
+                    {column.name}
+                  </h3>
+                  {items.map((item) => (
+                    <TodayRow key={item.task.id} item={item} today={today} invite={invite} />
+                  ))}
+                </div>
               ))}
-            </div>
-          </section>
-        )}
+              {data.count === 0 && <p className="today-empty">Nada pendiente para hoy.</p>}
+              <TodayAdd today={today} />
+            </section>
+
+            {data.done.length > 0 && (
+              <section className="today-done" aria-label="Hechas hoy">
+                <button type="button" className="completed-toggle" aria-expanded={showDone} onClick={() => setShowDone(!showDone)}>
+                  <Icon.Chevron />
+                  Hechas hoy
+                  <span className="completed-count">{data.done.length}</span>
+                </button>
+                {showDone && (
+                  <div className="today-card">
+                    {data.done.map((item) => (
+                      <TodayRow key={item.task.id} item={item} today={today} showColumn />
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {data.next.length > 0 && (
+              <section className="today-section" aria-labelledby={nextId}>
+                <h3 id={nextId} className="today-label">
+                  Siguiente en cada proyecto
+                </h3>
+                <div className="today-card">
+                  {data.next.map((item) => (
+                    <NextRow key={item.task.id} item={item} today={today} />
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+          <TodayAds />
+        </div>
       </div>
     </main>
   )
