@@ -486,6 +486,7 @@ export async function details(meta, raw, { now = Date.now() } = {}) {
       conjunto: String(ad.adset_id),
       // Las del conjunto: dónde va cada versión.
       ubicaciones: placementsOf(ad.adset?.targeting),
+      lugares: audienceOf(ad.adset?.targeting).lugares,
       editable: content.editable,
       motivo: content.motivo,
       contenido: content.ajustes,

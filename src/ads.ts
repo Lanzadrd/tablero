@@ -211,6 +211,15 @@ export interface Template extends AdSettings {
   nombre: string
 }
 
+/**
+ * Una plantilla de anuncio: solo lo del anuncio (los textos, las mejoras y el chat o la web, según adónde lleve),
+ * para los que se añaden a un conjunto o se editan.
+ */
+export type AdTemplate = Pick<
+  AdSettings,
+  'cuenta' | 'destino' | 'url' | 'boton' | 'etiquetas' | 'texto' | 'titular' | 'descripcion' | 'bienvenida' | 'tipoMensaje' | 'saludo' | 'preguntas' | 'mejoras' | 'multianunciante'
+> & { id: string; nombre: string }
+
 export type Media = { tipo: 'imagen'; hash: string; url: string | null } | { tipo: 'video'; id: string }
 
 /** Una versión de un anuncio: su formato y la imagen o el vídeo ya subido. */
@@ -449,6 +458,8 @@ export interface EditDetails {
     versiones: Array<{ formato: Formato; medio: MediaPreview }>
     /** Las del conjunto: dónde va cada versión. */
     ubicaciones: { ubicaciones: 'auto' | 'manual' | 'meta'; posiciones: string[] }
+    /** Dónde se anuncia su conjunto. */
+    lugares?: Place[]
   }
 }
 
@@ -891,7 +902,13 @@ export const metaApi = {
       `No se ha podido ${estado === 'activa' ? 'activar' : 'pausar'}`,
       statusDone(level, estado, META_LEVELS),
     ),
-  saved: () => call<{ plantillas: Template[]; lanzamientos: Launch[] }>('GET', '/api/anuncios'),
+  saved: () => call<{ plantillas: Template[]; plantillasAnuncio?: AdTemplate[]; lanzamientos: Launch[] }>('GET', '/api/anuncios'),
+  saveAdTemplates: (plantillas: AdTemplate[], done: string) =>
+    announce(
+      call<{ plantillas: AdTemplate[] }>('PUT', '/api/anuncios/plantillas-anuncio', { plantillas }).then((r) => r.plantillas),
+      'No se han podido guardar las plantillas',
+      done,
+    ),
   /** Si hay clave de la API de Claude para escribir los textos. */
   claudeStatus: () => call<{ clave: boolean }>('GET', '/api/anuncios/claude'),
   saveClaudeKey: (clave: string) =>

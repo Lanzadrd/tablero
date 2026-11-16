@@ -165,7 +165,10 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
     puede deshacer).
 - **+ Crear** crea lo de la pestaña en la que estás, como en el Administrador: una campaña, un conjunto en la
   campaña elegida o un anuncio en el conjunto elegido (si no está claro en cuál, lo pregunta).
-  - *Anuncio*: empieza con los textos de uno de los anuncios del conjunto.
+  - *Anuncio*: empieza con los textos de uno de los anuncios del conjunto. Arriba, sus **plantillas de anuncio**
+    (los textos, las mejoras y el chat o la web): se guardan desde aquí («Guardar como plantilla») y sirven para
+    cualquier anuncio que se añada o se edite; también se pueden usar las de campaña (de ellas, solo eso). En
+    «Texto», **Escribir con Claude**, como al crear una campaña (al editar un anuncio, Claude ve su imagen).
   - *Conjunto*: dentro de una campaña (de interacción, clientes potenciales o ventas), el mismo formulario
     que una campaña nueva crea un conjunto de mensajes a WhatsApp con sus anuncios. Usa la página de los demás
     conjuntos y, si mandan los mensajes a un número concreto, ese número; si la campaña reparte su presupuesto,

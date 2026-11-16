@@ -75,12 +75,20 @@ export async function measure(file: File, tipo: Creative['tipo'], preview: strin
 
 /**
  * Una imagen pequeña (JPEG de hasta 1024 px, en base64) de una imagen o del primer segundo de un vídeo, para que
- * Claude vea el anuncio; null si el navegador no sabe abrirla.
+ * Claude vea el anuncio; null si el navegador no sabe abrirla. Sin archivo (lo ya publicado), la de su dirección:
+ * la imagen o, de un vídeo, su miniatura.
  */
-export async function snapshot(c: Creative): Promise<string | null> {
+export async function snapshot(c: { tipo: 'imagen' | 'video'; file: File | null; preview: string | null }): Promise<string | null> {
   try {
-    const source: CanvasImageSource =
-      c.tipo === 'imagen'
+    if (!c.file && !c.preview) return null
+    const published = async (url: string) => {
+      const res = await fetch(url, { referrerPolicy: 'no-referrer' })
+      if (!res.ok) throw new Error('imagen')
+      return createImageBitmap(await res.blob())
+    }
+    const source: CanvasImageSource = !c.file
+      ? await published(c.preview!)
+      : c.tipo === 'imagen'
         ? await createImageBitmap(c.file)
         : await new Promise<HTMLVideoElement>((resolve, reject) => {
             const video = document.createElement('video')
@@ -91,7 +99,7 @@ export async function snapshot(c: Creative): Promise<string | null> {
             }
             video.onseeked = () => resolve(video)
             video.onerror = () => reject(new Error('vídeo'))
-            video.src = c.preview
+            video.src = c.preview ?? ''
           })
     const [w, h] = source instanceof HTMLVideoElement ? [source.videoWidth, source.videoHeight] : [(source as ImageBitmap).width, (source as ImageBitmap).height]
     const scale = Math.min(1, 1024 / Math.max(w, h))

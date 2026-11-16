@@ -1414,7 +1414,8 @@ export function DropZone({ onFiles, disabled }: { onFiles: (files: FileList) => 
   )
 }
 
-function SaveTemplate({ anchor, onClose, onSave }: { anchor: HTMLElement; onClose: () => void; onSave: (name: string) => Promise<void> }) {
+/** Ponerle nombre a una plantilla nueva. `note`: lo que guarda (sin ella, lo de las de campaña). */
+export function SaveTemplate({ anchor, note, onClose, onSave }: { anchor: HTMLElement; note?: string; onClose: () => void; onSave: (name: string) => Promise<void> }) {
   const id = useId()
   const [value, setValue] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -1431,7 +1432,7 @@ function SaveTemplate({ anchor, onClose, onSave }: { anchor: HTMLElement; onClos
         <label htmlFor={id}>Nombre de la plantilla</label>
         <input id={id} className="input" autoFocus value={value} placeholder="p. ej. Captación Madrid" onChange={(e) => setValue(e.target.value)} />
         <p className="ads-note">
-          Guarda la página, el presupuesto, el público, las ubicaciones, los textos, el chat de WhatsApp y las mejoras de Meta. Las imágenes no.
+          {note ?? 'Guarda la página, el presupuesto, el público, las ubicaciones, los textos, el chat de WhatsApp y las mejoras de Meta. Las imágenes no.'}
         </p>
         {error && (
           <p className="ads-error" role="alert">

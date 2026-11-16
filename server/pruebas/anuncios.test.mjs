@@ -1514,6 +1514,26 @@ test('plantillas: se guardan limpias y con id', async () => {
   assert.equal((await request('PUT', '/api/anuncios/plantillas', { body: { plantillas: 'x' } })).status, 400)
 })
 
+test('plantillas de anuncio: solo lo del anuncio, aparte de las de campaña', async () => {
+  const res = await request('PUT', '/api/anuncios/plantillas-anuncio', {
+    body: { plantillas: [{ ...plan(), nombre: ' Promo ', id: undefined, destino: 'web', url: 'ejemplo.com', boton: 'LEARN_MORE', texto: ' Ven ', presupuesto: 12 }] },
+  })
+  assert.equal(res.status, 200, res.text)
+  const [saved] = res.body.plantillas
+  assert.equal(saved.nombre, 'Promo')
+  assert.match(saved.id, /^[\w-]+$/)
+  assert.equal(saved.texto, 'Ven')
+  assert.equal(saved.destino, 'web')
+  assert.equal(saved.url, 'https://ejemplo.com/')
+  assert.equal(saved.boton, 'LEARN_MORE')
+  // Ni la página, ni el presupuesto, ni el público.
+  for (const key of ['pagina', 'instagram', 'presupuesto', 'lugares', 'edadMin', 'ubicaciones', 'whatsapp', 'pixel']) assert.equal(saved[key], undefined, key)
+  const all = (await request('GET', '/api/anuncios')).body
+  assert.deepEqual(all.plantillasAnuncio, res.body.plantillas)
+  assert.deepEqual(all.plantillas, [], 'las de campaña no cambian')
+  assert.equal((await request('PUT', '/api/anuncios/plantillas-anuncio', { body: { plantillas: [{ texto: 'Sin nombre' }] } })).status, 400)
+})
+
 test('las rutas de Meta solo desde Tablero', async () => {
   const ajenas = [{ origin: 'https://malo.example' }, { 'sec-fetch-site': 'cross-site' }, { host: 'malo.example' }]
   for (const [method, pathname, body] of [

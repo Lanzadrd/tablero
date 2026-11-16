@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { contentFromTemplate, differsFromTemplate, templateFromContent } from '../../server/plantillas.mjs'
 import {
   budgetText,
   DEFAULT_SETTINGS,
@@ -6,26 +7,48 @@ import {
   LEAD_EVENTS,
   MAX_QUESTIONS,
   metaApi,
+  settingsOf,
   uploadMedia,
   type AdAccount,
   type AdContent,
   type AdSettings,
+  type AdTemplate,
   type AdVersion,
   type Audience,
   type Bid,
+  type Copy,
   type EditChanges,
   type EditDetails,
   type Enhancement,
   type Level,
   type MediaPreview,
   type MetaPage,
+  type Place,
+  type Template,
   type Variants,
 } from '../ads'
 import { formatOf, FORMATOS, type Formato } from '../placements'
 import { cx } from '../util'
 import { errorText } from './Ads'
-import { adsCount, CHAT_STARTS, ChatPreview, Chips, DropZone, Field, GENDERS, MoneyInput, PlacePicker, Questions, range, uploadDrafts, useDrafts, WebFields } from './AdsComposer'
-import { formatOfCreative, measure, MediaList, type Creative } from './AdsMedia'
+import {
+  adsCount,
+  CHAT_STARTS,
+  ChatPreview,
+  Chips,
+  DropZone,
+  Field,
+  GENDERS,
+  MoneyInput,
+  PlacePicker,
+  Questions,
+  range,
+  SaveTemplate,
+  uploadDrafts,
+  useDrafts,
+  WebFields,
+} from './AdsComposer'
+import { CopyButton } from './AdsCopy'
+import { formatOfCreative, measure, MediaList, snapshot, type Creative } from './AdsMedia'
 import { PlacementPicker, type PlacementMode } from './AdsPlacements'
 import { AdPreview } from './AdsPreview'
 import type { AdderProps, EditorProps } from './AdsRunning'
@@ -430,6 +453,7 @@ function AdForm({ data, account, onSave }: FormProps) {
       initial={a.contenido}
       versions={a.versiones}
       placements={a.ubicaciones}
+      places={a.lugares ?? []}
       mode="edit"
       busy={busy}
       error={error}
@@ -495,6 +519,182 @@ interface ContentResult {
 }
 
 /**
+ * Las plantillas en el formulario de un anuncio: las de anuncio (se crean, se cambian y se borran aquí) y las de
+ * campaña (de ellas se usan los textos, las mejoras y el chat o la web). Elegir una la pone en el formulario; «Sin
+ * plantilla», como estaba al abrirlo.
+ */
+function AdTemplates({
+  account,
+  content,
+  initial,
+  onApply,
+}: {
+  account: AdAccount
+  content: AdContent
+  initial: AdContent
+  onApply: (changes: Partial<AdContent>) => void
+}) {
+  const ids = useId()
+  const [saved, setSaved] = useState<{ campana: Template[]; anuncio: AdTemplate[] } | null>(null)
+  /** La elegida: «anuncio:id» o «campana:id». */
+  const [chosen, setChosen] = useState<string | null>(null)
+  const [saveAs, setSaveAs] = useState<HTMLElement | null>(null)
+  /** La que se ha pedido eliminar: se pregunta antes (no se puede deshacer). */
+  const [removing, setRemoving] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    metaApi.saved().then(
+      (s) => setSaved({ campana: s.plantillas, anuncio: s.plantillasAnuncio ?? [] }),
+      (err) => setError(errorText(err)),
+    )
+  }, [])
+
+  // Las de esta cuenta y las que no son de ninguna.
+  const mine = <T extends { cuenta: string | null }>(list: T[]) => list.filter((t) => !t.cuenta || t.cuenta === account.id)
+  const adTemplates = mine(saved?.anuncio ?? [])
+  const campaignTemplates = mine(saved?.campana ?? [])
+  const own = adTemplates.find((t) => chosen === `anuncio:${t.id}`) ?? null
+  const borrowed = campaignTemplates.find((t) => chosen === `campana:${t.id}`) ?? null
+  const dirty = own ? differsFromTemplate(own, content) : false
+
+  const reset = () => {
+    // La página (puede haberse elegido aquí) y las otras opciones de cada texto no son de ninguna plantilla.
+    const { pagina: _, variantes: __, ...start } = initial
+    setChosen(null)
+    onApply(start)
+  }
+
+  /** Guarda la lista entera y pone en el formulario la plantilla `id` como ha quedado (el servidor la limpia). */
+  const store = async (list: AdTemplate[], done: string, id: string | null) => {
+    const next = await metaApi.saveAdTemplates(list, done)
+    setSaved((s) => s && { ...s, anuncio: next })
+    const kept = next.find((t) => t.id === id)
+    setChosen(kept ? `anuncio:${kept.id}` : null)
+    if (kept) onApply(contentFromTemplate(kept, content))
+  }
+  const run = (work: Promise<void>) => {
+    setError(null)
+    work.catch((err) => setError(errorText(err)))
+  }
+
+  return (
+    <section className="ads-card ads-templates" aria-labelledby={`${ids}-tpl`}>
+      <h4 id={`${ids}-tpl`}>Plantilla</h4>
+      <div className="ads-chips" role="radiogroup" aria-labelledby={`${ids}-tpl`}>
+        <button type="button" role="radio" aria-checked={!own && !borrowed} className={cx('chip', !own && !borrowed && 'is-active')} onClick={reset}>
+          Sin plantilla
+        </button>
+        {adTemplates.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="radio"
+            aria-checked={t.id === own?.id}
+            className={cx('chip', t.id === own?.id && 'is-active')}
+            onClick={() => {
+              setChosen(`anuncio:${t.id}`)
+              onApply(contentFromTemplate(t, content))
+            }}
+          >
+            {t.nombre}
+          </button>
+        ))}
+        {campaignTemplates.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="radio"
+            aria-checked={t.id === borrowed?.id}
+            className={cx('chip', t.id === borrowed?.id && 'is-active')}
+            title="Plantilla de campaña: aquí se usan sus textos, sus mejoras y su chat o su web"
+            onClick={() => {
+              setChosen(`campana:${t.id}`)
+              // Las de antes no lo tienen todo: con lo que les falta, como al crear una campaña.
+              onApply(contentFromTemplate(settingsOf(t), content))
+            }}
+          >
+            {t.nombre}
+            <span className="ads-chip-kind">campaña</span>
+          </button>
+        ))}
+      </div>
+      {error && (
+        <p className="ads-error" role="alert">
+          {error}
+        </p>
+      )}
+      {saved && (
+        <div className="ads-template-actions">
+          {own && dirty && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() =>
+                run(
+                  store(
+                    saved.anuncio.map((t) => (t.id === own.id ? templateFromContent(content, t) : t)),
+                    `Plantilla «${own.nombre}» guardada`,
+                    own.id,
+                  ),
+                )
+              }
+            >
+              Guardar cambios en «{own.nombre}»
+            </button>
+          )}
+          <button type="button" className="link-btn" onClick={(e) => setSaveAs(e.currentTarget)}>
+            {own || borrowed ? 'Guardar como otra plantilla' : 'Guardar como plantilla'}
+          </button>
+          {own && removing !== own.id && (
+            <button type="button" className="link-btn is-danger" onClick={() => setRemoving(own.id)}>
+              Eliminar «{own.nombre}»
+            </button>
+          )}
+          {own && removing === own.id && (
+            <>
+              <button
+                type="button"
+                className="link-btn is-danger"
+                onClick={() => {
+                  setRemoving(null)
+                  run(
+                    store(
+                      saved.anuncio.filter((t) => t.id !== own.id),
+                      `Plantilla «${own.nombre}» eliminada`,
+                      null,
+                    ),
+                  )
+                }}
+              >
+                Sí, eliminar «{own.nombre}»
+              </button>
+              <button type="button" className="link-btn" onClick={() => setRemoving(null)}>
+                No
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {saved && saveAs && (
+        <SaveTemplate
+          anchor={saveAs}
+          note={`Guarda los textos, las mejoras de Meta y ${content.destino === 'web' ? 'la web' : 'el chat de WhatsApp'} de este anuncio, para otros anuncios. Las imágenes no.`}
+          onClose={() => setSaveAs(null)}
+          onSave={async (nombre) => {
+            const id = crypto.randomUUID()
+            // Lo que falte (lo del otro destino) lo pone el servidor.
+            const created = { ...templateFromContent(content), id, nombre, cuenta: account.id } as AdTemplate
+            await store([...saved.anuncio, created], `Plantilla «${nombre}» guardada`, id)
+            setSaveAs(null)
+          }}
+        />
+      )}
+    </section>
+  )
+}
+
+/**
  * El contenido de un anuncio que se edita (una imagen o un vídeo por formato, cada uno en sus ubicaciones, que son las
  * del conjunto) o de los que se añaden al conjunto (tantos como piezas se suban): los textos (con sus otras opciones, como
  * en el Administrador de anuncios), el Instagram, adónde lleva (el chat de WhatsApp o la web) y las mejoras; con la vista
@@ -506,6 +706,7 @@ function AdContentEditor({
   initial,
   versions,
   placements,
+  places,
   mode,
   busy,
   error,
@@ -517,6 +718,8 @@ function AdContentEditor({
   initial: AdContent
   versions: Array<{ formato: Formato; medio: MediaPreview }>
   placements: AdSetPlacements | null
+  /** Dónde se anuncia el conjunto: se lo cuenta a Claude al escribir los textos. */
+  places: Place[]
   mode: 'edit' | 'new'
   busy: boolean
   error: string | null
@@ -574,6 +777,31 @@ function AdContentEditor({
             : !single && hasVariants
               ? 'Con varias versiones, cada texto va uno solo: quita las otras opciones o deja una versión.'
               : null
+
+  /** Lo que había antes de que escribiera Claude (para deshacerlo). */
+  const [undo, setUndo] = useState<Copy | null>(null)
+  const copyOf = (c: AdContent): Copy => ({
+    texto: c.texto,
+    titular: c.titular,
+    descripcion: c.descripcion,
+    bienvenida: c.bienvenida,
+    saludo: c.saludo,
+    preguntas: c.preguntas,
+  })
+  /** Lo que ve Claude: las piezas que se añaden o, de un anuncio que ya existe, su imagen (la misma en cada formato). */
+  const copyRequest = async () => {
+    const seen = adding ? pieces.slice(0, 6).map((d) => d.items[0]) : filled.slice(0, 1).map((f) => slots[f]!)
+    return {
+      imagenes: (await Promise.all(seen.map(snapshot)))
+        .filter((data): data is string => Boolean(data))
+        .map((data) => ({ media_type: 'image/jpeg' as const, data })),
+      pagina: page?.nombre ?? '',
+      instagram: page?.instagrams.find((i) => i.id === content.instagram)?.usuario ?? '',
+      lugares: places.map((l) => [l.nombre, l.detalle].filter(Boolean).join(', ')),
+      ...(web ? { web: content.url ?? '' } : {}),
+      actuales: copyOf(content),
+    }
+  }
 
   const pick = async (file: File | undefined, formato: Formato) => {
     if (!file) return
@@ -668,6 +896,8 @@ function AdContentEditor({
       <div className="ads-composer">
         {!adding && <NameCard id={`${ids}-name`} label="Anuncio" value={name} onChange={setName} />}
 
+        <AdTemplates account={account} content={content} initial={initial} onApply={update} />
+
         <section className="ads-card" aria-labelledby={`${ids}-media`}>
           {adding ? (
             <>
@@ -720,7 +950,29 @@ function AdContentEditor({
         </section>
 
         <section className="ads-card" aria-labelledby={`${ids}-copy`}>
-          <h4 id={`${ids}-copy`}>Texto</h4>
+          <div className="ads-card-head">
+            <h4 id={`${ids}-copy`}>Texto</h4>
+            {undo && (
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  update(undo)
+                  setUndo(null)
+                }}
+              >
+                Deshacer
+              </button>
+            )}
+            <CopyButton
+              build={copyRequest}
+              onCopy={(copy) => {
+                setUndo(copyOf(content))
+                // Lo que lleva a una web no tiene chat: de lo que escribe Claude, solo el anuncio.
+                update(web ? { texto: copy.texto, titular: copy.titular, descripcion: copy.descripcion } : copy)
+              }}
+            />
+          </div>
           <div className="ads-fields">
             <Field label="Texto principal" htmlFor={`${ids}-text`}>
               <textarea id={`${ids}-text`} className="input ads-textarea" rows={4} value={content.texto} onChange={(e) => update({ texto: e.target.value })} />
@@ -1027,6 +1279,7 @@ export function MetaAdder({ account, adSet, template, onCancel, onSaved }: Adder
   const heading = useRef<HTMLHeadingElement>(null)
   const [start, setStart] = useState<AdContent | null>(null)
   const [placements, setPlacements] = useState<AdSetPlacements | null>(null)
+  const [places, setPlaces] = useState<Place[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -1055,11 +1308,13 @@ export function MetaAdder({ account, adSet, template, onCancel, onSaved }: Adder
       ([set, ad]) => {
         // Los conjuntos que llevan a una web no dicen su página: la del anuncio que hay.
         const pagina = set.conjunto?.pagina ?? ad?.anuncio?.contenido?.pagina ?? null
-        if (set.conjunto)
+        if (set.conjunto) {
           setPlacements({
             ubicaciones: set.conjunto.publico.ubicaciones,
             posiciones: set.conjunto.publico.posiciones,
           })
+          setPlaces(set.conjunto.publico.lugares)
+        }
         const copied = ad?.anuncio?.editable && ad.anuncio.contenido ? { ...ad.anuncio.contenido, pagina, variantes: NO_VARIANTS } : null
         setStart(copied ?? blank(pagina, Boolean(set.conjunto?.web)))
       },
@@ -1121,6 +1376,7 @@ export function MetaAdder({ account, adSet, template, onCancel, onSaved }: Adder
             initial={start}
             versions={[]}
             placements={placements}
+            places={places}
             mode="new"
             busy={busy}
             error={saveError}
