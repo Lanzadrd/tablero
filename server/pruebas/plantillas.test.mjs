@@ -13,6 +13,8 @@ test('una plantilla pone en un anuncio sus textos y mejoras; el chat o la web, s
   // De la misma página, también su Instagram; nada de lo que no es del anuncio (presupuesto, nombre…).
   assert.deepEqual(contentFromTemplate(whatsapp, toChat), { ...texts, ...chat, instagram: 'ig1' })
   assert.deepEqual(contentFromTemplate(whatsapp, { ...toChat, pagina: '99' }), { ...texts, ...chat })
+  // Una sin Instagram no quita el que hay.
+  assert.deepEqual(contentFromTemplate({ ...whatsapp, instagram: null }, toChat), { ...texts, ...chat })
   // Una de web en un anuncio a WhatsApp (y al revés): solo los textos y las mejoras.
   assert.deepEqual(contentFromTemplate(web, toChat), texts)
   assert.deepEqual(contentFromTemplate(whatsapp, { destino: 'web', pagina: '99' }), texts)

@@ -232,13 +232,14 @@ export function AdsComposer({
     if (!pages) return
     setSettings((s) => {
       const page = pages.find((p) => p.id === s.pagina) ?? pages.find((p) => p.id === preferredPage) ?? (pages.length === 1 ? pages[0] : null)
+      // Siempre con Instagram si la página tiene: sin él, Meta no deja crear los anuncios que salen en Instagram.
       const instagram = page && s.instagram && page.instagrams.some((i) => i.id === s.instagram) ? s.instagram : (page?.instagrams[0]?.id ?? null)
       const whatsapp = page?.numeros.some((n) => n.numero === s.whatsapp?.numero) ? s.whatsapp : defaultNumber(page)
       if (page?.id === s.pagina && instagram === s.instagram && whatsapp === s.whatsapp) return s
       return {
         ...s,
         pagina: page?.id ?? null,
-        instagram: s.pagina === page?.id ? s.instagram : instagram,
+        instagram: s.pagina === page?.id && s.instagram ? s.instagram : instagram,
         whatsapp,
       }
     })
@@ -495,7 +496,7 @@ export function AdsComposer({
                     {i.usuario ? `@${i.usuario}` : `La de tus anuncios anteriores (${i.id})`}
                   </option>
                 ))}
-                <option value="">{page?.instagrams.length ? 'Sin Instagram (como la página)' : 'La página no tiene Instagram conectado'}</option>
+                {!page?.instagrams.length && <option value="">La página no tiene Instagram conectado</option>}
               </select>
             </Field>
             {settings.destino !== 'web' && (

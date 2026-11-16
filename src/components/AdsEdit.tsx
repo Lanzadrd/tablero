@@ -751,6 +751,12 @@ function AdContentEditor({
   useEffect(() => () => Object.values(slotsRef.current).forEach((slot) => slot?.file && slot.preview && URL.revokeObjectURL(slot.preview)), [])
 
   const page = pages?.find((p) => p.id === content.pagina) ?? null
+  // Los nuevos, siempre con Instagram si la página tiene (el primero, el más usado): sin él, Meta no deja crear los que
+  // salen en Instagram. Los que ya existen se quedan como están (si no, abrirlos ya sería cambiarlos).
+  const defaultInstagram = adding && !content.instagram ? (page?.instagrams[0]?.id ?? null) : null
+  useEffect(() => {
+    if (defaultInstagram) setContent((c) => (c.instagram ? c : { ...c, instagram: defaultInstagram }))
+  }, [defaultInstagram])
   const filled = FORMATOS.filter((f) => slots[f.value]).map((f) => f.value)
   const single = filled.length <= 1
   const hasVariants = Object.values(content.variantes).some((list) => list.length)
@@ -1028,7 +1034,12 @@ function AdContentEditor({
                   {content.instagram && !page.instagrams.some((i) => i.id === content.instagram) && (
                     <option value={content.instagram}>La que tiene ahora ({content.instagram})</option>
                   )}
-                  <option value="">Sin Instagram (como la página)</option>
+                  {!page.instagrams.length ? (
+                    <option value="">La página no tiene Instagram conectado</option>
+                  ) : (
+                    // Un anuncio que ya está sin Instagram puede seguir así; los nuevos, no.
+                    !adding && !initial.instagram && <option value="">Sin Instagram, como ahora</option>
+                  )}
                 </select>
               </Field>
             )}

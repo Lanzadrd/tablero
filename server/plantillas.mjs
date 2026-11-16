@@ -18,7 +18,8 @@ export function contentFromTemplate(template, content) {
   const destino = destinationOf(content)
   return {
     ...pick(template, [...COMMON, ...(destinationOf(template) === destino ? BY_DESTINATION[destino] : [])]),
-    ...(template.pagina && template.pagina === content.pagina ? { instagram: template.instagram ?? null } : {}),
+    // Una plantilla sin Instagram no quita el que hay: sin él, Meta no deja crear los anuncios que salen en Instagram.
+    ...(template.pagina && template.pagina === content.pagina && template.instagram ? { instagram: template.instagram } : {}),
   }
 }
 
