@@ -169,6 +169,8 @@ campañas de mensajes a WhatsApp en Meta con tus opciones ya puestas.
     (los textos, las mejoras y el chat o la web): se guardan desde aquí («Guardar como plantilla») y sirven para
     cualquier anuncio que se añada o se edite; también se pueden usar las de campaña (de ellas, solo eso). En
     «Texto», **Escribir con Claude**, como al crear una campaña (al editar un anuncio, Claude ve su imagen).
+- **Ubicaciones**: Tablero recuerda las últimas elegidas en cada cuenta y con ellas empieza el siguiente conjunto o
+  campaña sin plantilla (con plantilla, las de la plantilla).
 - **Plantillas del chat**: en la tarjeta «Chat de WhatsApp» de cualquier formulario (campaña, conjunto o anuncio),
   vuestro mensaje y el suyo (o las preguntas) se guardan con nombre y se ponen con un toque.
   - *Conjunto*: dentro de una campaña (de interacción, clientes potenciales o ventas), el mismo formulario

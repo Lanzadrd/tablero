@@ -80,6 +80,30 @@ function readLastTemplate(account: string) {
   }
 }
 
+/**
+ * Las últimas ubicaciones elegidas en la cuenta: con ellas empieza el siguiente conjunto (o campaña) sin plantilla.
+ * Las de una plantilla, las suyas.
+ */
+const lastPlacementsKey = (account: string) => `tablero.anuncios.ubicaciones.${account}`
+type LastPlacements = Pick<AdSettings, 'ubicaciones' | 'posiciones'>
+
+function readLastPlacements(account: string): LastPlacements | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(lastPlacementsKey(account)) ?? 'null') as LastPlacements | null
+    return raw && ['auto', 'manual', 'facebook', 'instagram'].includes(raw.ubicaciones) && Array.isArray(raw.posiciones) ? raw : null
+  } catch {
+    return null
+  }
+}
+
+function writeLastPlacements(account: string, placements: LastPlacements) {
+  try {
+    localStorage.setItem(lastPlacementsKey(account), JSON.stringify(placements))
+  } catch {
+    // Sin almacenamiento: no se recuerdan.
+  }
+}
+
 function writeLastTemplate(account: string, id: string | null) {
   try {
     if (id) localStorage.setItem(lastTemplateKey(account), id)
@@ -159,7 +183,7 @@ export function AdsComposer({
   /** Las opciones de la plantilla; en una campaña, con la página de sus conjuntos (y su Instagram, después). */
   const startFrom = (t: Template | null): AdSettings => {
     const base = {
-      ...(t ? settingsOf(t) : DEFAULT_SETTINGS),
+      ...(t ? settingsOf(t) : { ...DEFAULT_SETTINGS, ...readLastPlacements(account.id) }),
       cuenta: account.id,
       ...(adSetIn ? goalIn(adSetIn) : {}),
     }
@@ -660,12 +684,11 @@ export function AdsComposer({
             pieces={drafts.length ? drafts.map((d) => d.items.map(formatOfCreative)) : undefined}
             video={drafts.length ? drafts.every((d) => d.items[0].tipo === 'video') : null}
             whatsapp={settings.destino !== 'web'}
-            onChange={(ubicaciones, posiciones) =>
-              update({
-                ubicaciones: ubicaciones === 'meta' ? 'manual' : ubicaciones,
-                posiciones,
-              })
-            }
+            onChange={(ubicaciones, posiciones) => {
+              const chosen = { ubicaciones: ubicaciones === 'meta' ? 'manual' : ubicaciones, posiciones }
+              writeLastPlacements(account.id, chosen)
+              update(chosen)
+            }}
           />
         </section>
 
