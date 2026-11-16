@@ -1534,6 +1534,22 @@ test('plantillas de anuncio: solo lo del anuncio, aparte de las de campaña', as
   assert.equal((await request('PUT', '/api/anuncios/plantillas-anuncio', { body: { plantillas: [{ texto: 'Sin nombre' }] } })).status, 400)
 })
 
+test('plantillas de chat: solo los mensajes del chat', async () => {
+  const res = await request('PUT', '/api/anuncios/plantillas-chat', {
+    body: { plantillas: [{ ...plan(), nombre: ' Info ', id: undefined, bienvenida: ' Hola ', tipoMensaje: 'preguntas', preguntas: ['¿Precio?', ''], texto: 'No va' }] },
+  })
+  assert.equal(res.status, 200, res.text)
+  const [saved] = res.body.plantillas
+  assert.equal(saved.nombre, 'Info')
+  assert.match(saved.id, /^[\w-]+$/)
+  assert.deepEqual([saved.bienvenida, saved.tipoMensaje, saved.preguntas], ['Hola', 'preguntas', ['¿Precio?']])
+  for (const key of ['texto', 'pagina', 'presupuesto', 'lugares', 'destino', 'mejoras']) assert.equal(saved[key], undefined, key)
+  const all = (await request('GET', '/api/anuncios')).body
+  assert.deepEqual(all.plantillasChat, res.body.plantillas)
+  assert.deepEqual(all.plantillas, [])
+  assert.equal((await request('PUT', '/api/anuncios/plantillas-chat', { body: { plantillas: [{ saludo: 'Sin nombre' }] } })).status, 400)
+})
+
 test('las rutas de Meta solo desde Tablero', async () => {
   const ajenas = [{ origin: 'https://malo.example' }, { 'sec-fetch-site': 'cross-site' }, { host: 'malo.example' }]
   for (const [method, pathname, body] of [

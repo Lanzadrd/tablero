@@ -215,6 +215,9 @@ export interface Template extends AdSettings {
  * Una plantilla de anuncio: solo lo del anuncio (los textos, las mejoras y el chat o la web, según adónde lleve),
  * para los que se añaden a un conjunto o se editan.
  */
+/** Una plantilla de chat: los mensajes del chat de WhatsApp, para cualquier formulario. */
+export type ChatTemplate = Pick<AdSettings, 'cuenta' | 'bienvenida' | 'tipoMensaje' | 'saludo' | 'preguntas'> & { id: string; nombre: string }
+
 export type AdTemplate = Pick<
   AdSettings,
   'cuenta' | 'destino' | 'url' | 'boton' | 'etiquetas' | 'texto' | 'titular' | 'descripcion' | 'bienvenida' | 'tipoMensaje' | 'saludo' | 'preguntas' | 'mejoras' | 'multianunciante'
@@ -902,7 +905,14 @@ export const metaApi = {
       `No se ha podido ${estado === 'activa' ? 'activar' : 'pausar'}`,
       statusDone(level, estado, META_LEVELS),
     ),
-  saved: () => call<{ plantillas: Template[]; plantillasAnuncio?: AdTemplate[]; lanzamientos: Launch[] }>('GET', '/api/anuncios'),
+  saved: () =>
+    call<{ plantillas: Template[]; plantillasAnuncio?: AdTemplate[]; plantillasChat?: ChatTemplate[]; lanzamientos: Launch[] }>('GET', '/api/anuncios'),
+  saveChatTemplates: (plantillas: ChatTemplate[], done: string) =>
+    announce(
+      call<{ plantillas: ChatTemplate[] }>('PUT', '/api/anuncios/plantillas-chat', { plantillas }).then((r) => r.plantillas),
+      'No se han podido guardar las plantillas del chat',
+      done,
+    ),
   saveAdTemplates: (plantillas: AdTemplate[], done: string) =>
     announce(
       call<{ plantillas: AdTemplate[] }>('PUT', '/api/anuncios/plantillas-anuncio', { plantillas }).then((r) => r.plantillas),

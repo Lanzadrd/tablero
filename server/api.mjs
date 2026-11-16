@@ -7,7 +7,7 @@ import { mkdir, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { activate, addAdSet, launch, readAds, saveAdTemplates, saveTemplates, setStatus, uploadFile } from './anuncios.mjs'
+import { activate, addAdSet, launch, readAds, saveAdTemplates, saveChatTemplates, saveTemplates, setStatus, uploadFile } from './anuncios.mjs'
 import { claudeStatus, saveClaudeKey, writeCopy } from './textos.mjs'
 import { capture, interpret } from './captura.mjs'
 import { DATA_DIR, exclusive, HttpError, localDay, localTime, readArchive, readStore, writeArchive, writeStore } from './almacen.mjs'
@@ -324,6 +324,9 @@ async function metaRoute(req, res, url, meta, options) {
     case '/api/anuncios/plantillas-anuncio':
       only(req, 'PUT')
       return send(res, 200, { plantillas: await saveAdTemplates((await readJson(req))?.plantillas) })
+    case '/api/anuncios/plantillas-chat':
+      only(req, 'PUT')
+      return send(res, 200, { plantillas: await saveChatTemplates((await readJson(req))?.plantillas) })
     // Los textos del anuncio, escritos por Claude; y su clave (que nunca vuelve a la web).
     case '/api/anuncios/textos':
       only(req, 'POST')

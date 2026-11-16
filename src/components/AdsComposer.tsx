@@ -23,6 +23,7 @@ import {
   type AdNumber,
   type AdRow,
   type AdSettings,
+  type ChatTemplate,
   type Copy,
   type Enhancement,
   type Gender,
@@ -735,6 +736,7 @@ export function AdsComposer({
           <p className="ads-hint">Lo que ve la persona al abrir WhatsApp desde el anuncio.</p>
           <div className="ads-chat">
             <div className="ads-fields">
+              <ChatTemplates account={account.id} chat={settings} onApply={update} />
               <Field label="Vuestro mensaje" htmlFor={`${ids}-welcome`} note="Lo primero que ve, de vuestra parte.">
                 <textarea
                   id={`${ids}-welcome`}
@@ -1411,6 +1413,140 @@ export function DropZone({ onFiles, disabled }: { onFiles: (files: FileList) => 
         }}
       />
     </div>
+  )
+}
+
+type Chat = Pick<AdSettings, 'bienvenida' | 'tipoMensaje' | 'saludo' | 'preguntas'>
+
+const chatOf = (c: Chat): Chat => ({ bienvenida: c.bienvenida, tipoMensaje: c.tipoMensaje, saludo: c.saludo, preguntas: c.preguntas })
+const sameChat = (a: Chat, b: Chat) => JSON.stringify(chatOf(a)) === JSON.stringify(chatOf(b))
+
+/**
+ * Las plantillas del chat de WhatsApp (vuestro mensaje, el suyo o las preguntas), en la tarjeta del chat de cualquier
+ * formulario: elegir una la pone; también se guardan, se cambian y se eliminan aquí. Las de esta cuenta y las que no
+ * son de ninguna.
+ */
+export function ChatTemplates({ account, chat, onApply }: { account: string; chat: Chat; onApply: (chat: Chat) => void }) {
+  const [saved, setSaved] = useState<ChatTemplate[] | null>(null)
+  const [chosen, setChosen] = useState<string | null>(null)
+  const [saveAs, setSaveAs] = useState<HTMLElement | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    metaApi.saved().then(
+      (s) => setSaved(s.plantillasChat ?? []),
+      (err) => setError(errorText(err)),
+    )
+  }, [])
+
+  const list = (saved ?? []).filter((t) => !t.cuenta || t.cuenta === account)
+  // La elegida; si no, la que coincide con lo que hay escrito.
+  const current = list.find((t) => t.id === chosen) ?? list.find((t) => sameChat(t, chat)) ?? null
+  const dirty = current ? !sameChat(current, chat) : false
+
+  const store = async (next: ChatTemplate[], done: string, keep: string | null) => {
+    setError(null)
+    try {
+      const stored = await metaApi.saveChatTemplates(next, done)
+      setSaved(stored)
+      setChosen(stored.some((t) => t.id === keep) ? keep : null)
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+
+  return (
+    <Field label="Plantilla">
+      <div className="ads-chat-templates">
+        {list.length > 0 && (
+          <div className="ads-chips" role="group" aria-label="Plantillas del chat">
+            {list.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                aria-pressed={t.id === current?.id}
+                className={cx('chip', t.id === current?.id && 'is-active')}
+                onClick={() => {
+                  setChosen(t.id)
+                  setRemoving(false)
+                  onApply(chatOf(t))
+                }}
+              >
+                {t.nombre}
+              </button>
+            ))}
+          </div>
+        )}
+        {saved && (
+          <div className="ads-template-actions">
+            {current && dirty && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() =>
+                  void store(
+                    saved.map((t) => (t.id === current.id ? { ...t, ...chatOf(chat) } : t)),
+                    `Plantilla del chat «${current.nombre}» guardada`,
+                    current.id,
+                  )
+                }
+              >
+                Guardar cambios en «{current.nombre}»
+              </button>
+            )}
+            <button type="button" className="link-btn" onClick={(e) => setSaveAs(e.currentTarget)}>
+              {current ? 'Guardar como otra plantilla' : 'Guardar como plantilla'}
+            </button>
+            {current && !removing && (
+              <button type="button" className="link-btn is-danger" onClick={() => setRemoving(true)}>
+                Eliminar «{current.nombre}»
+              </button>
+            )}
+            {current && removing && (
+              <>
+                <button
+                  type="button"
+                  className="link-btn is-danger"
+                  onClick={() => {
+                    setRemoving(false)
+                    void store(
+                      saved.filter((t) => t.id !== current.id),
+                      `Plantilla del chat «${current.nombre}» eliminada`,
+                      null,
+                    )
+                  }}
+                >
+                  Sí, eliminar «{current.nombre}»
+                </button>
+                <button type="button" className="link-btn" onClick={() => setRemoving(false)}>
+                  No
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {error && (
+          <p className="ads-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+      {saved && saveAs && (
+        <SaveTemplate
+          anchor={saveAs}
+          note="Guarda vuestro mensaje y el suyo (o las preguntas), para el chat de otros anuncios."
+          onClose={() => setSaveAs(null)}
+          onSave={async (nombre) => {
+            const created: ChatTemplate = { id: crypto.randomUUID(), nombre, cuenta: account, ...chatOf(chat) }
+            const stored = await metaApi.saveChatTemplates([...saved, created], `Plantilla del chat «${nombre}» guardada`)
+            setSaved(stored)
+            setChosen(created.id)
+            setSaveAs(null)
+          }}
+        />
+      )}
+    </Field>
   )
 }
 

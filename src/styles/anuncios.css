@@ -1095,6 +1095,13 @@
 }
 
 /* En el formulario de un anuncio, las plantillas de campaña lo dicen: de ellas solo se usa lo del anuncio. */
+/* Las plantillas del chat: sus chips y, debajo, guardar o eliminar. */
+.ads-chat-templates {
+  display: grid;
+  flex-basis: 100%;
+  gap: 6px;
+}
+
 .ads-chip-kind {
   margin-left: 6px;
   font-size: 11px;

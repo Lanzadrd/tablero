@@ -34,6 +34,7 @@ import {
   adsCount,
   CHAT_STARTS,
   ChatPreview,
+  ChatTemplates,
   Chips,
   DropZone,
   Field,
@@ -1046,6 +1047,7 @@ function AdContentEditor({
           <h4 id={`${ids}-chat`}>Chat de WhatsApp</h4>
           <div className="ads-chat">
             <div className="ads-fields">
+              <ChatTemplates account={account.id} chat={content} onApply={update} />
               <Field label="Vuestro mensaje" htmlFor={`${ids}-welcome`}>
                 <textarea
                   id={`${ids}-welcome`}

@@ -786,6 +786,19 @@ export function cleanAdTemplates(raw) {
   })
 }
 
+/** Lo que guarda una plantilla de chat: los mensajes del chat de WhatsApp (de la cuenta en la que se crea). */
+const CHAT_TEMPLATE_KEYS = ['cuenta', 'bienvenida', 'tipoMensaje', 'saludo', 'preguntas']
+
+export function cleanChatTemplates(raw) {
+  if (!Array.isArray(raw) || raw.length > MAX_TEMPLATES) throw new HttpError(400, 'Plantillas no válidas')
+  return raw.map((t) => {
+    const nombre = text(t?.nombre, 120)
+    if (!nombre) throw new HttpError(400, 'Cada plantilla necesita un nombre.')
+    const settings = cleanSettings(t)
+    return { id: id(t?.id) ?? randomUUID(), nombre, ...Object.fromEntries(CHAT_TEMPLATE_KEYS.map((key) => [key, settings[key]])) }
+  })
+}
+
 // ── datos/anuncios.json ──
 
 export async function readAds() {
@@ -799,6 +812,8 @@ export async function readAds() {
     plantillas: Array.isArray(data?.plantillas) ? data.plantillas : [],
     /** Las de anuncio: solo lo del anuncio, para los que se añaden a un conjunto o se editan. */
     plantillasAnuncio: Array.isArray(data?.plantillasAnuncio) ? data.plantillasAnuncio : [],
+    /** Las de chat: solo los mensajes del chat de WhatsApp, para cualquier formulario. */
+    plantillasChat: Array.isArray(data?.plantillasChat) ? data.plantillasChat : [],
     lanzamientos: Array.isArray(data?.lanzamientos) ? data.lanzamientos : [],
     /** Los números de WhatsApp escritos a mano, por página: los conectados a ella que Meta no deja leer. */
     numeros: data?.numeros && typeof data.numeros === 'object' && !Array.isArray(data.numeros) ? data.numeros : {},
@@ -846,6 +861,12 @@ export const saveTemplates = (raw) =>
   changeAds((data) => {
     data.plantillas = cleanTemplates(raw)
     return data.plantillas
+  })
+
+export const saveChatTemplates = (raw) =>
+  changeAds((data) => {
+    data.plantillasChat = cleanChatTemplates(raw)
+    return data.plantillasChat
   })
 
 export const saveAdTemplates = (raw) =>
