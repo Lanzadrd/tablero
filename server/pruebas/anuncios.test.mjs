@@ -959,6 +959,37 @@ test('subir: la imagen va a la cuenta y vuelve su hash; solo con la cabecera de 
   assert.equal(big.status, 413)
 })
 
+test('subir un vídeo: por partes, como Meta las pide (de una vez rechaza los grandes)', async () => {
+  await connect()
+  const data = 'VIDEO-0123456789'
+  const received = []
+  routes['POST act_111/advideos'] = ({ url, body }) => {
+    const phase = url.searchParams.get('upload_phase')
+    if (body instanceof FormData) {
+      assert.equal(body.get('upload_phase'), 'transfer')
+      assert.equal(body.get('upload_session_id'), 'sesion')
+      received.push(body.get('video_file_chunk'))
+      const from = Number(body.get('start_offset'))
+      // Meta pide los trozos de 6 en 6 bytes.
+      const next = Math.min(from + 6, data.length)
+      return { start_offset: String(next), end_offset: String(Math.min(next + 6, data.length)) }
+    }
+    if (phase === 'start') {
+      assert.equal(url.searchParams.get('file_size'), String(data.length))
+      return { upload_session_id: 'sesion', video_id: 'v9', start_offset: '0', end_offset: '6' }
+    }
+    assert.equal(phase, 'finish')
+    assert.equal(url.searchParams.get('upload_session_id'), 'sesion')
+    assert.equal(url.searchParams.get('title'), 'ad 22.mov')
+    return { success: true }
+  }
+  const res = await request('POST', '/api/meta/medios?cuenta=act_111&nombre=ad%2022.mov', { raw: data, headers: { 'content-type': 'video/quicktime', 'x-tablero-subida': '1' } })
+  assert.equal(res.status, 200, res.text)
+  assert.deepEqual(res.body.medio, { tipo: 'video', id: 'v9' })
+  assert.equal((await Promise.all(received.map((b) => b.text()))).join(''), data)
+  assert.equal(received.length, 3)
+})
+
 function launchRoutes() {
   routes['GET act_111'] = { name: 'Hoplon ad account', currency: 'EUR', business: { id: 'b1' } }
   routes['POST act_111/campaigns'] = { id: 'c1' }

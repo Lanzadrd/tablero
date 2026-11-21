@@ -4,8 +4,7 @@
 //
 // Todo se crea en pausa: Tablero solo activa una campaña cuando se pulsa «Activar».
 import { randomUUID } from 'node:crypto'
-import { openAsBlob } from 'node:fs'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { DATA_DIR, HttpError, localDay } from './almacen.mjs'
 
@@ -886,15 +885,43 @@ export async function uploadFile(meta, account, { file, type, name }) {
     if (!image?.hash) throw new HttpError(502, 'Meta no ha devuelto la imagen subida.')
     return { tipo: 'imagen', hash: image.hash, url: image.url ?? null }
   }
-  if (type.startsWith('video/')) {
-    const form = new FormData()
-    form.set('name', name)
-    form.set('source', await openAsBlob(file, { type }), name)
-    const res = await meta.graph(`${account}/advideos`, { method: 'POST', body: form })
-    if (!res.id) throw new HttpError(502, 'Meta no ha devuelto el vídeo subido.')
-    return { tipo: 'video', id: String(res.id) }
-  }
+  if (type.startsWith('video/')) return { tipo: 'video', id: await uploadVideo(meta, account, file, name) }
   throw new HttpError(415, 'Solo imágenes o vídeos')
+}
+
+/**
+ * Un vídeo, por partes (la subida reanudable de Meta): de una vez, Meta rechaza los grandes (unos 400 MB ya dan
+ * «413»). Meta dice qué trozo quiere cada vez; uno que falla se reintenta una vez. Devuelve su id.
+ */
+async function uploadVideo(meta, account, file, name) {
+  const { size } = await stat(file)
+  // El empiece y el final, en la dirección: así es como funciona (probado con uno de 400 MB).
+  const start = await meta.graph(`${account}/advideos`, { method: 'POST', params: { upload_phase: 'start', file_size: size } })
+  if (!start.upload_session_id || !start.video_id) throw new HttpError(502, 'Meta no ha empezado la subida del vídeo.')
+  const handle = await open(file, 'r')
+  try {
+    let from = Number(start.start_offset)
+    let to = Number(start.end_offset)
+    while (from < to) {
+      const chunk = Buffer.alloc(to - from)
+      await handle.read(chunk, 0, chunk.length, from)
+      const send = () => {
+        const form = new FormData()
+        form.set('upload_phase', 'transfer')
+        form.set('upload_session_id', String(start.upload_session_id))
+        form.set('start_offset', String(from))
+        form.set('video_file_chunk', new Blob([chunk]), name)
+        return meta.graph(`${account}/advideos`, { method: 'POST', body: form })
+      }
+      const next = await send().catch(send)
+      from = Number(next.start_offset)
+      to = Number(next.end_offset)
+    }
+  } finally {
+    await handle.close()
+  }
+  await meta.graph(`${account}/advideos`, { method: 'POST', params: { upload_phase: 'finish', upload_session_id: String(start.upload_session_id), title: name } })
+  return String(start.video_id)
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
